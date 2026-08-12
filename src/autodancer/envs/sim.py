@@ -15,6 +15,7 @@ from autodancer.generator import generate_world
 from autodancer.model import Actor, Bomb, GameEvent, WorldState
 from autodancer.observation import encode_observation, observation_space, update_visibility
 from autodancer.render import render_grid
+from autodancer.rewards import reward_from_event_dicts
 from autodancer.rng import RandomChannels
 from autodancer.tasks import REWARD_VALUES, TASKS, TaskSpec
 
@@ -356,21 +357,9 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         return events
 
     def _calculate_reward(self, events: Iterable[GameEvent]) -> float:
-        reward = self.reward_values["turn"]
-        for event in events:
-            if event.kind == "success":
-                reward += self.reward_values["success"]
-            elif event.kind == "failure":
-                reward += self.reward_values["failure"]
-            elif event.kind == "enemy_damage":
-                reward += self.reward_values["enemy_damage"] * event.amount
-            elif event.kind == "enemy_kill":
-                reward += self.reward_values["enemy_kill"]
-            elif event.kind == "player_damage":
-                reward += self.reward_values["player_damage"] * event.amount
-            elif event.kind == "reveal":
-                reward += self.reward_values["reveal"] * event.amount
-        return float(reward)
+        return reward_from_event_dicts(
+            (event.to_dict() for event in events), self.reward_values
+        )
 
     def snapshot(self) -> dict[str, Any]:
         state = self._require_state()
@@ -436,4 +425,3 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         if self._channels is None:
             raise RuntimeError("Call reset() before using the environment")
         return self._channels
-
