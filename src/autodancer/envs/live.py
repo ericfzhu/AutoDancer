@@ -66,7 +66,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
-        del seed, options
+        super().reset(seed=seed)
+        del options
         source, sender = self._dependencies()
         source.reset_sequence()
         sender.restart()
@@ -81,7 +82,10 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
     ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         source, sender = self._dependencies()
         selected = Action(int(action))
-        if self._last_observation is not None and not self._last_observation["action_mask"][selected]:
+        if (
+            self._last_observation is not None
+            and not self._last_observation["action_mask"][selected]
+        ):
             raise ValueError(f"Action {selected.name} is masked in the current live state")
         sender.send_action(selected)
         record = source.read(self.turn_timeout)
@@ -106,6 +110,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         info = {
             "sequence": record["sequence"],
             "seed": record.get("seed"),
+            "character": record.get("character"),
             "game": record["game"],
             "zone": record.get("zone"),
             "floor": record.get("floor"),
@@ -123,4 +128,3 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 f"Live capture has shape {image.shape}; expected {(RGB_SIZE, RGB_SIZE, 3)}"
             )
         return image
-

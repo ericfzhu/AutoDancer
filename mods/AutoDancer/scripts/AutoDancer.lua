@@ -164,6 +164,7 @@ local function emitTurn(ev)
             steam_build = STEAM_BUILD,
         },
         seed = CurrentLevel.getSeed(),
+        character = Player.getCharacterType(1),
         zone = CurrentLevel.getZone(),
         floor = CurrentLevel.getFloor(),
         observation = buildObservation(ev),
@@ -180,4 +181,3 @@ end
 
 -- turnID is the last stable order key in the supported turn event.
 event.turn.add("emitAutoDancerTelemetry", {order = "turnID", sequence = -1}, emitTurn)
-

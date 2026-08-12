@@ -15,7 +15,6 @@ from autodancer.constants import (
     Action,
     ActorKind,
     GridChannel,
-    ItemKind,
     StatusFlag,
     Terrain,
 )
@@ -156,4 +155,3 @@ def encode_observation(state: WorldState, task_index: int = 0) -> dict[str, np.n
         "inventory": state.inventory.astype(np.int16, copy=True),
         "action_mask": action_mask(state),
     }
-

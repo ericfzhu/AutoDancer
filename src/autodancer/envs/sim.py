@@ -268,8 +268,12 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         state = self._require_state()
         if state.dead:
             return []
-        combat_task_complete = self.task_name in {"single_enemy", "mixed_room"} and not state.enemies
-        navigation_complete = self.task_name == "navigation" and state.player.position == state.stairs
+        combat_task_complete = (
+            self.task_name in {"single_enemy", "mixed_room"} and not state.enemies
+        )
+        navigation_complete = (
+            self.task_name == "navigation" and state.player.position == state.stairs
+        )
         floor_complete = not state.enemies and state.player.position == state.stairs
         if not (combat_task_complete or navigation_complete or floor_complete):
             return []
@@ -366,6 +370,7 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         return {
             "seed": self._seed,
             "task": self.task_name,
+            "character": "Bard",
             "turn": state.turn,
             "zone": state.zone,
             "floor": state.floor,
@@ -401,6 +406,7 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         return {
             "seed": self._seed,
             "task": self.task_name,
+            "character": "Bard",
             "zone": state.zone,
             "floor": state.floor,
             "turns": self._episode_turn,

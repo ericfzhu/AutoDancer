@@ -10,6 +10,7 @@ Each record uses protocol schema 1. It contains:
 - `sequence`: starts at `0` after restart and increases by one
 - `kind`: `reset` or `turn`
 - `game.version` and `game.steam_build`
+- `character`: must be `Bard`
 - `seed`, `zone`, and `floor`
 - `observation.grid`: `21 × 21 × 7` integers
 - `observation.player`: 16 integers
@@ -25,4 +26,3 @@ an unpinned game build.
 
 The live mod scaffold only exports fields that have confirmed public API access.
 Add a new field after a live trace confirms its meaning.
-

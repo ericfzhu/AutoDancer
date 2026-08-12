@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.constants import ActorKind, ItemKind, Terrain, TrapKind
+from autodancer.constants import ActorKind, ItemKind, Terrain
 
 
 @dataclass(slots=True)

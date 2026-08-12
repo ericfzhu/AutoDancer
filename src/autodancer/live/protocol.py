@@ -56,7 +56,7 @@ class JsonlTurnSource:
                     self._offset = 0
                 with self.path.open("r", encoding="utf-8", errors="replace") as handle:
                     handle.seek(self._offset)
-                    for line in handle:
+                    while line := handle.readline():
                         self._offset = handle.tell()
                         marker_index = line.find(LOG_MARKER)
                         if marker_index < 0:
@@ -126,10 +126,13 @@ def decode_observation(payload: dict[str, Any]) -> dict[str, np.ndarray]:
 def validate_record(record: dict[str, Any]) -> None:
     if int(record.get("schema_version", -1)) != SCHEMA_VERSION:
         raise ProtocolError(
-            f"Unsupported protocol schema {record.get('schema_version')!r}; expected {SCHEMA_VERSION}"
+            "Unsupported protocol schema "
+            f"{record.get('schema_version')!r}; expected {SCHEMA_VERSION}"
         )
     if record.get("kind") not in {"reset", "turn"}:
         raise ProtocolError("Record kind must be 'reset' or 'turn'")
+    if record.get("character") != "Bard":
+        raise ProtocolError("AutoDancer-Live-v0 requires Bard")
     game = record.get("game", {})
     version = str(game.get("version", ""))
     steam_build = str(game.get("steam_build", ""))
