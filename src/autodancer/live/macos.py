@@ -26,13 +26,6 @@ DEFAULT_KEY_CODES: dict[Action, int] = {
     Action.RIGHT: 124,
     Action.DOWN: 125,
     Action.LEFT: 123,
-    Action.WAIT: 49,
-    Action.BOMB: 11,
-    Action.ITEM_1: 18,
-    Action.ITEM_2: 19,
-    Action.THROW: 17,
-    Action.SPELL_1: 20,
-    Action.SPELL_2: 21,
 }
 
 

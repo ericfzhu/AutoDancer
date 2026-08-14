@@ -6,8 +6,10 @@ import pytest
 from gymnasium.utils.env_checker import check_env
 
 import autodancer  # noqa: F401
-from autodancer.constants import Action, GridChannel, Terrain
+from autodancer.constants import Action, ActorKind, GridChannel, Terrain, TrapKind
 from autodancer.envs.sim import AutoDancerSimEnv
+from autodancer.generator import ENEMY_REGISTRY
+from autodancer.model import Actor
 from autodancer.tasks import TASKS
 
 
@@ -113,3 +115,128 @@ def test_digging_consumes_a_turn_before_entering_the_tile() -> None:
 
     environment.step(Action.UP)
     assert state.player.position == (2, 1)
+
+
+def test_zone_one_enemy_stats_match_live_prototypes() -> None:
+    definitions = {definition.kind: definition for definition in ENEMY_REGISTRY[1]}
+    assert definitions[ActorKind.GREEN_SLIME].health == 1
+    assert definitions[ActorKind.BLUE_SLIME].health == 2
+    assert definitions[ActorKind.BLUE_SLIME].damage == 2
+    assert definitions[ActorKind.ZOMBIE].health == 1
+    assert definitions[ActorKind.ZOMBIE].damage == 2
+    assert definitions[ActorKind.SKELETON].health == 1
+
+
+def test_live_slime_patterns_and_first_turn_cadence() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.player.x, state.player.y = 6, 5
+    green = Actor(2, ActorKind.GREEN_SLIME, 3, 5, 1, 1, move_period=1)
+    blue = Actor(3, ActorKind.BLUE_SLIME, 5, 5, 2, 2, move_period=2)
+    state.enemies = {green.entity_id: green, blue.entity_id: blue}
+
+    environment.step(Action.WAIT)
+    assert green.position == (3, 5)
+    assert blue.position == (5, 6)
+    assert state.player.health == state.player.max_health
+
+    environment.step(Action.WAIT)
+    assert blue.position == (5, 6)
+
+    environment.step(Action.WAIT)
+    assert blue.position == (5, 5)
+
+
+def test_zombie_moves_linearly_on_first_and_third_turns() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.player.x, state.player.y = 10, 10
+    zombie = Actor(
+        2, ActorKind.ZOMBIE, 4, 4, 1, 1, move_period=2, facing=1
+    )
+    state.enemies = {zombie.entity_id: zombie}
+
+    environment.step(Action.WAIT)
+    assert zombie.position == (5, 4)
+    environment.step(Action.WAIT)
+    assert zombie.position == (5, 4)
+    environment.step(Action.WAIT)
+    assert zombie.position == (6, 4)
+
+
+def test_bounce_trap_forces_player_in_its_direction() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.enemies.clear()
+    state.player.x, state.player.y = 4, 4
+    state.traps[4, 3] = TrapKind.BOUNCE_RIGHT
+
+    _, _, _, _, info = environment.step(Action.LEFT)
+    assert state.player.position == (4, 4)
+    assert "trap_activated" in [event["kind"] for event in info["raw_events"]]
+
+    environment.step(Action.LEFT)
+    assert state.player.position == (3, 4)
+    environment.step(Action.RIGHT)
+    environment.step(Action.LEFT)
+    assert state.player.position == (4, 4)
+
+
+def test_enemy_gold_drops_are_collected_from_the_ground() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.player.x, state.player.y = 4, 4
+    enemy = Actor(2, ActorKind.BLUE_SLIME, 5, 4, 1, 2, move_period=2)
+    state.enemies = {enemy.entity_id: enemy}
+
+    environment.step(Action.RIGHT)
+    assert state.gold == 0
+    assert state.items[(5, 4)].kind == 1
+    assert state.items[(5, 4)].value == 4
+
+    _, _, _, _, info = environment.step(Action.RIGHT)
+    assert state.gold == 4
+    assert "item_collected" in [event["kind"] for event in info["raw_events"]]
+
+
+def test_bomb_explodes_three_turns_after_placement() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.enemies.clear()
+    state.player.x, state.player.y = 4, 4
+
+    environment.step(Action.BOMB)
+    assert len(state.active_bombs) == 1
+    environment.step(Action.RIGHT)
+    assert len(state.active_bombs) == 1
+    environment.step(Action.RIGHT)
+    assert len(state.active_bombs) == 1
+    environment.step(Action.RIGHT)
+    assert state.active_bombs == []
+
+
+def test_broadsword_hits_three_tiles_in_front_without_moving() -> None:
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.player.x, state.player.y = 5, 5
+    state.inventory[0] = (8, 1, 1)
+    state.enemies = {
+        index: Actor(index, ActorKind.GREEN_SLIME, x, 4, 1, 1)
+        for index, x in enumerate((4, 5, 6), start=2)
+    }
+
+    environment.step(Action.UP)
+    assert state.player.position == (5, 5)
+    assert state.enemies == {}

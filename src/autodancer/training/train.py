@@ -63,6 +63,13 @@ def parse_arguments(argv: list[str] | None = None):
 
 
 def main() -> int:
+    if sys.platform == "win32":
+        print(
+            "Sample Factory does not support native Windows. Run AutoDancer "
+            "training on Linux, macOS, or WSL.",
+            file=sys.stderr,
+        )
+        return 2
     from sample_factory.algo.utils.misc import ExperimentStatus
     from sample_factory.train import run_rl
 

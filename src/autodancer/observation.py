@@ -85,7 +85,8 @@ def action_mask(state: WorldState) -> np.ndarray:
     mask = np.zeros(ACTION_COUNT, dtype=np.int8)
     for action in (Action.UP, Action.RIGHT, Action.DOWN, Action.LEFT):
         mask[action] = 1
-    mask[Action.WAIT] = 1
+    # Bard advances the turn on input and has no native no-op/wait binding.
+    mask[Action.WAIT] = 0
     mask[Action.BOMB] = int(state.bombs > 0)
     mask[Action.ITEM_1] = int(state.inventory[1, 0] != 0)
     mask[Action.ITEM_2] = int(state.inventory[2, 0] != 0)

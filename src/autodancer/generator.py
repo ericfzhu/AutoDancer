@@ -23,9 +23,9 @@ class EnemyDefinition:
 ENEMY_REGISTRY: dict[int, tuple[EnemyDefinition, ...]] = {
     1: (
         EnemyDefinition(ActorKind.GREEN_SLIME, 1, 1, 2),
-        EnemyDefinition(ActorKind.BLUE_SLIME, 2, 1, 2),
-        EnemyDefinition(ActorKind.ZOMBIE, 1, 1, 2),
-        EnemyDefinition(ActorKind.SKELETON, 2, 1, 2),
+        EnemyDefinition(ActorKind.BLUE_SLIME, 2, 2, 2),
+        EnemyDefinition(ActorKind.ZOMBIE, 1, 2, 2),
+        EnemyDefinition(ActorKind.SKELETON, 1, 1, 2),
         EnemyDefinition(ActorKind.BAT, 1, 1, 1),
     ),
     2: (
@@ -141,6 +141,7 @@ def generate_world(
             max_health=definition.health,
             damage=definition.damage,
             move_period=definition.move_period,
+            facing=int((1, 3, 5, 7)[int(rng.integers(0, 4))]),
             boss=is_boss_floor,
         )
 
@@ -162,6 +163,12 @@ def generate_world(
         health=player_health,
         max_health=player_max_health,
     )
+    if inventory is None:
+        inventory = np.zeros((8, 3), dtype=np.int16)
+        inventory[0] = (ItemKind.DAGGER, 1, 1)
+        inventory[3] = (ItemKind.SHOVEL, 1, 1)
+        if bombs:
+            inventory[6] = (ItemKind.BOMB, bombs, 0)
     return WorldState(
         width=width,
         height=height,
@@ -177,10 +184,6 @@ def generate_world(
         floor=floor,
         gold=gold,
         bombs=bombs,
-        inventory=(
-            inventory.copy()
-            if inventory is not None
-            else np.zeros((8, 3), dtype=np.int16)
-        ),
+        inventory=inventory.copy(),
     )
 

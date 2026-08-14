@@ -114,6 +114,12 @@ def test_live_protocol_detects_lost_turn() -> None:
         source.read()
 
 
+def test_queue_source_accepts_a_fresh_reset_after_attach() -> None:
+    source = QueueTurnSource([record(0, "reset"), record(0, "reset")])
+    source.read_latest()
+    assert source.read()["sequence"] == 0
+
+
 def test_log_source_reads_marker(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer.log"
     path.write_text("unrelated log\n" + LOG_MARKER + json.dumps(record(0, "reset")) + "\n")

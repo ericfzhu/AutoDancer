@@ -22,6 +22,11 @@ ACTOR_COLOURS = {
     ActorKind.WARLOCK: (225, 55, 180),
     ActorKind.BLADEMASTER: (225, 80, 70),
     ActorKind.BOSS: (250, 45, 45),
+    ActorKind.ZOMBIE: (115, 170, 85),
+    ActorKind.SLIME_3: (235, 145, 45),
+    ActorKind.MONKEY: (145, 85, 50),
+    ActorKind.SKELETON_2: (175, 175, 170),
+    ActorKind.DRAGON: (215, 50, 35),
 }
 
 

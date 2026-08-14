@@ -20,6 +20,8 @@ class Actor:
     max_health: int
     damage: int = 1
     move_period: int = 1
+    facing: int = 1
+    pattern_index: int = 0
     boss: bool = False
 
     @property
@@ -82,6 +84,7 @@ class WorldState:
         default_factory=lambda: np.zeros((8, 3), dtype=np.int16)
     )
     active_bombs: list[Bomb] = field(default_factory=list)
+    trap_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
     won: bool = False
     dead: bool = False
 

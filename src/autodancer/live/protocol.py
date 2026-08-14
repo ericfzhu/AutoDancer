@@ -117,6 +117,9 @@ class JsonlTurnSource:
         sequence = int(record.get("sequence", -1))
         if sequence < 0:
             raise ProtocolError("A turn record has no valid sequence number")
+        if sequence == 0 and record.get("kind") == "reset":
+            self._expected_sequence = 1
+            return
         if self._expected_sequence is not None and sequence != self._expected_sequence:
             raise ProtocolError(
                 f"Turn sequence mismatch: expected {self._expected_sequence}, received {sequence}"
@@ -140,6 +143,9 @@ class QueueTurnSource:
             raise TimeoutError("The in-memory turn source is empty")
         record = self.records.popleft()
         sequence = int(record.get("sequence", -1))
+        if sequence == 0 and record.get("kind") == "reset":
+            self.expected_sequence = 1
+            return record
         if self.expected_sequence is not None and sequence != self.expected_sequence:
             raise ProtocolError(
                 f"Turn sequence mismatch: expected {self.expected_sequence}, received {sequence}"

@@ -4,24 +4,26 @@ from __future__ import annotations
 
 import ctypes
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 
 from autodancer.constants import RGB_SIZE, Action
 
-DEFAULT_VIRTUAL_KEYS: dict[Action, int] = {
+KeyChord = int | Sequence[int]
+
+
+DEFAULT_VIRTUAL_KEYS: dict[Action, KeyChord] = {
     Action.UP: 0x26,
     Action.RIGHT: 0x27,
     Action.DOWN: 0x28,
     Action.LEFT: 0x25,
-    Action.WAIT: 0x20,
-    Action.BOMB: 0x42,
-    Action.ITEM_1: 0x31,
-    Action.ITEM_2: 0x32,
-    Action.THROW: 0x54,
-    Action.SPELL_1: 0x34,
-    Action.SPELL_2: 0x35,
+    Action.BOMB: (0x28, 0x25),
+    Action.ITEM_1: (0x26, 0x25),
+    Action.ITEM_2: (0x25, 0x27),
+    Action.THROW: (0x26, 0x28),
+    Action.SPELL_1: (0x26, 0x27),
+    Action.SPELL_2: (0x28, 0x27),
 }
 
 
@@ -32,9 +34,9 @@ class WindowsActionSender:
 
     def __init__(
         self,
-        virtual_keys: Mapping[Action, int] | None = None,
+        virtual_keys: Mapping[Action, KeyChord] | None = None,
         *,
-        restart_virtual_key: int = 0x77,
+        restart_virtual_key: int = 0x08,
         require_focus: bool = True,
         auto_focus: bool = True,
     ) -> None:
@@ -88,11 +90,14 @@ class WindowsActionSender:
                 f"Keep Crypt of the NecroDancer focused; front window is {title!r}"
             )
 
-    def _press(self, virtual_key: int) -> None:
+    def _press(self, virtual_keys: KeyChord) -> None:
         self._assert_focus()
-        self._user32.keybd_event(virtual_key, 0, 0, 0)
+        chord = (virtual_keys,) if isinstance(virtual_keys, int) else tuple(virtual_keys)
+        for virtual_key in chord:
+            self._user32.keybd_event(virtual_key, 0, 0, 0)
         time.sleep(0.01)
-        self._user32.keybd_event(virtual_key, 0, self.KEYEVENTF_KEYUP, 0)
+        for virtual_key in reversed(chord):
+            self._user32.keybd_event(virtual_key, 0, self.KEYEVENTF_KEYUP, 0)
 
     def send_action(self, action: Action) -> None:
         self._press(self.virtual_keys[action])

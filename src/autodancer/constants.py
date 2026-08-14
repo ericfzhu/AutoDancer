@@ -56,6 +56,10 @@ class ActorKind(IntEnum):
     BLADEMASTER = 8
     BOSS = 9
     ZOMBIE = 10
+    SLIME_3 = 11
+    MONKEY = 12
+    SKELETON_2 = 13
+    DRAGON = 14
 
 
 class ItemKind(IntEnum):
@@ -63,11 +67,22 @@ class ItemKind(IntEnum):
     GOLD = 1
     FOOD = 2
     BOMB = 3
+    DIAMOND = 4
+    DAGGER = 5
+    SHOVEL = 6
+    OTHER = 7
+    BROADSWORD = 8
 
 
 class TrapKind(IntEnum):
     NONE = 0
     SPIKE = 1
+    BOUNCE_RIGHT = 2
+    BOUNCE_UP = 3
+    BOUNCE_LEFT = 4
+    BOUNCE_DOWN = 5
+    TEMPO_DOWN = 6
+    TRAPDOOR = 7
 
 
 class StatusFlag(IntEnum):

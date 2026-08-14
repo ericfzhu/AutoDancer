@@ -12,12 +12,22 @@ from sample_factory.model.actor_critic import ActorCriticSharedWeights
 from sample_factory.model.encoder import Encoder
 from torch import Tensor, nn
 
+from autodancer.constants import ActorKind, ItemKind, Terrain, TrapKind
+
 
 class AutoDancerEncoder(Encoder):
     def __init__(self, cfg: Any, obs_space: Any) -> None:
         super().__init__(cfg)
         del obs_space
-        vocabulary_sizes = (4, 11, 32, 4, 2, 3, 3)
+        vocabulary_sizes = (
+            len(Terrain),
+            len(ActorKind),
+            32,
+            len(ItemKind),
+            len(TrapKind),
+            3,
+            3,
+        )
         embedding_sizes = (4, 8, 4, 3, 2, 2, 2)
         self.grid_embeddings = nn.ModuleList(
             nn.Embedding(vocabulary, width)

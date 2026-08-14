@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sys
+
 import numpy as np
+import pytest
 import torch
 
 from autodancer.envs.sim import AutoDancerSimEnv
@@ -10,8 +13,6 @@ from autodancer.training.curriculum import (
     CurriculumEnv,
     fixed_seed,
 )
-from autodancer.training.model import AutoDancerEncoder
-from autodancer.training.train import parse_arguments
 
 
 def test_seed_splits_do_not_overlap() -> None:
@@ -37,7 +38,11 @@ def test_curriculum_environment_reports_selected_task() -> None:
     assert info["curriculum_task"] in environment.mixer.success_rates
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Sample Factory is POSIX-only")
 def test_symbolic_encoder_output_shape() -> None:
+    from autodancer.training.model import AutoDancerEncoder
+    from autodancer.training.train import parse_arguments
+
     cfg = parse_arguments(["--experiment=encoder_test"])
     environment = AutoDancerSimEnv(task="navigation")
     observation, _ = environment.reset(seed=1)
@@ -49,7 +54,10 @@ def test_symbolic_encoder_output_shape() -> None:
     assert encoder(batch).shape == (2, 256)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Sample Factory is POSIX-only")
 def test_training_defaults_request_64_environments_and_gru() -> None:
+    from autodancer.training.train import parse_arguments
+
     cfg = parse_arguments(["--experiment=defaults_test"])
     assert cfg.num_workers * cfg.num_envs_per_worker == 64
     assert cfg.use_rnn

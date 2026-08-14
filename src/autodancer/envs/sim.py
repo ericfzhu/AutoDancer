@@ -10,9 +10,16 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 
-from autodancer.constants import ACTION_COUNT, DIRECTION_DELTAS, Action, ItemKind, Terrain
+from autodancer.constants import (
+    ACTION_COUNT,
+    DIRECTION_DELTAS,
+    Action,
+    ItemKind,
+    Terrain,
+    TrapKind,
+)
 from autodancer.generator import generate_world
-from autodancer.model import Actor, Bomb, GameEvent, WorldState
+from autodancer.model import Actor, Bomb, GameEvent, GroundItem, WorldState
 from autodancer.observation import encode_observation, observation_space, update_visibility
 from autodancer.render import render_grid
 from autodancer.rewards import reward_from_event_dicts
@@ -94,9 +101,10 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
 
         state.turn += 1
         self._episode_turn += 1
+        player_start = state.player.position
         events.extend(self._player_phase(selected))
         events.extend(self._enemy_phase())
-        events.extend(self._effect_phase())
+        events.extend(self._effect_phase(player_start))
         events.extend(self._cleanup_phase())
         events.extend(self._end_state_phase())
 
@@ -121,13 +129,23 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
             dx, dy = DIRECTION_DELTAS[action]
             target_x = state.player.x + dx
             target_y = state.player.y + dy
+            attack_positions = [(target_x, target_y)]
+            if int(state.inventory[0, 0]) == ItemKind.BROADSWORD:
+                attack_positions = [
+                    (target_x - dy, target_y + dx),
+                    (target_x, target_y),
+                    (target_x + dy, target_y - dx),
+                ]
+            targets = [
+                enemy
+                for enemy in state.enemies.values()
+                if enemy.position in attack_positions
+            ]
             if not state.in_bounds(target_x, target_y):
                 return [GameEvent("move_blocked")]
-            enemy = next(
-                (e for e in state.enemies.values() if e.position == (target_x, target_y)), None
-            )
-            if enemy is not None:
-                events.extend(self._damage_enemy(enemy, state.weapon_damage, "melee"))
+            if targets:
+                for enemy in targets:
+                    events.extend(self._damage_enemy(enemy, state.weapon_damage, "melee"))
             elif state.terrain[target_y, target_x] == Terrain.WALL:
                 if 0 < target_x < state.width - 1 and 0 < target_y < state.height - 1:
                     state.terrain[target_y, target_x] = Terrain.FLOOR
@@ -141,6 +159,9 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
             events.append(GameEvent("wait"))
         elif action == Action.BOMB:
             state.bombs -= 1
+            state.inventory[6] = (
+                (ItemKind.BOMB, state.bombs, 0) if state.bombs else (0, 0, 0)
+            )
             state.active_bombs.append(Bomb(*state.player.position))
             events.append(GameEvent("bomb_placed", data={"x": state.player.x, "y": state.player.y}))
         elif action in {Action.ITEM_1, Action.ITEM_2}:
@@ -165,20 +186,19 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
         occupied = {enemy.position for enemy in state.enemies.values() if enemy.health > 0}
         for entity_id in sorted(state.enemies):
             enemy = state.enemies[entity_id]
-            if enemy.health <= 0 or state.turn % enemy.move_period:
-                continue
-            distance = abs(enemy.x - state.player.x) + abs(enemy.y - state.player.y)
-            if distance == 1:
-                state.player.health -= enemy.damage
-                events.append(
-                    GameEvent("player_damage", enemy.damage, enemy.entity_id, {"source": "enemy"})
-                )
+            if (
+                enemy.health <= 0
+                or enemy.kind.name == "GREEN_SLIME"
+                or (state.turn - 1) % enemy.move_period
+            ):
                 continue
             old_position = enemy.position
             target = self._enemy_target(enemy)
             if target != state.player.position and (
                 target in occupied or not state.is_walkable(*target)
             ):
+                if enemy.kind.name == "ZOMBIE":
+                    enemy.facing = {1: 5, 3: 7, 5: 1, 7: 3}[enemy.facing]
                 continue
             if target == state.player.position:
                 state.player.health -= enemy.damage
@@ -190,28 +210,51 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
                 enemy.x, enemy.y = target
                 occupied.add(target)
                 events.append(GameEvent("enemy_moved", entity_id=enemy.entity_id))
+            if enemy.kind.name == "BLUE_SLIME" and target != state.player.position:
+                enemy.pattern_index = (enemy.pattern_index + 1) % 2
+            elif enemy.kind.name == "SKELETON":
+                enemy.facing = self._direction_for_delta(
+                    target[0] - old_position[0], target[1] - old_position[1]
+                )
         return events
 
     def _enemy_target(self, enemy: Actor) -> tuple[int, int]:
         state = self._require_state()
         dx = int(np.sign(state.player.x - enemy.x))
         dy = int(np.sign(state.player.y - enemy.y))
-        if enemy.kind.name == "GREEN_SLIME":
-            dx = 0
-        elif enemy.kind.name == "BLUE_SLIME":
-            dy = 0
+        if enemy.kind.name == "BLUE_SLIME":
+            dx, dy = ((0, 1), (0, -1))[enemy.pattern_index]
+        elif enemy.kind.name == "ZOMBIE":
+            dx, dy = {
+                1: (1, 0),
+                3: (0, -1),
+                5: (-1, 0),
+                7: (0, 1),
+            }[enemy.facing]
         elif enemy.kind.name == "BAT":
             rng = self._require_channels().channel("enemy_ai")
             dx, dy = ((0, -1), (1, 0), (0, 1), (-1, 0))[int(rng.integers(0, 4))]
+        elif enemy.kind.name == "SKELETON" and enemy.facing in {1, 5} and dx:
+            dy = 0
+        elif enemy.kind.name == "SKELETON" and enemy.facing in {3, 7} and dy:
+            dx = 0
         elif abs(state.player.x - enemy.x) >= abs(state.player.y - enemy.y):
             dy = 0
         else:
             dx = 0
         return enemy.x + dx, enemy.y + dy
 
-    def _effect_phase(self) -> list[GameEvent]:
+    @staticmethod
+    def _direction_for_delta(dx: int, dy: int) -> int:
+        return {(1, 0): 1, (0, -1): 3, (-1, 0): 5, (0, 1): 7}[(dx, dy)]
+
+    def _effect_phase(self, player_start: tuple[int, int]) -> list[GameEvent]:
         state = self._require_state()
         events: list[GameEvent] = []
+        for position in list(state.trap_cooldowns):
+            state.trap_cooldowns[position] -= 1
+            if state.trap_cooldowns[position] <= 0:
+                del state.trap_cooldowns[position]
         item = state.items.pop(state.player.position, None)
         if item is not None:
             if item.kind == ItemKind.GOLD:
@@ -220,16 +263,53 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
                 state.player.health = min(state.player.max_health, state.player.health + item.value)
             elif item.kind == ItemKind.BOMB:
                 state.bombs += item.value
+                state.inventory[6] = (ItemKind.BOMB, state.bombs, 0)
+            elif item.kind in {ItemKind.DAGGER, ItemKind.BROADSWORD}:
+                old_kind = int(state.inventory[0, 0])
+                old_damage = int(state.inventory[0, 2])
+                state.inventory[0] = (item.kind, 1, item.value or 1)
+                state.weapon_damage = item.value or 1
+                if old_kind:
+                    state.items[state.player.position] = GroundItem(
+                        ItemKind(old_kind),
+                        state.player.x,
+                        state.player.y,
+                        value=old_damage,
+                    )
             events.append(GameEvent("item_collected", item.value, data={"item": int(item.kind)}))
 
-        if state.traps[state.player.y, state.player.x] and state.turn % 2 == 0:
+        trap = int(state.traps[state.player.y, state.player.x])
+        if trap == TrapKind.SPIKE and state.turn % 2 == 0:
             state.player.health -= 1
             events.append(GameEvent("player_damage", 1, data={"source": "trap"}))
+        elif (
+            state.player.position != player_start
+            and state.player.position not in state.trap_cooldowns
+            and trap
+            in {
+            TrapKind.BOUNCE_RIGHT,
+            TrapKind.BOUNCE_UP,
+            TrapKind.BOUNCE_LEFT,
+            TrapKind.BOUNCE_DOWN,
+            }
+        ):
+            dx, dy = {
+                TrapKind.BOUNCE_RIGHT: (1, 0),
+                TrapKind.BOUNCE_UP: (0, -1),
+                TrapKind.BOUNCE_LEFT: (-1, 0),
+                TrapKind.BOUNCE_DOWN: (0, 1),
+            }[trap]
+            target = state.player.x + dx, state.player.y + dy
+            if state.is_walkable(*target) and state.actor_at(*target) is None:
+                trap_position = state.player.position
+                state.player.x, state.player.y = target
+                state.trap_cooldowns[trap_position] = 2
+                events.append(GameEvent("trap_activated", data={"trap": trap}))
 
         remaining_bombs: list[Bomb] = []
         for bomb in state.active_bombs:
             bomb.fuse -= 1
-            if bomb.fuse > 0:
+            if bomb.fuse >= 0:
                 remaining_bombs.append(bomb)
                 continue
             events.append(GameEvent("bomb_exploded", data={"x": bomb.x, "y": bomb.y}))
@@ -256,7 +336,12 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
             if enemy.health <= 0:
                 del state.enemies[entity_id]
                 self._kills += 1
-                state.gold += 1
+                state.items[enemy.position] = GroundItem(
+                    ItemKind.GOLD,
+                    enemy.x,
+                    enemy.y,
+                    value=enemy.max_health * 2,
+                )
                 events.append(GameEvent("enemy_kill", entity_id=entity_id))
         if state.player.health <= 0:
             state.player.health = 0
@@ -358,6 +443,7 @@ class AutoDancerSimEnv(gym.Env[dict[str, np.ndarray], int]):
                 events.extend(self._damage_enemy(enemy, state.weapon_damage, "throw"))
                 break
         state.weapon_damage = 0
+        state.inventory[0] = 0
         return events
 
     def _calculate_reward(self, events: Iterable[GameEvent]) -> float:

@@ -27,6 +27,10 @@ observation. It leaves unconfirmed values at zero.
 
 ## Setup
 
+Native Windows supports the simulator, live game adapter, and PyTorch model
+dependencies. Sample Factory itself is POSIX-only, so PPO training must run on
+Linux, macOS, or WSL; the Windows training entry point exits with a clear error.
+
 Use Python 3.12 and [uv](https://docs.astral.sh/uv/):
 
 ```sh
