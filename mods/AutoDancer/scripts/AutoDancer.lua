@@ -130,7 +130,7 @@ local function buildObservation(ev)
         playerValues[6] = player.position.y
         playerValues[7] = CurrentLevel.getZone()
         playerValues[8] = CurrentLevel.getFloor()
-        playerValues[9] = ev.turnID or 0
+        playerValues[9] = sequence
     end
 
     return {
@@ -172,7 +172,7 @@ local function emitTurn(ev)
         terminated = false,
         truncated = false,
         metrics = {
-            turns = ev.turnID or 0,
+            turns = sequence,
         },
     }
     print(LOG_MARKER .. jsonEncode(record))

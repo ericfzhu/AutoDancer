@@ -37,6 +37,7 @@ class WindowsActionSender:
         *,
         restart_virtual_key: int = 0x77,
         require_focus: bool = True,
+        auto_focus: bool = True,
     ) -> None:
         if not hasattr(ctypes, "windll"):
             raise RuntimeError("WindowsActionSender is only available on Windows")
@@ -44,17 +45,48 @@ class WindowsActionSender:
         self.virtual_keys = dict(virtual_keys or DEFAULT_VIRTUAL_KEYS)
         self.restart_virtual_key = restart_virtual_key
         self.require_focus = require_focus
+        self.auto_focus = auto_focus
+
+    def _window_title(self, window: int) -> str:
+        length = self._user32.GetWindowTextLengthW(window)
+        title = ctypes.create_unicode_buffer(length + 1)
+        self._user32.GetWindowTextW(window, title, length + 1)
+        return title.value
+
+    def _find_window(self) -> int:
+        matches: list[int] = []
+        callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def visit(window: int, _: int) -> bool:
+            visible = self._user32.IsWindowVisible(window)
+            if visible and "NecroDancer" in self._window_title(window):
+                matches.append(window)
+                return False
+            return True
+
+        self._user32.EnumWindows(callback_type(visit), 0)
+        if not matches:
+            raise RuntimeError("No visible Crypt of the NecroDancer window was found")
+        return matches[0]
+
+    def focus(self) -> None:
+        window = self._find_window()
+        self._user32.ShowWindow(window, 9)
+        if not self._user32.SetForegroundWindow(window):
+            raise RuntimeError("Could not focus the Crypt of the NecroDancer window")
+        time.sleep(0.05)
 
     def _assert_focus(self) -> None:
         if not self.require_focus:
             return
         window = self._user32.GetForegroundWindow()
-        length = self._user32.GetWindowTextLengthW(window)
-        title = ctypes.create_unicode_buffer(length + 1)
-        self._user32.GetWindowTextW(window, title, length + 1)
-        if "NecroDancer" not in title.value:
+        if "NecroDancer" not in self._window_title(window) and self.auto_focus:
+            self.focus()
+            window = self._user32.GetForegroundWindow()
+        title = self._window_title(window)
+        if "NecroDancer" not in title:
             raise RuntimeError(
-                f"Keep Crypt of the NecroDancer focused; front window is {title.value!r}"
+                f"Keep Crypt of the NecroDancer focused; front window is {title!r}"
             )
 
     def _press(self, virtual_key: int) -> None:
