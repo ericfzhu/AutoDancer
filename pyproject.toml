@@ -24,6 +24,9 @@ macos = [
   "pillow>=10.4",
   "pyobjc-framework-Quartz>=10.3",
 ]
+windows = [
+  "pillow>=10.4",
+]
 test = [
   "hypothesis>=6.112",
   "pytest>=8.3",

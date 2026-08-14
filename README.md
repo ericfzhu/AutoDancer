@@ -77,8 +77,8 @@ game score. Shaped reward is not a completion metric.
 
 ## Live game
 
-The live path requires the base game and SYNCHRONY. It targets Apple Silicon
-macOS. It excludes AMPLIFIED, Zone 5, and character DLC.
+The live path requires the base game and SYNCHRONY. It supports Windows and
+Apple Silicon macOS. It excludes AMPLIFIED, Zone 5, and character DLC.
 
 Read `mods/AutoDancer/README.md` before a live run. The Python process needs
 macOS Accessibility and Screen Recording permission. Keep the game focused.

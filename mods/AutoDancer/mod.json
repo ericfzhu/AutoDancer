@@ -1,0 +1,16 @@
+{
+  "api": {
+    "scriptPath": ""
+  },
+  "author": "AutoDancer contributors",
+  "autoBundle": [
+    "SP"
+  ],
+  "dependencies": [],
+  "description": "Exports Bard turn telemetry for the AutoDancer reinforcement-learning environment.",
+  "displayName": "AutoDancer",
+  "name": "AutoDancer",
+  "namespace": "AutoDancer",
+  "tags": [],
+  "version": "0.1.0"
+}

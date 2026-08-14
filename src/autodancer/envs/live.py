@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,14 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self._source is None:
             raise RuntimeError("Set log_path or inject turn_source before calling reset()")
         if self._sender is None:
-            self._sender = MacOSActionSender()
+            if sys.platform == "darwin":
+                self._sender = MacOSActionSender()
+            elif sys.platform == "win32":
+                from autodancer.live.windows import WindowsActionSender
+
+                self._sender = WindowsActionSender()
+            else:
+                raise RuntimeError(f"Live action sending is unsupported on {sys.platform!r}")
         return self._source, self._sender
 
     def reset(
@@ -121,7 +129,14 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
 
     def render(self) -> np.ndarray:
         if self._capture is None:
-            self._capture = MacOSFrameCapture()
+            if sys.platform == "darwin":
+                self._capture = MacOSFrameCapture()
+            elif sys.platform == "win32":
+                from autodancer.live.windows import WindowsFrameCapture
+
+                self._capture = WindowsFrameCapture()
+            else:
+                raise RuntimeError(f"Live frame capture is unsupported on {sys.platform!r}")
         image = self._capture.capture()
         if image.shape != (RGB_SIZE, RGB_SIZE, 3):
             raise RuntimeError(

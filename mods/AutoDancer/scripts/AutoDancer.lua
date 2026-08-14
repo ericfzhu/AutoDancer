@@ -16,8 +16,8 @@ local ACTION_COUNT = 11
 local LOG_MARKER = "AUTODANCER_JSON:"
 
 -- Replace these values with the values shown by the installed game and Steam.
-local GAME_VERSION = "SET_GAME_VERSION"
-local STEAM_BUILD = "SET_STEAM_BUILD"
+local GAME_VERSION = "v4.2.1-b5713"
+local STEAM_BUILD = "22938426"
 
 local sequence = 0
 local lastRunIdentity = ""
