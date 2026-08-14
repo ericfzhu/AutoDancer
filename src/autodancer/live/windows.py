@@ -10,7 +10,6 @@ import numpy as np
 
 from autodancer.constants import RGB_SIZE, Action
 
-
 DEFAULT_VIRTUAL_KEYS: dict[Action, int] = {
     Action.UP: 0x26,
     Action.RIGHT: 0x27,

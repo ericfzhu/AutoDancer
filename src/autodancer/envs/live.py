@@ -38,6 +38,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         frame_capture: FrameCapture | None = None,
         render_mode: str | None = None,
         turn_timeout: float = 5.0,
+        attach_existing: bool = False,
     ) -> None:
         if render_mode not in {None, "rgb_array"}:
             raise ValueError("render_mode must be None or 'rgb_array'")
@@ -49,6 +50,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._capture = frame_capture
         self.render_mode = render_mode
         self.turn_timeout = turn_timeout
+        self.attach_existing = attach_existing
         self.action_space = gym.spaces.Discrete(ACTION_COUNT)
         self.observation_space = observation_space()
         self._last_observation: dict[str, np.ndarray] | None = None
@@ -78,10 +80,13 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         del options
         source, sender = self._dependencies()
         source.reset_sequence()
-        sender.restart()
-        record = source.read(self.turn_timeout)
+        if self.attach_existing:
+            record = source.read_latest(self.turn_timeout)
+        else:
+            sender.restart()
+            record = source.read(self.turn_timeout)
         validate_record(record)
-        if record["kind"] != "reset":
+        if not self.attach_existing and record["kind"] != "reset":
             raise RuntimeError("The first live record after restart must have kind 'reset'")
         return self._accept_record(record)
 

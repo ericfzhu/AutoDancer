@@ -51,6 +51,9 @@ class RepeatingSource:
         self.sequence += 1
         return payload
 
+    def read_latest(self, timeout: float = 5.0) -> dict:
+        return self.read(timeout)
+
 
 def record(sequence: int, kind: str, events: list[dict] | None = None) -> dict:
     return {
@@ -116,6 +119,60 @@ def test_log_source_reads_marker(tmp_path: Path) -> None:
     path.write_text("unrelated log\n" + LOG_MARKER + json.dumps(record(0, "reset")) + "\n")
     source = JsonlTurnSource(path, start_at_end=False)
     assert source.read(timeout=0.2)["sequence"] == 0
+
+
+def test_log_source_ignores_game_logger_suffix(tmp_path: Path) -> None:
+    path = tmp_path / "NecroDancer.log"
+    path.write_text(
+        "[Debug] [info] '" + LOG_MARKER + json.dumps(record(0, "reset")) + "'\n"
+    )
+    source = JsonlTurnSource(path, start_at_end=False)
+    assert source.read(timeout=0.2)["sequence"] == 0
+
+
+def test_log_source_waits_for_complete_line(tmp_path: Path) -> None:
+    path = tmp_path / "NecroDancer.log"
+    payload = LOG_MARKER + json.dumps(record(0, "reset"))
+    path.write_text(payload[:-10])
+    source = JsonlTurnSource(path, start_at_end=False)
+    with pytest.raises(TimeoutError):
+        source.read(timeout=0.02)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(payload[-10:] + "\n")
+    assert source.read(timeout=0.2)["sequence"] == 0
+
+
+def test_log_source_can_attach_to_latest_record(tmp_path: Path) -> None:
+    path = tmp_path / "NecroDancer.log"
+    path.write_text(
+        "\n".join(
+            [
+                LOG_MARKER + json.dumps(record(3, "turn")),
+                LOG_MARKER + json.dumps(record(4, "turn")),
+            ]
+        )
+        + "\n"
+    )
+    source = JsonlTurnSource(path)
+    assert source.read_latest(timeout=0.2)["sequence"] == 4
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(LOG_MARKER + json.dumps(record(5, "turn")) + "\n")
+    assert source.read(timeout=0.2)["sequence"] == 5
+
+
+def test_live_environment_can_attach_without_restart() -> None:
+    sender = FakeSender()
+    source = QueueTurnSource([record(7, "turn"), record(8, "turn")])
+    environment = AutoDancerLiveEnv(
+        turn_source=source,
+        action_sender=sender,
+        attach_existing=True,
+    )
+    _, info = environment.reset()
+    assert info["sequence"] == 7
+    assert sender.restarts == 0
+    environment.step(Action.LEFT)
+    assert sender.actions == [Action.LEFT]
 
 
 def test_placeholder_build_is_rejected() -> None:

@@ -5,7 +5,11 @@
 -- build values before collecting a conformance trace.
 
 local CurrentLevel = require "necro.game.level.CurrentLevel"
+local Map = require "necro.game.object.Map"
 local Player = require "necro.game.character.Player"
+local Tile = require "necro.game.tile.Tile"
+local Vision = require "necro.game.vision.Vision"
+local Entities = require "system.game.Entities"
 
 local GRID_SIZE = 21
 local GRID_CHANNELS = 7
@@ -98,6 +102,58 @@ local function zeroGrid()
     return result
 end
 
+local function hasComponent(entity, component)
+    return Entities.typeHasComponent(entity.name, component) == true
+end
+
+local function actorKind(entity)
+    if not (hasComponent(entity, "character") and hasComponent(entity, "health"))
+        or hasComponent(entity, "playableCharacter") then
+        return 0
+    end
+    local name = string.lower(entity.name or "")
+    if name == "slime" or string.find(name, "greenslime", 1, true) then
+        return 2
+    elseif name == "slime2" or string.find(name, "blueslime", 1, true) then
+        return 3
+    elseif string.find(name, "skeleton", 1, true) then
+        return 4
+    elseif string.find(name, "bat", 1, true) then
+        return 5
+    elseif string.find(name, "armadillo", 1, true) then
+        return 6
+    elseif string.find(name, "warlock", 1, true) then
+        return 7
+    elseif string.find(name, "blademaster", 1, true) then
+        return 8
+    elseif string.find(name, "zombie", 1, true) then
+        return 10
+    elseif hasComponent(entity, "boss") then
+        return 9
+    end
+    return 0
+end
+
+local function encodeVisibleEntities(x, y, cell)
+    for _, entityID in ipairs(Map.getAll(x, y)) do
+        local entity = Entities.getEntityByID(entityID)
+        if entity then
+            local name = string.lower(entity.name or "")
+            local actor = actorKind(entity)
+            if actor ~= 0 then
+                cell[2] = actor
+                cell[3] = entity.health.health or 0
+            end
+            if hasComponent(entity, "trap") and string.find(name, "spike", 1, true) then
+                cell[5] = 1
+            end
+            if string.find(name, "stairs", 1, true) then
+                cell[1] = 3
+            end
+        end
+    end
+end
+
 local function buildObservation(ev)
     local player = Player.getPlayerEntity(1)
     local grid = zeroGrid()
@@ -119,10 +175,24 @@ local function buildObservation(ev)
             maxHealth = player.health.maxHealth or health
         end
         local centre = math.floor(GRID_SIZE / 2) + 1
-        grid[centre][centre][1] = 1 -- floor
+        for row = 1, GRID_SIZE do
+            for column = 1, GRID_SIZE do
+                local x = player.position.x + column - centre
+                local y = player.position.y + row - centre
+                local visible = Vision.isVisible(x, y)
+                local revealed = visible or Vision.isRevealed(x, y)
+                if revealed and Tile.exists(x, y) then
+                    grid[row][column][1] = Tile.isSolid(x, y) and 2 or 1
+                    grid[row][column][6] = visible and 2 or 1
+                    if visible then
+                        encodeVisibleEntities(x, y, grid[row][column])
+                    end
+                end
+            end
+        end
+
         grid[centre][centre][2] = 1 -- player
         grid[centre][centre][3] = health
-        grid[centre][centre][6] = 2 -- visible now
 
         playerValues[1] = health
         playerValues[2] = maxHealth
@@ -139,6 +209,46 @@ local function buildObservation(ev)
         inventory = inventory,
         action_mask = mask,
     }
+end
+
+local function buildEntityDebug()
+    local player = Player.getPlayerEntity(1)
+    local result = {}
+    if not (player and player.position) then
+        return result
+    end
+    local centre = math.floor(GRID_SIZE / 2)
+    for y = player.position.y - centre, player.position.y + centre do
+        for x = player.position.x - centre, player.position.x + centre do
+            if Vision.isVisible(x, y) then
+                for _, entityID in ipairs(Map.getAll(x, y)) do
+                    local entity = Entities.getEntityByID(entityID)
+                    local components = {}
+                    for key, _ in pairs(entity and entity._components or {}) do
+                        components[#components + 1] = tostring(key)
+                    end
+                    table.sort(components)
+                    result[#result + 1] = {
+                        id = entity and entity.id or entityID,
+                        name = entity and entity.name or "",
+                        x = x,
+                        y = y,
+                        components = components,
+                        character = entity and hasComponent(entity, "character") or false,
+                        playable = entity and hasComponent(entity, "playableCharacter") or false,
+                        trap = entity and hasComponent(entity, "trap") or false,
+                        item = entity and hasComponent(entity, "item") or false,
+                        currency = entity and hasComponent(entity, "currency") or false,
+                        health = entity and hasComponent(entity, "health")
+                            and entity.health.health or 0,
+                        max_health = entity and hasComponent(entity, "health")
+                            and entity.health.maxHealth or 0,
+                    }
+                end
+            end
+        end
+    end
+    return result
 end
 
 local function emitTurn(ev)
@@ -168,6 +278,7 @@ local function emitTurn(ev)
         zone = CurrentLevel.getZone(),
         floor = CurrentLevel.getFloor(),
         observation = buildObservation(ev),
+        debug_entities = buildEntityDebug(),
         events = {},
         terminated = false,
         truncated = false,

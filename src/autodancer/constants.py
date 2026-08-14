@@ -55,6 +55,7 @@ class ActorKind(IntEnum):
     WARLOCK = 7
     BLADEMASTER = 8
     BOSS = 9
+    ZOMBIE = 10
 
 
 class ItemKind(IntEnum):

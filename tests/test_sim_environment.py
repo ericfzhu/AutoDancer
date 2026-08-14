@@ -6,7 +6,7 @@ import pytest
 from gymnasium.utils.env_checker import check_env
 
 import autodancer  # noqa: F401
-from autodancer.constants import Action, GridChannel
+from autodancer.constants import Action, GridChannel, Terrain
 from autodancer.envs.sim import AutoDancerSimEnv
 from autodancer.tasks import TASKS
 
@@ -94,3 +94,22 @@ def test_action_mask_tracks_bombs_and_inventory() -> None:
     assert observation["action_mask"][Action.BOMB] == 1
     observation, *_ = environment.step(Action.BOMB)
     assert observation["action_mask"][Action.BOMB] == 0
+
+
+def test_digging_consumes_a_turn_before_entering_the_tile() -> None:
+    """Matches the Bard live trace captured on game build 22938426."""
+    environment = AutoDancerSimEnv(task="navigation")
+    environment.reset(seed=2)
+    state = environment.state
+    assert state is not None
+    state.enemies.clear()
+    state.player.x, state.player.y = 2, 2
+    state.terrain[1, 2] = Terrain.WALL
+
+    _, _, _, _, info = environment.step(Action.UP)
+    assert state.player.position == (2, 2)
+    assert state.terrain[1, 2] == Terrain.FLOOR
+    assert [event["kind"] for event in info["raw_events"]][:1] == ["wall_dug"]
+
+    environment.step(Action.UP)
+    assert state.player.position == (2, 1)

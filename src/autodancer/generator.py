@@ -23,6 +23,8 @@ class EnemyDefinition:
 ENEMY_REGISTRY: dict[int, tuple[EnemyDefinition, ...]] = {
     1: (
         EnemyDefinition(ActorKind.GREEN_SLIME, 1, 1, 2),
+        EnemyDefinition(ActorKind.BLUE_SLIME, 2, 1, 2),
+        EnemyDefinition(ActorKind.ZOMBIE, 1, 1, 2),
         EnemyDefinition(ActorKind.SKELETON, 2, 1, 2),
         EnemyDefinition(ActorKind.BAT, 1, 1, 1),
     ),

@@ -21,16 +21,28 @@ from autodancer.constants import (
 
 LOG_MARKER = "AUTODANCER_JSON:"
 SCHEMA_VERSION = 1
+_JSON_DECODER = json.JSONDecoder()
 
 
 class ProtocolError(RuntimeError):
     pass
 
 
+def _decode_record_line(line: str, marker_index: int) -> dict[str, Any]:
+    """Decode one record while ignoring the game logger's trailing quote."""
+    payload = line[marker_index + len(LOG_MARKER) :].lstrip()
+    record, _ = _JSON_DECODER.raw_decode(payload)
+    if not isinstance(record, dict):
+        raise ProtocolError("An AutoDancer log record must be a JSON object")
+    return record
+
+
 class TurnSource(Protocol):
     def reset_sequence(self) -> None: ...
 
     def read(self, timeout: float) -> dict[str, Any]: ...
+
+    def read_latest(self, timeout: float) -> dict[str, Any]: ...
 
 
 class JsonlTurnSource:
@@ -56,16 +68,50 @@ class JsonlTurnSource:
                     self._offset = 0
                 with self.path.open("r", encoding="utf-8", errors="replace") as handle:
                     handle.seek(self._offset)
-                    while line := handle.readline():
+                    while True:
+                        line_offset = handle.tell()
+                        line = handle.readline()
+                        if not line:
+                            break
+                        if not line.endswith("\n"):
+                            self._offset = line_offset
+                            break
                         self._offset = handle.tell()
                         marker_index = line.find(LOG_MARKER)
                         if marker_index < 0:
                             continue
-                        record = json.loads(line[marker_index + len(LOG_MARKER) :])
+                        record = _decode_record_line(line, marker_index)
                         self._validate_sequence(record)
                         return record
             time.sleep(0.01)
         raise TimeoutError(f"No AutoDancer turn record arrived within {timeout:.1f} seconds")
+
+    def read_latest(self, timeout: float = 5.0) -> dict[str, Any]:
+        """Attach to the newest complete record already present in the log."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.path.exists():
+                latest: dict[str, Any] | None = None
+                with self.path.open("r", encoding="utf-8", errors="replace") as handle:
+                    while True:
+                        line_offset = handle.tell()
+                        line = handle.readline()
+                        if not line:
+                            break
+                        if not line.endswith("\n"):
+                            self._offset = line_offset
+                            break
+                        marker_index = line.find(LOG_MARKER)
+                        if marker_index >= 0:
+                            latest = _decode_record_line(line, marker_index)
+                        self._offset = handle.tell()
+                if latest is not None:
+                    self._validate_sequence(latest)
+                    return latest
+            time.sleep(0.01)
+        raise TimeoutError(
+            f"No existing AutoDancer turn record was found within {timeout:.1f} seconds"
+        )
 
     def _validate_sequence(self, record: dict[str, Any]) -> None:
         sequence = int(record.get("sequence", -1))
@@ -100,6 +146,10 @@ class QueueTurnSource:
             )
         self.expected_sequence = sequence + 1
         return record
+
+    def read_latest(self, timeout: float = 5.0) -> dict[str, Any]:
+        """Return the next queued state as the current attached state in tests."""
+        return self.read(timeout)
 
 
 def decode_observation(payload: dict[str, Any]) -> dict[str, np.ndarray]:
