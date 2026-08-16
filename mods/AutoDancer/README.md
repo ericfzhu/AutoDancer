@@ -8,7 +8,7 @@ ends.
    SYNCHRONY unpackaged-mod directory.
 2. Set `GAME_VERSION` and `STEAM_BUILD` in `scripts/AutoDancer.lua`.
 3. Open **Customize → Mods** and enable AutoDancer.
-4. Press Shift+F7 after a script change.
+4. Press **Shift+F7** after a script change.
 5. Keep the game focused during a live run and avoid manual input.
 6. Bind **F8** to a controlled restart for the default Windows adapter.
 
@@ -32,10 +32,39 @@ real game can supply reinforcement-learning transitions faster than normal play:
   by experimental `Turn.process` stepping.
 - **F5** stops either probe.
 
-Start `autodancer-benchmark-engine collect` before pressing F6 or F7. See
-`docs/engine-probe.md` in the repository for capture, comparison, and
-interpretation instructions. Accelerated stepping is not considered valid until
-its complete post-turn telemetry matches an equivalent normal-input run.
+Plain **F7** starts the accelerated probe; **Shift+F7** reloads scripts.
+
+For a formal comparison, start an **All Zones Seeded** run as Bard, enter a fixed
+seed, stop on the first playable turn, and do not make any manual move before
+starting the probe. Repeat the complete run with the same seed for:
+
+1. normal-input baseline A;
+2. normal-input baseline B;
+3. direct-process candidate.
+
+The two normal baselines must agree before the direct-process candidate is
+interpreted. All captures must report the requested telemetry seed and matching
+game build, character, mode, settings, action script, and command count.
+
+Start `autodancer-benchmark-engine collect` before pressing F6 or F7. The
+complete runbook in `docs/engine-probe.md` covers:
+
+- native-Windows setup and log discovery;
+- seeded run reproduction;
+- capture and comparison commands;
+- formal per-capture and per-seed acceptance criteria;
+- exit codes and common failure reasons;
+- throughput decision bands;
+- the real-engine-primary, hybrid, direct-input-only, limited-pool, and
+  simulator-first downstream paths.
+
+Accelerated stepping is not valid merely because it is fast. Its post-turn
+telemetry must match an equivalent repeated normal-input run, with contiguous
+command IDs, unit turn deltas, no unpaired telemetry, and no action mismatches.
+
+The current probe starts from a manually created seeded run. SYNCHRONY exposes
+seeded game modes and generator seed options, so automatic seeded start/reset is
+a feasible later step, but it is not implemented by this phase-one mod.
 
 The mod does not open files, sockets, or IPC channels. It contains no game
 assets and no copied game source.
