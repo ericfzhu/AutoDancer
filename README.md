@@ -1,10 +1,10 @@
 # AutoDancer
 
-AutoDancer is a simulator-first reinforcement learning project for **Crypt of
-the NecroDancer**. The target is a Bard policy that completes the four base-game
+AutoDancer is a reinforcement-learning project for **Crypt of the
+NecroDancer**. The target is a Bard policy that completes the four base-game
 zones without human demonstrations.
 
-The repository has two Gymnasium environments:
+The repository currently has two Gymnasium environments:
 
 - `AutoDancer-Sim-v0` is a fast deterministic Python simulator.
 - `AutoDancer-Live-v0` reads telemetry from a local SYNCHRONY mod and sends
@@ -13,14 +13,53 @@ The repository has two Gymnasium environments:
 The policy receives symbolic data rather than pixels. Both environments can
 render a `256 × 256` RGB image for inspection.
 
+## Current architecture experiment
+
+AutoDancer began as a simulator-first project. The project is now testing
+whether the real NecroDancer engine can produce enough trustworthy transitions
+to become the primary training environment or a high-value fine-tuning pool.
+
+The current phase-one experiment compares two direct game-engine paths in one
+seeded Bard run:
+
+- `necro.client.Input.add` with normal game-loop pacing;
+- `ClientActionBuffer.addAction` followed by experimental `Turn.process`
+  stepping.
+
+The experiment uses fixed **All Zones Seeded** runs, repeated normal-input
+controls, per-command acknowledgements, and complete post-action telemetry. A
+speed result is accepted only when command integrity passes and the accelerated
+state sequence is equivalent to the repeated normal-input baseline.
+
+Read the complete setup, formal acceptance criteria, exit codes, failure
+interpretation, and downstream decision tree in
+[`docs/engine-probe.md`](docs/engine-probe.md).
+
+The possible downstream paths are:
+
+1. **Real-engine-primary:** accelerated stepping is equivalent, reliable, and
+   fast enough to justify Python-to-Lua control and a 1→2→4→8 process pool.
+2. **Hybrid:** real-engine stepping is correct but only moderately fast, so the
+   simulator supplies bulk pretraining and the game supplies fine-tuning and
+   evaluation.
+3. **Direct-input-only:** `Input.add` is reliable but `Turn.process` diverges;
+   investigate turn-buffer semantics and overhead before testing time scaling.
+4. **Small real-engine pool:** one process works but multi-process scaling does
+   not, so a few game instances supplement simulator training.
+5. **Simulator-first:** real-engine stepping remains slow or unstable, while the
+   game continues to provide conformance evidence and final evaluation.
+
+Until this benchmark is complete, the repository retains both environments and
+makes no claim that real-engine bulk training is already viable.
+
 ## Current scope
 
 This release is the project foundation. It includes deterministic generation,
 visibility, movement, wall digging, dagger attacks and throws, enemy movement,
 health, stairs, spike traps, bombs, gold, floor and zone transitions, generated
 boss floors, six curriculum tasks, raw event logs, shaped rewards, live trace
-recording and comparison, recurrent PPO training, and recurrent policy export
-for native Windows inference.
+recording and comparison, recurrent PPO training, recurrent policy export for
+native Windows inference, and the phase-one direct-engine benchmark.
 
 The simulator contains clean-room approximations for enemies in Zones 1 to 4. It
 is not yet a frame-accurate copy of the full game. Add or change an exact rule
@@ -36,6 +75,16 @@ uv sync --extra test --extra train
 uv run pytest
 uv run ruff check .
 ```
+
+For the native-Windows real-engine probe:
+
+```powershell
+uv sync --extra test --extra windows
+uv run pytest tests/test_engine_benchmark.py
+```
+
+Then install the unpackaged SYNCHRONY mod and follow the seeded run procedure in
+[`docs/engine-probe.md`](docs/engine-probe.md).
 
 For simulator-only work, the base dependencies are enough. Add a platform extra
 for screen capture and live input when needed.
@@ -70,6 +119,11 @@ The task names are `navigation`, `single_enemy`, `mixed_room`, `floor`, `zone`,
 and `all_zones`. Training uses one policy across these tasks. See
 `src/autodancer/training/curriculum.py` for the adaptive task mixture and fixed
 seed splits.
+
+The real-engine benchmark uses the game's **All Zones Seeded** mode rather than
+the simulator seed ranges. A formal baseline/candidate pair is valid only when
+both telemetry records report the requested game seed and matching build,
+character, mode, settings, and action script.
 
 ## Training on a Windows desktop with the RTX 3070
 
@@ -138,12 +192,39 @@ game version and Steam build. The Windows controlled-restart key defaults to
 Protocol schema 2 gives every run a stable `run_id`, verifies consecutive turn
 sequence numbers, reports explicit `running`, `won`, `dead`, and `aborted`
 episode states, and applies a configurable client-side maximum-turn guard.
-Successful live runs now terminate as completed episodes rather than waiting
+Successful live runs terminate as completed episodes rather than waiting
 forever for another turn.
 
 The local Lua mod prints telemetry to the normal debug log. It does not open a
 file, network socket, or IPC channel. AutoDancer contains no game assets and no
 copied game source.
+
+## Real-engine benchmark acceptance summary
+
+The authoritative criteria are in `docs/engine-probe.md`. At minimum, every
+accepted capture must report:
+
+```text
+status == "completed"
+commands == target_commands
+command_ids_contiguous == true
+non_unit_turn_deltas == 0
+observed_action_mismatches == 0
+unpaired_probe_turns == 0
+malformed_probe_records == 0
+telemetry seed == requested seed
+```
+
+For each seed, two independent normal-input captures must be equivalent before
+the accelerated capture is evaluated. The movement smoke gate requires five
+fixed seeds. Combat, traps, bombs/items, stairs, death, and completion require
+additional semantic-coverage runs before accelerated turns can supply RL
+experience.
+
+The benchmark CLI returns `0` for a completed collection or equivalent
+comparison, `1` for a stopped/failed collection or differing comparison, and
+`2` when collection captured no probe turns. Preserve the emitted JSON on
+failure because it contains the diagnostic reason.
 
 ## Conformance work
 
