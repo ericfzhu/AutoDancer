@@ -18,27 +18,37 @@ local INVENTORY_SLOTS = 8
 local INVENTORY_FEATURES = 3
 local ACTION_COUNT = 11
 local LOG_MARKER = "AUTODANCER_JSON:"
+local SCHEMA_VERSION = 2
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
 local STEAM_BUILD = "22938426"
 
 local sequence = 0
-local lastRunIdentity = ""
+local runCounter = 0
+local activeRunID = ""
+local lastLevelIdentity = ""
 local pendingEvents = {}
 local playerDead = false
+local terminalEmitted = false
+local lastObservation = nil
+local lastContext = nil
 
 local function isLocalPlayer(entity)
     local player = Player.getPlayerEntity(1)
     return player ~= nil and entity ~= nil and entity.id == player.id
 end
 
-local function queueEvent(kind, amount, entity)
-    pendingEvents[#pendingEvents + 1] = {
+local function queueEvent(kind, amount, entity, data)
+    local value = {
         kind = kind,
         amount = amount or 0,
         entity_id = entity and entity.id or 0,
     }
+    if data then
+        value.data = data
+    end
+    pendingEvents[#pendingEvents + 1] = value
 end
 
 local function jsonEscape(value)
@@ -93,6 +103,17 @@ local function jsonEncode(value)
     return "{" .. table.concat(parts, ",") .. "}"
 end
 
+local function clone(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local result = {}
+    for key, item in pairs(value) do
+        result[key] = clone(item)
+    end
+    return result
+end
+
 local function zeroVector(length)
     local result = {}
     for index = 1, length do
@@ -117,12 +138,22 @@ local function zeroGrid()
     return result
 end
 
+local function emptyObservation()
+    return {
+        grid = zeroGrid(),
+        player = zeroVector(PLAYER_FEATURES),
+        inventory = zeroMatrix(INVENTORY_SLOTS, INVENTORY_FEATURES),
+        action_mask = zeroVector(ACTION_COUNT),
+    }
+end
+
 local function hasComponent(entity, component)
-    return Entities.typeHasComponent(entity.name, component) == true
+    return entity ~= nil and Entities.typeHasComponent(entity.name, component) == true
 end
 
 local function actorKind(entity)
-    if not (hasComponent(entity, "character") and hasComponent(entity, "health"))
+    if not entity
+        or not (hasComponent(entity, "character") and hasComponent(entity, "health"))
         or hasComponent(entity, "playableCharacter") then
         return 0
     end
@@ -229,16 +260,14 @@ local function encodeVisibleEntities(x, y, cell)
     end
 end
 
-local function buildObservation(ev)
+local function buildObservation()
     local player = Player.getPlayerEntity(1)
-    local grid = zeroGrid()
-    local playerValues = zeroVector(PLAYER_FEATURES)
-    local inventory = zeroMatrix(INVENTORY_SLOTS, INVENTORY_FEATURES)
-    local mask = zeroVector(ACTION_COUNT)
+    local result = emptyObservation()
+    local grid = result.grid
+    local playerValues = result.player
+    local inventory = result.inventory
+    local mask = result.action_mask
 
-    -- Cardinal movement is always representable. Bard has no native wait input.
-    -- Special actions stay masked
-    -- until their inventory mappings have a matching conformance trace.
     for index = 1, 4 do
         mask[index] = 1
     end
@@ -251,6 +280,7 @@ local function buildObservation(ev)
             maxHealth = player.health.maxHealth or health
         end
         local centre = math.floor(GRID_SIZE / 2) + 1
+        local visibleEnemies = 0
         for row = 1, GRID_SIZE do
             for column = 1, GRID_SIZE do
                 local x = player.position.x + column - centre
@@ -267,12 +297,15 @@ local function buildObservation(ev)
                     grid[row][column][6] = visible and 2 or 1
                     if visible then
                         encodeVisibleEntities(x, y, grid[row][column])
+                        if grid[row][column][2] > 1 then
+                            visibleEnemies = visibleEnemies + 1
+                        end
                     end
                 end
             end
         end
 
-        grid[centre][centre][2] = 1 -- player
+        grid[centre][centre][2] = 1
         grid[centre][centre][3] = health
 
         playerValues[1] = health
@@ -284,6 +317,8 @@ local function buildObservation(ev)
         playerValues[7] = CurrentLevel.getZone()
         playerValues[8] = CurrentLevel.getFloor()
         playerValues[9] = sequence
+        playerValues[12] = visibleEnemies
+        playerValues[13] = grid[centre][centre][1] == 3 and 1 or 0
 
         local slots = player.inventory and player.inventory.itemSlots or {}
         encodeInventoryItem(inventory, 1, slots.weapon and slots.weapon[1])
@@ -305,12 +340,7 @@ local function buildObservation(ev)
         mask[11] = inventory[6][1] ~= 0 and 1 or 0
     end
 
-    return {
-        grid = grid,
-        player = playerValues,
-        inventory = inventory,
-        action_mask = mask,
-    }
+    return result
 end
 
 local function buildEntityDebug()
@@ -347,50 +377,100 @@ local function buildEntityDebug()
     return result
 end
 
-local function emitTurn(ev)
-    if CurrentLevel.isLoading() or CurrentLevel.isLobby() then
-        return
-    end
-    local runIdentity = tostring(CurrentLevel.getSeed())
+local function currentContext()
+    return {
+        seed = CurrentLevel.getSeed(),
+        zone = CurrentLevel.getZone(),
+        floor = CurrentLevel.getFloor(),
+        character = Player.getCharacterType(1),
+    }
+end
+
+local function beginRunIfNeeded()
+    local levelIdentity = tostring(CurrentLevel.getSeed())
         .. ":" .. tostring(CurrentLevel.getUniqueID())
         .. ":" .. tostring(CurrentLevel.getSequentialNumber())
-    local kind = sequence == 0 and "reset" or "turn"
-    if lastRunIdentity == nil
-        or (CurrentLevel.getSequentialNumber() == 1 and runIdentity ~= lastRunIdentity) then
+    local newRun = activeRunID == ""
+        or (CurrentLevel.getSequentialNumber() == 1 and levelIdentity ~= lastLevelIdentity)
+    if newRun then
         sequence = 0
-        kind = "reset"
+        runCounter = runCounter + 1
+        activeRunID = tostring(CurrentLevel.getSeed())
+            .. ":" .. tostring(runCounter)
+            .. ":" .. tostring(CurrentLevel.getUniqueID())
+        pendingEvents = {}
+        playerDead = false
+        terminalEmitted = false
     end
-    lastRunIdentity = runIdentity
+    lastLevelIdentity = levelIdentity
+    return newRun
+end
 
+local function observationForStatus(observation, status)
+    local result = clone(observation or emptyObservation())
+    result.player[15] = status == "won" and 1 or 0
+    result.player[16] = status == "dead" and 1 or 0
+    return result
+end
+
+local function emitRecord(kind, status, observation, context, debugEntities)
+    if kind == "terminal" and terminalEmitted then
+        return
+    end
+    local terminated = status == "won" or status == "dead"
+    local truncated = status == "aborted"
     local record = {
-        schema_version = 1,
+        schema_version = SCHEMA_VERSION,
+        run_id = activeRunID,
         sequence = sequence,
         kind = kind,
         game = {
             version = GAME_VERSION,
             steam_build = STEAM_BUILD,
         },
-        seed = CurrentLevel.getSeed(),
-        character = Player.getCharacterType(1),
-        zone = CurrentLevel.getZone(),
-        floor = CurrentLevel.getFloor(),
-        observation = buildObservation(ev),
-        debug_entities = buildEntityDebug(),
+        seed = context.seed,
+        character = context.character,
+        zone = context.zone,
+        floor = context.floor,
+        observation = observationForStatus(observation, status),
+        debug_entities = debugEntities or {},
         events = pendingEvents,
-        terminated = playerDead,
-        truncated = false,
+        episode_status = status,
+        terminated = terminated,
+        truncated = truncated,
         metrics = {
             turns = sequence,
+            completed = status == "won" and 1 or 0,
+            deaths = status == "dead" and 1 or 0,
         },
     }
     print(LOG_MARKER .. jsonEncode(record))
+    lastObservation = clone(record.observation)
+    lastContext = clone(context)
     pendingEvents = {}
     playerDead = false
+    if kind == "terminal" then
+        terminalEmitted = true
+    end
     sequence = sequence + 1
 end
 
--- Capture only events involving the local player. Running after damage application
--- ensures suppression and armor have already finalized the event's damage value.
+local function emitTurn()
+    if CurrentLevel.isLoading() or CurrentLevel.isLobby() then
+        return
+    end
+    local newRun = beginRunIfNeeded()
+    local observation = buildObservation()
+    local context = currentContext()
+    local kind = newRun and "reset" or "turn"
+    local status = "running"
+    if playerDead and not newRun then
+        kind = "terminal"
+        status = "dead"
+    end
+    emitRecord(kind, status, observation, context, buildEntityDebug())
+end
+
 event.objectDealDamage.add("captureAutoDancerDamage", {
     order = "statistics",
     sequence = 100,
@@ -425,7 +505,7 @@ event.objectDeath.add("captureAutoDancerPlayerDeath", {
 }, function(ev)
     if isLocalPlayer(ev.entity) then
         playerDead = true
-        queueEvent("failure", 1, ev.entity)
+        queueEvent("failure", 1, ev.entity, { reason = "death" })
     end
 end)
 
@@ -436,6 +516,53 @@ event.objectCurrency.add("captureAutoDancerCurrencyPickup", {
     if isLocalPlayer(ev.entity) and ev.item and (ev.difference or 0) > 0 then
         queueEvent("item_collected", ev.difference, ev.item)
     end
+end)
+
+-- Victory occurs after the last normal turn, so it needs an explicit terminal
+-- record. Non-victory run completion is explicit too, preventing Python from
+-- waiting forever for another turn.
+event.runComplete.add("emitAutoDancerRunComplete", {
+    order = "menu",
+    sequence = -1,
+}, function(ev)
+    if terminalEmitted then
+        return
+    end
+    if activeRunID == "" then
+        if not CurrentLevel.isLobby() then
+            beginRunIfNeeded()
+        else
+            runCounter = runCounter + 1
+            activeRunID = "terminal:" .. tostring(runCounter)
+            sequence = 0
+            terminalEmitted = false
+        end
+    end
+    local victory = ev.summary and ev.summary.victory == true
+    local status
+    if victory then
+        status = "won"
+        queueEvent("success", 1, nil, { task_complete = true })
+    elseif playerDead then
+        status = "dead"
+    else
+        status = "aborted"
+        queueEvent("failure", 1, nil, { reason = "run_aborted" })
+    end
+    local observation = lastObservation
+    local context = lastContext
+    if not observation and not CurrentLevel.isLobby() and not CurrentLevel.isLoading() then
+        observation = buildObservation()
+        context = currentContext()
+    end
+    observation = observation or emptyObservation()
+    context = context or {
+        seed = 0,
+        zone = 0,
+        floor = 0,
+        character = "Bard",
+    }
+    emitRecord("terminal", status, observation, context, {})
 end)
 
 -- turnID is the last stable order key in the supported turn event.

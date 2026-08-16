@@ -5,9 +5,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from gymnasium.utils.env_checker import check_env
 
-from autodancer.constants import Action
+from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
 from autodancer.envs.live import AutoDancerLiveEnv
 from autodancer.live.protocol import (
     LOG_MARKER,
@@ -30,116 +29,203 @@ class FakeSender:
         self.restarts += 1
 
 
-class FakeCapture:
-    def capture(self) -> np.ndarray:
-        return np.zeros((256, 256, 3), dtype=np.uint8)
-
-
-class RepeatingSource:
-    def __init__(self) -> None:
-        self.sequence = 0
-        self.needs_reset = True
-
-    def reset_sequence(self) -> None:
-        self.sequence = 0
-        self.needs_reset = True
-
-    def read(self, timeout: float = 5.0) -> dict:
-        del timeout
-        payload = record(self.sequence, "reset" if self.needs_reset else "turn")
-        self.needs_reset = False
-        self.sequence += 1
-        return payload
-
-    def read_latest(self, timeout: float = 5.0) -> dict:
-        return self.read(timeout)
-
-
-def record(sequence: int, kind: str, events: list[dict] | None = None) -> dict:
+def record(
+    sequence: int,
+    kind: str,
+    *,
+    status: str = "running",
+    run_id: str = "run-7",
+    events: list[dict] | None = None,
+) -> dict:
+    terminal = status in {"won", "dead"}
+    truncated = status == "aborted"
+    mask = np.zeros(11, dtype=int)
+    if status == "running":
+        mask[:4] = 1
+    player = np.zeros(16, dtype=int)
+    player[PlayerFeature.HEALTH] = 6
+    player[PlayerFeature.MAX_HEALTH] = 6
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 1
+    player[PlayerFeature.WON] = int(status == "won")
+    player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "run_id": run_id,
         "sequence": sequence,
         "kind": kind,
-        "game": {"version": "4.2.0", "steam_build": "12345678"},
+        "game": {"version": "4.2.1", "steam_build": "22938426"},
         "character": "Bard",
         "seed": 7,
         "zone": 1,
         "floor": 1,
         "observation": {
             "grid": np.zeros((21, 21, 7), dtype=int).tolist(),
-            "player": np.zeros(16, dtype=int).tolist(),
+            "player": player.tolist(),
             "inventory": np.zeros((8, 3), dtype=int).tolist(),
-            "action_mask": np.ones(11, dtype=int).tolist(),
+            "action_mask": mask.tolist(),
         },
         "events": events or [],
-        "terminated": False,
-        "truncated": False,
+        "episode_status": status,
+        "terminated": terminal,
+        "truncated": truncated,
         "metrics": {"turns": sequence},
     }
 
 
-def test_live_environment_uses_same_schema_and_action_mapping() -> None:
+def test_live_victory_terminates_and_reports_completion() -> None:
     sender = FakeSender()
     source = QueueTurnSource(
-        [record(0, "reset"), record(1, "turn", [{"kind": "enemy_damage", "amount": 1}])]
+        [
+            record(0, "reset"),
+            record(
+                1,
+                "terminal",
+                status="won",
+                events=[{"kind": "success", "amount": 1, "data": {"task_complete": True}}],
+            ),
+        ]
     )
     environment = AutoDancerLiveEnv(
         turn_source=source,
         action_sender=sender,
-        frame_capture=FakeCapture(),
-        render_mode="rgb_array",
+        max_turns=10,
     )
-    observation, info = environment.reset()
-    assert environment.observation_space.contains(observation)
-    assert sender.restarts == 1
-    assert info["game"]["steam_build"] == "12345678"
-    _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
-    assert sender.actions == [Action.RIGHT]
-    assert reward == pytest.approx(0.049)
-    assert not terminated and not truncated
-    assert environment.render().shape == (256, 256, 3)
+    environment.reset()
+    observation, reward, terminated, truncated, info = environment.step(Action.RIGHT)
+    assert terminated and not truncated
+    assert info["episode_status"] == "won"
+    assert info["completed"] == 1
+    assert observation["player"][PlayerFeature.WON] == 1
+    assert reward == pytest.approx(0.999)
+    with pytest.raises(RuntimeError, match="episode ended"):
+        environment.step(Action.RIGHT)
 
 
-def test_live_environment_passes_gymnasium_check_with_fake_game() -> None:
+def test_live_adapter_rederives_deployment_features() -> None:
+    payload = record(0, "reset")
+    grid = np.asarray(payload["observation"]["grid"], dtype=int)
+    grid[10, 10, GridChannel.TERRAIN] = Terrain.STAIRS
+    grid[10, 11, GridChannel.ACTOR] = 2
+    grid[10, 11, GridChannel.VISIBILITY] = 2
+    payload["observation"]["grid"] = grid.tolist()
     environment = AutoDancerLiveEnv(
-        turn_source=RepeatingSource(), action_sender=FakeSender(), frame_capture=FakeCapture()
+        turn_source=QueueTurnSource([payload]),
+        action_sender=FakeSender(),
+        attach_existing=True,
+        task="all_zones",
     )
-    check_env(environment, skip_render_check=True)
+    observation, _ = environment.reset()
+    assert observation["player"][PlayerFeature.VISIBLE_ENEMIES] == 1
+    assert observation["player"][PlayerFeature.ON_STAIRS] == 1
+    assert observation["player"][PlayerFeature.TASK] == 5
 
 
-def test_live_protocol_detects_lost_turn() -> None:
+def test_live_environment_applies_client_turn_limit() -> None:
+    source = QueueTurnSource([record(0, "reset"), record(1, "turn")])
+    environment = AutoDancerLiveEnv(
+        turn_source=source,
+        action_sender=FakeSender(),
+        max_turns=1,
+    )
+    environment.reset()
+    _, reward, terminated, truncated, info = environment.step(Action.UP)
+    assert not terminated and truncated
+    assert info["episode_status"] == "aborted"
+    assert info["client_turn_limit"] == 1
+    assert reward == pytest.approx(-1.001)
+
+
+def test_terminal_record_may_mask_every_action() -> None:
+    validate_record(record(3, "terminal", status="won"))
+    payload = record(0, "reset")
+    payload["observation"]["action_mask"] = [0] * 11
+    with pytest.raises(ProtocolError, match="cannot mask every action"):
+        validate_record(payload)
+
+
+def test_protocol_detects_lost_turn_and_run_change() -> None:
     source = QueueTurnSource([record(0, "reset"), record(2, "turn")])
     source.read()
     with pytest.raises(ProtocolError, match="expected 1"):
         source.read()
 
+    source = QueueTurnSource(
+        [record(0, "reset"), record(1, "turn", run_id="another-run")]
+    )
+    source.read()
+    with pytest.raises(ProtocolError, match="Run identity changed"):
+        source.read()
+
+
+def test_protocol_rejects_invalid_observation_and_event() -> None:
+    payload = record(0, "reset")
+    payload["observation"]["action_mask"][0] = 2
+    with pytest.raises(ProtocolError, match="only 0 or 1"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
+    payload["events"] = [{"kind": "enemy_damage", "amount": -1}]
+    with pytest.raises(ProtocolError, match="at least 0"):
+        validate_record(payload)
+
+
+def test_log_source_establishes_boundary_before_fast_restart(tmp_path: Path) -> None:
+    path = tmp_path / "NecroDancer.log"
+    path.write_text("old line\n", encoding="utf-8")
+    source = JsonlTurnSource(path)
+    source.reset_sequence()
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(LOG_MARKER + json.dumps(record(0, "reset")) + "\n")
+    assert source.read(timeout=0.2)["sequence"] == 0
+
+
+def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
+    sender = FakeSender()
+    source = QueueTurnSource(
+        [
+            record(0, "reset"),
+            record(
+                1,
+                "turn",
+                events=[{"kind": "enemy_damage", "amount": 1}],
+            ),
+        ]
+    )
+    environment = AutoDancerLiveEnv(turn_source=source, action_sender=sender)
+    observation, info = environment.reset()
+    assert environment.observation_space.contains(observation)
+    assert sender.restarts == 1
+    assert info["protocol_schema_version"] == 2
+    _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
+    assert sender.actions == [Action.RIGHT]
+    assert reward == pytest.approx(0.049)
+    assert not terminated and not truncated
+    assert info["episode_status"] == "running"
+
 
 def test_queue_source_accepts_a_fresh_reset_after_attach() -> None:
-    source = QueueTurnSource([record(0, "reset"), record(0, "reset")])
+    source = QueueTurnSource(
+        [record(7, "turn"), record(0, "reset", run_id="new-run")]
+    )
     source.read_latest()
     assert source.read()["sequence"] == 0
 
 
-def test_log_source_reads_marker(tmp_path: Path) -> None:
-    path = tmp_path / "NecroDancer.log"
-    path.write_text("unrelated log\n" + LOG_MARKER + json.dumps(record(0, "reset")) + "\n")
-    source = JsonlTurnSource(path, start_at_end=False)
-    assert source.read(timeout=0.2)["sequence"] == 0
-
-
-def test_log_source_ignores_game_logger_suffix(tmp_path: Path) -> None:
+def test_log_source_reads_marker_and_logger_suffix(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer.log"
     path.write_text(
-        "[Debug] [info] '" + LOG_MARKER + json.dumps(record(0, "reset")) + "'\n"
+        "unrelated log\n[Debug] '" + LOG_MARKER + json.dumps(record(0, "reset")) + "'\n",
+        encoding="utf-8",
     )
     source = JsonlTurnSource(path, start_at_end=False)
-    assert source.read(timeout=0.2)["sequence"] == 0
+    assert source.read(timeout=0.2)["run_id"] == "run-7"
 
 
-def test_log_source_waits_for_complete_line(tmp_path: Path) -> None:
+def test_log_source_waits_for_a_complete_line(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer.log"
     payload = LOG_MARKER + json.dumps(record(0, "reset"))
-    path.write_text(payload[:-10])
+    path.write_text(payload[:-10], encoding="utf-8")
     source = JsonlTurnSource(path, start_at_end=False)
     with pytest.raises(TimeoutError):
         source.read(timeout=0.02)
@@ -157,7 +243,8 @@ def test_log_source_can_attach_to_latest_record(tmp_path: Path) -> None:
                 LOG_MARKER + json.dumps(record(4, "turn")),
             ]
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
     source = JsonlTurnSource(path)
     assert source.read_latest(timeout=0.2)["sequence"] == 4

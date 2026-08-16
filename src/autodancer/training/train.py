@@ -8,6 +8,15 @@ from typing import Any
 from autodancer.training.curriculum import CurriculumEnv
 
 
+def default_training_device() -> str:
+    """Prefer CUDA in Linux/WSL, while retaining a safe CPU fallback."""
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
+    return "gpu" if torch.cuda.is_available() else "cpu"
+
+
 def make_environment(
     full_env_name: str,
     cfg: Any,
@@ -45,7 +54,7 @@ def parse_arguments(argv: list[str] | None = None):
     parser.set_defaults(
         env="autodancer_curriculum",
         train_dir="runs",
-        device="cpu",
+        device=default_training_device(),
         num_workers=8,
         num_envs_per_worker=8,
         worker_num_splits=2,
@@ -65,8 +74,8 @@ def parse_arguments(argv: list[str] | None = None):
 def main() -> int:
     if sys.platform == "win32":
         print(
-            "Sample Factory does not support native Windows. Run AutoDancer "
-            "training on Linux, macOS, or WSL.",
+            "Sample Factory does not support native Windows. Train AutoDancer in "
+            "Linux or WSL2; WSL2 can use the host NVIDIA GPU when CUDA is configured.",
             file=sys.stderr,
         )
         return 2
@@ -74,7 +83,20 @@ def main() -> int:
     from sample_factory.train import run_rl
 
     register_components()
-    status = run_rl(parse_arguments())
+    cfg = parse_arguments()
+    if cfg.device == "gpu":
+        try:
+            import torch
+        except ImportError:
+            print("PyTorch is required for GPU training", file=sys.stderr)
+            return 2
+        if not torch.cuda.is_available():
+            print(
+                "GPU training was requested, but torch.cuda.is_available() is false.",
+                file=sys.stderr,
+            )
+            return 2
+    status = run_rl(cfg)
     return 0 if status == ExperimentStatus.SUCCESS else 1
 
 

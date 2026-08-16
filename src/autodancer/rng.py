@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 import numpy as np
 
@@ -21,3 +22,9 @@ class RandomChannels:
             self._channels[name] = np.random.default_rng(child_seed)
         return self._channels[name]
 
+    def snapshot(self) -> dict[str, Any]:
+        """Return serializable state for every random channel used so far."""
+        return {
+            name: generator.bit_generator.state
+            for name, generator in sorted(self._channels.items())
+        }

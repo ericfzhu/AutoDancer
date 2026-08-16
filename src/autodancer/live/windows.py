@@ -12,7 +12,6 @@ from autodancer.constants import RGB_SIZE, Action
 
 KeyChord = int | Sequence[int]
 
-
 DEFAULT_VIRTUAL_KEYS: dict[Action, KeyChord] = {
     Action.UP: 0x26,
     Action.RIGHT: 0x27,
@@ -26,6 +25,8 @@ DEFAULT_VIRTUAL_KEYS: dict[Action, KeyChord] = {
     Action.SPELL_2: (0x28, 0x27),
 }
 
+VK_F8 = 0x77
+
 
 class WindowsActionSender:
     """Send virtual-key presses to a focused NecroDancer window."""
@@ -36,7 +37,7 @@ class WindowsActionSender:
         self,
         virtual_keys: Mapping[Action, KeyChord] | None = None,
         *,
-        restart_virtual_key: int = 0x08,
+        restart_virtual_key: int = VK_F8,
         require_focus: bool = True,
         auto_focus: bool = True,
     ) -> None:
@@ -44,7 +45,7 @@ class WindowsActionSender:
             raise RuntimeError("WindowsActionSender is only available on Windows")
         self._user32 = ctypes.windll.user32
         self.virtual_keys = dict(virtual_keys or DEFAULT_VIRTUAL_KEYS)
-        self.restart_virtual_key = restart_virtual_key
+        self.restart_virtual_key = int(restart_virtual_key)
         self.require_focus = require_focus
         self.auto_focus = auto_focus
 
@@ -65,7 +66,8 @@ class WindowsActionSender:
                 return False
             return True
 
-        self._user32.EnumWindows(callback_type(visit), 0)
+        callback = callback_type(visit)
+        self._user32.EnumWindows(callback, 0)
         if not matches:
             raise RuntimeError("No visible Crypt of the NecroDancer window was found")
         return matches[0]
@@ -93,14 +95,20 @@ class WindowsActionSender:
     def _press(self, virtual_keys: KeyChord) -> None:
         self._assert_focus()
         chord = (virtual_keys,) if isinstance(virtual_keys, int) else tuple(virtual_keys)
+        if not chord:
+            raise ValueError("A key chord cannot be empty")
         for virtual_key in chord:
-            self._user32.keybd_event(virtual_key, 0, 0, 0)
+            self._user32.keybd_event(int(virtual_key), 0, 0, 0)
         time.sleep(0.01)
         for virtual_key in reversed(chord):
-            self._user32.keybd_event(virtual_key, 0, self.KEYEVENTF_KEYUP, 0)
+            self._user32.keybd_event(int(virtual_key), 0, self.KEYEVENTF_KEYUP, 0)
 
     def send_action(self, action: Action) -> None:
-        self._press(self.virtual_keys[action])
+        try:
+            chord = self.virtual_keys[Action(action)]
+        except (KeyError, ValueError) as error:
+            raise ValueError(f"Action {action!r} has no Windows key mapping") from error
+        self._press(chord)
 
     def restart(self) -> None:
         self._press(self.restart_virtual_key)

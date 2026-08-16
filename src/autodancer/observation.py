@@ -15,6 +15,7 @@ from autodancer.constants import (
     Action,
     ActorKind,
     GridChannel,
+    PlayerFeature,
     StatusFlag,
     Terrain,
 )
@@ -85,7 +86,6 @@ def action_mask(state: WorldState) -> np.ndarray:
     mask = np.zeros(ACTION_COUNT, dtype=np.int8)
     for action in (Action.UP, Action.RIGHT, Action.DOWN, Action.LEFT):
         mask[action] = 1
-    # Bard advances the turn on input and has no native no-op/wait binding.
     mask[Action.WAIT] = 0
     mask[Action.BOMB] = int(state.bombs > 0)
     mask[Action.ITEM_1] = int(state.inventory[1, 0] != 0)
@@ -131,25 +131,30 @@ def encode_observation(state: WorldState, task_index: int = 0) -> dict[str, np.n
                 status = StatusFlag.EXIT_LOCKED
             grid[gy, gx, GridChannel.STATUS] = status
 
-    player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
-    player[:] = (
-        state.player.health,
-        state.player.max_health,
-        state.gold,
-        state.groove,
-        state.player.x,
-        state.player.y,
-        state.zone,
-        state.floor,
-        state.turn,
-        state.bombs,
-        state.weapon_damage,
-        len(state.enemies),
-        int(state.player.position == state.stairs),
-        task_index,
-        int(state.won),
-        int(state.dead),
+    visible_enemies = int(
+        np.count_nonzero(
+            (grid[..., GridChannel.ACTOR] > ActorKind.PLAYER)
+            & (grid[..., GridChannel.VISIBILITY] == 2)
+        )
     )
+
+    player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
+    player[PlayerFeature.HEALTH] = state.player.health
+    player[PlayerFeature.MAX_HEALTH] = state.player.max_health
+    player[PlayerFeature.GOLD] = state.gold
+    player[PlayerFeature.GROOVE] = state.groove
+    player[PlayerFeature.X] = state.player.x
+    player[PlayerFeature.Y] = state.player.y
+    player[PlayerFeature.ZONE] = state.zone
+    player[PlayerFeature.FLOOR] = state.floor
+    player[PlayerFeature.TURN] = state.turn
+    player[PlayerFeature.BOMBS] = state.bombs
+    player[PlayerFeature.WEAPON_DAMAGE] = state.weapon_damage
+    player[PlayerFeature.VISIBLE_ENEMIES] = visible_enemies
+    player[PlayerFeature.ON_STAIRS] = int(state.player.position == state.stairs)
+    player[PlayerFeature.TASK] = task_index
+    player[PlayerFeature.WON] = int(state.won)
+    player[PlayerFeature.DEAD] = int(state.dead)
     return {
         "grid": grid,
         "player": player,

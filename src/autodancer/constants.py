@@ -37,6 +37,25 @@ class GridChannel(IntEnum):
     STATUS = 6
 
 
+class PlayerFeature(IntEnum):
+    HEALTH = 0
+    MAX_HEALTH = 1
+    GOLD = 2
+    GROOVE = 3
+    X = 4
+    Y = 5
+    ZONE = 6
+    FLOOR = 7
+    TURN = 8
+    BOMBS = 9
+    WEAPON_DAMAGE = 10
+    VISIBLE_ENEMIES = 11
+    ON_STAIRS = 12
+    TASK = 13
+    WON = 14
+    DEAD = 15
+
+
 class Terrain(IntEnum):
     UNKNOWN = 0
     FLOOR = 1
@@ -97,4 +116,3 @@ DIRECTION_DELTAS: dict[Action, tuple[int, int]] = {
     Action.DOWN: (0, 1),
     Action.LEFT: (-1, 0),
 }
-
