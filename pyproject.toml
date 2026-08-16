@@ -39,6 +39,7 @@ autodancer-export-policy = "autodancer.training.export:main"
 autodancer-live-run = "autodancer.live.run:main"
 autodancer-record-trace = "autodancer.live.record:main"
 autodancer-compare-trace = "autodancer.live.trace:main"
+autodancer-benchmark-engine = "autodancer.live.benchmark:main"
 autodancer-random-baseline = "autodancer.evaluation:main"
 autodancer-live-explore = "autodancer.live.explore:main"
 
