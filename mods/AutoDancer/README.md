@@ -21,5 +21,21 @@ The default Windows adapter supports movement and Bard multi-key actions. The
 macOS default mapping remains movement-only and is retained mainly for legacy
 development use.
 
+## Phase-one real-engine probe
+
+`EngineProbe.lua` is disabled until explicitly started. It benchmarks whether the
+real game can supply reinforcement-learning transitions faster than normal play:
+
+- **F6** drives a bounded movement script through `necro.client.Input.add` at
+  normal game-loop pacing.
+- **F7** drives the same script through `ClientActionBuffer.addAction` followed
+  by experimental `Turn.process` stepping.
+- **F5** stops either probe.
+
+Start `autodancer-benchmark-engine collect` before pressing F6 or F7. See
+`docs/engine-probe.md` in the repository for capture, comparison, and
+interpretation instructions. Accelerated stepping is not considered valid until
+its complete post-turn telemetry matches an equivalent normal-input run.
+
 The mod does not open files, sockets, or IPC channels. It contains no game
 assets and no copied game source.
