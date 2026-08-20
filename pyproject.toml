@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "autodancer"
 version = "0.1.0"
-description = "Simulator-first reinforcement learning environments for Crypt of the NecroDancer"
+description = "Lua-connected reinforcement learning environment for Crypt of the NecroDancer"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -20,27 +20,13 @@ train = [
   "tensorboard>=2.17",
   "torch>=2.3",
 ]
-macos = [
-  "pillow>=10.4",
-  "pyobjc-framework-Quartz>=10.3",
-]
-windows = [
-  "pillow>=10.4",
-]
 test = [
-  "hypothesis>=6.112",
   "pytest>=8.3",
   "ruff>=0.8",
 ]
 
 [project.scripts]
-autodancer-train = "autodancer.training.train:main"
-autodancer-export-policy = "autodancer.training.export:main"
 autodancer-live-run = "autodancer.live.run:main"
-autodancer-record-trace = "autodancer.live.record:main"
-autodancer-compare-trace = "autodancer.live.trace:main"
-autodancer-benchmark-engine = "autodancer.live.benchmark:main"
-autodancer-random-baseline = "autodancer.evaluation:main"
 autodancer-live-explore = "autodancer.live.explore:main"
 
 [tool.hatch.build.targets.wheel]

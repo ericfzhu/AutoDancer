@@ -8,6 +8,7 @@ import pytest
 
 from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
 from autodancer.envs.live import AutoDancerLiveEnv
+from autodancer.live.bridge import BridgeCommand
 from autodancer.live.protocol import (
     LOG_MARKER,
     JsonlTurnSource,
@@ -17,16 +18,18 @@ from autodancer.live.protocol import (
 )
 
 
-class FakeSender:
+class FakeBridge:
     def __init__(self) -> None:
         self.actions: list[Action] = []
         self.restarts = 0
 
-    def send_action(self, action: Action) -> None:
+    def send_action(self, action: Action) -> BridgeCommand:
         self.actions.append(action)
+        return BridgeCommand("test-session", len(self.actions), action, "ACTION")
 
-    def restart(self) -> None:
+    def restart(self) -> BridgeCommand:
         self.restarts += 1
+        return BridgeCommand("test-session", self.restarts, None, "RESTART")
 
 
 def record(
@@ -36,6 +39,8 @@ def record(
     status: str = "running",
     run_id: str = "run-7",
     events: list[dict] | None = None,
+    requested_action: Action | None = None,
+    command_id: int | None = None,
 ) -> dict:
     terminal = status in {"won", "dead"}
     truncated = status == "aborted"
@@ -50,7 +55,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id,
         "sequence": sequence,
         "kind": kind,
@@ -70,11 +75,20 @@ def record(
         "terminated": terminal,
         "truncated": truncated,
         "metrics": {"turns": sequence},
+        "bridge": None
+        if requested_action is None
+        else {
+            "session_id": "test-session",
+            "command_id": sequence if command_id is None else command_id,
+            "requested_action": int(requested_action),
+            "engine_action": 1,
+            "observed_action": 1,
+        },
     }
 
 
 def test_live_victory_terminates_and_reports_completion() -> None:
-    sender = FakeSender()
+    sender = FakeBridge()
     source = QueueTurnSource(
         [
             record(0, "reset"),
@@ -83,12 +97,13 @@ def test_live_victory_terminates_and_reports_completion() -> None:
                 "terminal",
                 status="won",
                 events=[{"kind": "success", "amount": 1, "data": {"task_complete": True}}],
+                requested_action=Action.RIGHT,
             ),
         ]
     )
     environment = AutoDancerLiveEnv(
         turn_source=source,
-        action_sender=sender,
+        bridge=sender,
         max_turns=10,
     )
     environment.reset()
@@ -111,21 +126,22 @@ def test_live_adapter_rederives_deployment_features() -> None:
     payload["observation"]["grid"] = grid.tolist()
     environment = AutoDancerLiveEnv(
         turn_source=QueueTurnSource([payload]),
-        action_sender=FakeSender(),
+        bridge=FakeBridge(),
         attach_existing=True,
-        task="all_zones",
     )
     observation, _ = environment.reset()
     assert observation["player"][PlayerFeature.VISIBLE_ENEMIES] == 1
     assert observation["player"][PlayerFeature.ON_STAIRS] == 1
-    assert observation["player"][PlayerFeature.TASK] == 5
+    assert observation["player"][PlayerFeature.TASK] == 0
 
 
 def test_live_environment_applies_client_turn_limit() -> None:
-    source = QueueTurnSource([record(0, "reset"), record(1, "turn")])
+    source = QueueTurnSource(
+        [record(0, "reset"), record(1, "turn", requested_action=Action.UP)]
+    )
     environment = AutoDancerLiveEnv(
         turn_source=source,
-        action_sender=FakeSender(),
+        bridge=FakeBridge(),
         max_turns=1,
     )
     environment.reset()
@@ -181,7 +197,7 @@ def test_log_source_establishes_boundary_before_fast_restart(tmp_path: Path) -> 
 
 
 def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
-    sender = FakeSender()
+    sender = FakeBridge()
     source = QueueTurnSource(
         [
             record(0, "reset"),
@@ -189,14 +205,15 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
                 1,
                 "turn",
                 events=[{"kind": "enemy_damage", "amount": 1}],
+                requested_action=Action.RIGHT,
             ),
         ]
     )
-    environment = AutoDancerLiveEnv(turn_source=source, action_sender=sender)
+    environment = AutoDancerLiveEnv(turn_source=source, bridge=sender)
     observation, info = environment.reset()
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 2
+    assert info["protocol_schema_version"] == 3
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.049)
@@ -254,11 +271,16 @@ def test_log_source_can_attach_to_latest_record(tmp_path: Path) -> None:
 
 
 def test_live_environment_can_attach_without_restart() -> None:
-    sender = FakeSender()
-    source = QueueTurnSource([record(7, "turn"), record(8, "turn")])
+    sender = FakeBridge()
+    source = QueueTurnSource(
+        [
+            record(7, "turn"),
+            record(8, "turn", requested_action=Action.LEFT, command_id=1),
+        ]
+    )
     environment = AutoDancerLiveEnv(
         turn_source=source,
-        action_sender=sender,
+        bridge=sender,
         attach_existing=True,
     )
     _, info = environment.reset()

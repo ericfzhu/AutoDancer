@@ -1,18 +1,12 @@
-"""Completion metrics for simulator and live policy evaluation."""
+"""Completion metrics for policies running against the live game."""
 
 from __future__ import annotations
 
-import argparse
-import json
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from autodancer.envs.sim import AutoDancerSimEnv
-from autodancer.training.curriculum import SEED_RANGES
 
 Policy = Callable[[dict[str, np.ndarray]], int]
 
@@ -53,11 +47,8 @@ def run_episode(
         observation, _, terminated, truncated, info = environment.step(action)
         steps += 1
 
-    unwrapped = getattr(environment, "unwrapped", environment)
-    state = getattr(unwrapped, "state", None)
     completed = (
         info.get("episode_status") == "won"
-        or bool(state is not None and state.won)
         or any(
             event.get("kind") == "success"
             and event.get("data", {}).get("task_complete", False)
@@ -92,35 +83,3 @@ def summarize(results: Iterable[EpisodeResult], source: str) -> dict[str, Any]:
         "mean_game_score": sum(result.game_score for result in episodes) / len(episodes),
         "results": [asdict(result) for result in episodes],
     }
-
-
-class MaskedRandomPolicy:
-    def __init__(self, seed: int = 0) -> None:
-        self.rng = np.random.default_rng(seed)
-
-    def __call__(self, observation: dict[str, np.ndarray]) -> int:
-        legal = np.flatnonzero(observation["action_mask"])
-        if not len(legal):
-            raise RuntimeError("The observation masks every action")
-        return int(self.rng.choice(legal))
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run an unseen-seed random baseline")
-    parser.add_argument("--episodes", type=int, default=10)
-    parser.add_argument("--output", type=Path)
-    arguments = parser.parse_args()
-    seeds = list(SEED_RANGES["test"][: arguments.episodes])
-    policy = MaskedRandomPolicy(seed=2026)
-    results = [
-        run_episode(AutoDancerSimEnv(task="all_zones"), policy, seed) for seed in seeds
-    ]
-    report = summarize(results, source="simulator")
-    payload = json.dumps(report, indent=2)
-    if arguments.output is not None:
-        arguments.output.write_text(payload + "\n", encoding="utf-8")
-    print(payload)
-
-
-if __name__ == "__main__":
-    main()

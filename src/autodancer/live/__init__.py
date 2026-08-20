@@ -1,2 +1,2 @@
-"""Live game protocol, input, capture, and conformance helpers."""
+"""Lua command bridge and live-game telemetry protocol."""
 

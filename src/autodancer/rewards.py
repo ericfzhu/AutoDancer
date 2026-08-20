@@ -1,9 +1,17 @@
-"""Reward calculation that is shared by simulator and live records."""
+"""Reward calculation for raw live-game events."""
 
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from autodancer.tasks import REWARD_VALUES
+REWARD_VALUES = {
+    "turn": -0.001,
+    "success": 1.0,
+    "failure": -1.0,
+    "enemy_damage": 0.05,
+    "enemy_kill": 0.1,
+    "player_damage": -0.1,
+    "reveal": 0.001,
+}
 
 
 def reward_from_event_dicts(

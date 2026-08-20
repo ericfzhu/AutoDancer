@@ -13,7 +13,6 @@ from torch import Tensor, nn
 
 from autodancer.envs.live import AutoDancerLiveEnv
 from autodancer.evaluation import run_episode, summarize
-from autodancer.tasks import TASKS
 
 
 def resolve_device(name: str) -> torch.device:
@@ -102,10 +101,10 @@ class RecurrentTorchPolicy:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run an exported policy in NecroDancer")
     parser.add_argument("log_path", type=Path)
+    parser.add_argument("command_path", type=Path)
     parser.add_argument("--policy", type=Path, required=True)
-    parser.add_argument("--task", choices=sorted(TASKS), default="all_zones")
     parser.add_argument("--episodes", type=int, default=1)
-    parser.add_argument("--max-turns", type=int)
+    parser.add_argument("--max-turns", type=int, default=10000)
     parser.add_argument("--turn-timeout", type=float, default=5.0)
     parser.add_argument("--attach-existing", action="store_true")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -114,7 +113,7 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.episodes <= 0:
         parser.error("--episodes must be positive")
-    max_turns = arguments.max_turns or TASKS[arguments.task].max_turns
+    max_turns = arguments.max_turns
     if max_turns <= 0:
         parser.error("--max-turns must be positive")
 
@@ -126,8 +125,8 @@ def main() -> int:
     )
     environment = AutoDancerLiveEnv(
         log_path=arguments.log_path,
+        command_path=arguments.command_path,
         attach_existing=arguments.attach_existing,
-        task=arguments.task,
         max_turns=max_turns,
         turn_timeout=arguments.turn_timeout,
     )

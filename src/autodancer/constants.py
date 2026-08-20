@@ -1,4 +1,4 @@
-"""Stable identifiers shared by the simulator, live adapter, and trace files."""
+"""Stable identifiers shared by the Lua mod and Python live adapter."""
 
 from enum import IntEnum
 

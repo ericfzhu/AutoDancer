@@ -1,8 +1,9 @@
 -- AutoDancer live telemetry for an unpackaged local SYNCHRONY mod.
 --
--- This script only uses the supported game API and print(). The game writes the
--- printed record to its normal debug log. Python tails that log. Set the two
--- build values before collecting a conformance trace.
+-- Python sends actions through Bridge.lua's command file. The resulting turn
+-- record is written to the normal debug log with the matching command ID.
+
+local Bridge = require "AutoDancer.scripts.Bridge"
 
 local CurrentLevel = require "necro.game.level.CurrentLevel"
 local Map = require "necro.game.object.Map"
@@ -18,7 +19,7 @@ local INVENTORY_SLOTS = 8
 local INVENTORY_FEATURES = 3
 local ACTION_COUNT = 11
 local LOG_MARKER = "AUTODANCER_JSON:"
-local SCHEMA_VERSION = 2
+local SCHEMA_VERSION = 3
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -413,7 +414,7 @@ local function observationForStatus(observation, status)
     return result
 end
 
-local function emitRecord(kind, status, observation, context, debugEntities)
+local function emitRecord(kind, status, observation, context, debugEntities, bridgeCommand)
     if kind == "terminal" and terminalEmitted then
         return
     end
@@ -432,6 +433,7 @@ local function emitRecord(kind, status, observation, context, debugEntities)
         character = context.character,
         zone = context.zone,
         floor = context.floor,
+        bridge = bridgeCommand,
         observation = observationForStatus(observation, status),
         debug_entities = debugEntities or {},
         events = pendingEvents,
@@ -468,7 +470,14 @@ local function emitTurn()
         kind = "terminal"
         status = "dead"
     end
-    emitRecord(kind, status, observation, context, buildEntityDebug())
+    emitRecord(
+        kind,
+        status,
+        observation,
+        context,
+        buildEntityDebug(),
+        Bridge.consumeCompletedCommand()
+    )
 end
 
 event.objectDealDamage.add("captureAutoDancerDamage", {
@@ -567,3 +576,14 @@ end)
 
 -- turnID is the last stable order key in the supported turn event.
 event.turn.add("emitAutoDancerTelemetry", {order = "turnID", sequence = -1}, emitTurn)
+
+-- Emit the policy's initial observation before Bridge.lua accepts its first
+-- command. This also bootstraps a mod hot-reloaded during an existing run.
+event.tick.add("emitAutoDancerInitialObservation", {
+    order = "input",
+    sequence = -100,
+}, function()
+    if activeRunID == "" and not CurrentLevel.isLoading() and not CurrentLevel.isLobby() then
+        emitTurn()
+    end
+end)

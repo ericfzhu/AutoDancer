@@ -1,4 +1,4 @@
-"""Shared symbolic observation schema."""
+"""Symbolic observation space exported by the Lua mod."""
 
 from __future__ import annotations
 
@@ -12,14 +12,7 @@ from autodancer.constants import (
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
     PLAYER_FEATURES,
-    Action,
-    ActorKind,
-    GridChannel,
-    PlayerFeature,
-    StatusFlag,
-    Terrain,
 )
-from autodancer.model import WorldState
 
 
 def observation_space() -> spaces.Dict:
@@ -46,118 +39,3 @@ def observation_space() -> spaces.Dict:
             "action_mask": spaces.Box(0, 1, shape=(ACTION_COUNT,), dtype=np.int8),
         }
     )
-
-
-def _line_visible(state: WorldState, x1: int, y1: int, x2: int, y2: int) -> bool:
-    dx = abs(x2 - x1)
-    dy = abs(y2 - y1)
-    sx = 1 if x1 < x2 else -1
-    sy = 1 if y1 < y2 else -1
-    error = dx - dy
-    x, y = x1, y1
-    while (x, y) != (x2, y2):
-        doubled = error * 2
-        if doubled > -dy:
-            error -= dy
-            x += sx
-        if doubled < dx:
-            error += dx
-            y += sy
-        if (x, y) != (x2, y2) and state.terrain[y, x] == Terrain.WALL:
-            return False
-    return True
-
-
-def update_visibility(state: WorldState, radius: int = GRID_SIZE // 2) -> int:
-    previous = state.explored.copy()
-    state.visible.fill(False)
-    px, py = state.player.position
-    for y in range(max(0, py - radius), min(state.height, py + radius + 1)):
-        for x in range(max(0, px - radius), min(state.width, px + radius + 1)):
-            if max(abs(x - px), abs(y - py)) <= radius and _line_visible(
-                state, px, py, x, y
-            ):
-                state.visible[y, x] = True
-    state.explored |= state.visible
-    return int(np.count_nonzero(state.explored & ~previous))
-
-
-def action_mask(state: WorldState) -> np.ndarray:
-    mask = np.zeros(ACTION_COUNT, dtype=np.int8)
-    for action in (Action.UP, Action.RIGHT, Action.DOWN, Action.LEFT):
-        mask[action] = 1
-    mask[Action.WAIT] = 0
-    mask[Action.BOMB] = int(state.bombs > 0)
-    mask[Action.ITEM_1] = int(state.inventory[1, 0] != 0)
-    mask[Action.ITEM_2] = int(state.inventory[2, 0] != 0)
-    mask[Action.THROW] = int(state.weapon_damage > 0)
-    mask[Action.SPELL_1] = int(state.inventory[4, 0] != 0)
-    mask[Action.SPELL_2] = int(state.inventory[5, 0] != 0)
-    return mask
-
-
-def encode_observation(state: WorldState, task_index: int = 0) -> dict[str, np.ndarray]:
-    grid = np.zeros((GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16)
-    radius = GRID_SIZE // 2
-    px, py = state.player.position
-    enemies_by_position = {enemy.position: enemy for enemy in state.enemies.values()}
-    bombs_by_position = {(bomb.x, bomb.y) for bomb in state.active_bombs}
-
-    for gy in range(GRID_SIZE):
-        world_y = py + gy - radius
-        for gx in range(GRID_SIZE):
-            world_x = px + gx - radius
-            if not state.in_bounds(world_x, world_y) or not state.explored[world_y, world_x]:
-                continue
-            visible = state.visible[world_y, world_x]
-            grid[gy, gx, GridChannel.TERRAIN] = state.terrain[world_y, world_x]
-            grid[gy, gx, GridChannel.VISIBILITY] = 2 if visible else 1
-            if not visible:
-                continue
-            if (world_x, world_y) == state.player.position:
-                grid[gy, gx, GridChannel.ACTOR] = ActorKind.PLAYER
-                grid[gy, gx, GridChannel.HEALTH] = state.player.health
-            elif enemy := enemies_by_position.get((world_x, world_y)):
-                grid[gy, gx, GridChannel.ACTOR] = enemy.kind
-                grid[gy, gx, GridChannel.HEALTH] = enemy.health
-            item = state.items.get((world_x, world_y))
-            if item is not None:
-                grid[gy, gx, GridChannel.ITEM] = item.kind
-            grid[gy, gx, GridChannel.TRAP] = state.traps[world_y, world_x]
-            status = StatusFlag.NONE
-            if (world_x, world_y) in bombs_by_position:
-                status = StatusFlag.BOMB
-            elif (world_x, world_y) == state.stairs and state.enemies:
-                status = StatusFlag.EXIT_LOCKED
-            grid[gy, gx, GridChannel.STATUS] = status
-
-    visible_enemies = int(
-        np.count_nonzero(
-            (grid[..., GridChannel.ACTOR] > ActorKind.PLAYER)
-            & (grid[..., GridChannel.VISIBILITY] == 2)
-        )
-    )
-
-    player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
-    player[PlayerFeature.HEALTH] = state.player.health
-    player[PlayerFeature.MAX_HEALTH] = state.player.max_health
-    player[PlayerFeature.GOLD] = state.gold
-    player[PlayerFeature.GROOVE] = state.groove
-    player[PlayerFeature.X] = state.player.x
-    player[PlayerFeature.Y] = state.player.y
-    player[PlayerFeature.ZONE] = state.zone
-    player[PlayerFeature.FLOOR] = state.floor
-    player[PlayerFeature.TURN] = state.turn
-    player[PlayerFeature.BOMBS] = state.bombs
-    player[PlayerFeature.WEAPON_DAMAGE] = state.weapon_damage
-    player[PlayerFeature.VISIBLE_ENEMIES] = visible_enemies
-    player[PlayerFeature.ON_STAIRS] = int(state.player.position == state.stairs)
-    player[PlayerFeature.TASK] = task_index
-    player[PlayerFeature.WON] = int(state.won)
-    player[PlayerFeature.DEAD] = int(state.dead)
-    return {
-        "grid": grid,
-        "player": player,
-        "inventory": state.inventory.astype(np.int16, copy=True),
-        "action_mask": action_mask(state),
-    }

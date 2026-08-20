@@ -1,0 +1,25 @@
+{
+  "command_ids_contiguous": true,
+  "commands": 0,
+  "latency_seconds": {
+    "maximum": null,
+    "median": null,
+    "minimum": null,
+    "p95": null,
+    "p99": null
+  },
+  "malformed_probe_records": 0,
+  "mode": null,
+  "non_unit_turn_deltas": 0,
+  "observed_action_mismatches": 0,
+  "probe_elapsed_seconds": null,
+  "probe_id": null,
+  "python_elapsed_seconds": 120.0,
+  "python_observed_turns_per_second": 0.0,
+  "reason": null,
+  "status": "timeout",
+  "target_commands": null,
+  "turn_delta_counts": {},
+  "turns_per_second": null,
+  "unpaired_probe_turns": 0
+}

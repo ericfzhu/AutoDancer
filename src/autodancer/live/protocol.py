@@ -28,7 +28,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
 RECORD_KINDS = frozenset({"reset", "turn", "terminal"})
 _JSON_DECODER = json.JSONDecoder()
@@ -251,6 +251,23 @@ def validate_record(record: Mapping[str, Any]) -> None:
     if not isinstance(metrics, Mapping):
         raise ProtocolError("Record metrics must be an object")
 
+    bridge = record.get("bridge")
+    if bridge is not None:
+        if not isinstance(bridge, Mapping):
+            raise ProtocolError("Record bridge acknowledgement must be an object")
+        session_id = bridge.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise ProtocolError("Bridge acknowledgement requires a session_id")
+        _integer(bridge.get("command_id"), "bridge command_id", minimum=1)
+        requested = _integer(
+            bridge.get("requested_action"), "bridge requested_action", minimum=0
+        )
+        if requested >= ACTION_COUNT:
+            raise ProtocolError(f"bridge requested_action must be below {ACTION_COUNT}")
+        _integer(bridge.get("engine_action"), "bridge engine_action", minimum=0)
+        if bridge.get("observed_action") is not None:
+            _integer(bridge["observed_action"], "bridge observed_action", minimum=0)
+
 
 class TurnSource(Protocol):
     def reset_sequence(self) -> None: ...
@@ -317,7 +334,7 @@ class JsonlTurnSource(_SequenceTracker):
 
     def reset_sequence(self) -> None:
         super().reset_sequence()
-        # Establish the boundary before LiveEnv sends the restart key so a fast
+        # Establish the boundary before LiveEnv publishes a restart command so a fast
         # reset record cannot be skipped by lazy start-at-end initialization.
         if self._offset is None and self.start_at_end:
             self._offset = self.path.stat().st_size if self.path.exists() else 0

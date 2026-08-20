@@ -1,4 +1,4 @@
-"""Bounded heuristic controller for autonomous live conformance collection."""
+"""Bounded heuristic controller for exercising the live Lua bridge."""
 
 from __future__ import annotations
 
@@ -229,9 +229,16 @@ class LiveExplorer:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Autonomously collect a bounded live trace")
     parser.add_argument("log_path", type=Path)
+    parser.add_argument("command_path", type=Path)
     parser.add_argument("--max-turns", type=int, default=100)
+    parser.add_argument("--turn-timeout", type=float, default=5.0)
     arguments = parser.parse_args()
-    environment = AutoDancerLiveEnv(log_path=arguments.log_path, attach_existing=True)
+    environment = AutoDancerLiveEnv(
+        log_path=arguments.log_path,
+        command_path=arguments.command_path,
+        attach_existing=True,
+        turn_timeout=arguments.turn_timeout,
+    )
     observation, info = environment.reset()
     explorer = LiveExplorer()
     floor = info.get("floor")
