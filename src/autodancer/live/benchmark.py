@@ -96,6 +96,14 @@ class ProbeCollector:
             self.finish = probe
 
 
+@dataclass(frozen=True, slots=True)
+class Capture:
+    start: dict[str, Any] | None
+    finish: dict[str, Any] | None
+    summary: dict[str, Any] | None
+    turns: list[dict[str, Any]]
+
+
 def collect_live(
     path: Path,
     *,
@@ -256,7 +264,10 @@ def _digest(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def load_capture(path: Path) -> list[dict[str, Any]]:
+def _load_capture(path: Path) -> Capture:
+    start: dict[str, Any] | None = None
+    finish: dict[str, Any] | None = None
+    summary: dict[str, Any] | None = None
     turns: list[dict[str, Any]] = []
     for line_number, line in enumerate(
         path.read_text(encoding="utf-8").splitlines(), start=1
@@ -264,44 +275,122 @@ def load_capture(path: Path) -> list[dict[str, Any]]:
         if not line.strip():
             continue
         value = json.loads(line)
-        if value.get("kind") == "turn":
+        if not isinstance(value, dict):
+            raise ValueError(f"Invalid capture record at {path}:{line_number}")
+        kind = value.get("kind")
+        if kind == "turn":
             if not isinstance(value.get("probe"), dict) or not isinstance(
                 value.get("telemetry"), dict
             ):
                 raise ValueError(f"Invalid turn record at {path}:{line_number}")
             turns.append(value)
-    return turns
+        elif kind == "start":
+            if start is not None or not isinstance(value.get("probe"), dict):
+                raise ValueError(f"Invalid start record at {path}:{line_number}")
+            start = value["probe"]
+        elif kind == "finish":
+            if finish is not None or not isinstance(value.get("probe"), dict):
+                raise ValueError(f"Invalid finish record at {path}:{line_number}")
+            finish = value["probe"]
+        elif kind == "summary":
+            if summary is not None or not isinstance(value.get("summary"), dict):
+                raise ValueError(f"Invalid summary record at {path}:{line_number}")
+            summary = value["summary"]
+        else:
+            raise ValueError(f"Unknown capture record kind at {path}:{line_number}")
+    return Capture(start=start, finish=finish, summary=summary, turns=turns)
+
+
+def load_capture(path: Path) -> list[dict[str, Any]]:
+    """Load captured turns while preserving the original public helper contract."""
+
+    return _load_capture(path).turns
+
+
+def _integrity_errors(capture: Capture) -> list[str]:
+    errors: list[str] = []
+    if capture.start is None:
+        errors.append("missing_start")
+    if capture.finish is None:
+        errors.append("missing_finish")
+    if capture.summary is None:
+        errors.append("missing_summary")
+        return errors
+
+    summary = capture.summary
+    commands = summary.get("commands")
+    target = summary.get("target_commands")
+    if summary.get("status") != "completed":
+        errors.append("status_not_completed")
+    if not isinstance(commands, int) or isinstance(commands, bool) or commands <= 0:
+        errors.append("commands_not_positive")
+    if not isinstance(target, int) or isinstance(target, bool) or target <= 0:
+        errors.append("target_commands_not_positive")
+    if commands != target:
+        errors.append("commands_do_not_match_target")
+    if commands != len(capture.turns):
+        errors.append("summary_turn_count_mismatch")
+    if summary.get("command_ids_contiguous") is not True:
+        errors.append("command_ids_not_contiguous")
+    for metric in (
+        "non_unit_turn_deltas",
+        "observed_action_mismatches",
+        "unpaired_probe_turns",
+        "malformed_probe_records",
+    ):
+        if summary.get(metric) != 0:
+            errors.append(metric)
+
+    if capture.finish is not None:
+        if capture.finish.get("status") != "completed":
+            errors.append("finish_status_not_completed")
+        if capture.finish.get("completed_commands") != target:
+            errors.append("finish_command_count_mismatch")
+    return errors
 
 
 def compare_captures(baseline: Path, candidate: Path) -> dict[str, Any]:
-    left = load_capture(baseline)
-    right = load_capture(candidate)
+    left_capture = _load_capture(baseline)
+    right_capture = _load_capture(candidate)
+    left = left_capture.turns
+    right = right_capture.turns
     compared = min(len(left), len(right))
     first_mismatch: dict[str, Any] | None = None
 
-    for index in range(compared):
-        left_probe = left[index]["probe"]
-        right_probe = right[index]["probe"]
-        if left_probe.get("requested_action") != right_probe.get("requested_action"):
-            first_mismatch = {
-                "command": index + 1,
-                "reason": "requested_action",
-                "baseline": left_probe.get("requested_action"),
-                "candidate": right_probe.get("requested_action"),
-            }
-            break
-        left_state = canonical_telemetry(left[index]["telemetry"])
-        right_state = canonical_telemetry(right[index]["telemetry"])
-        left_digest = _digest(left_state)
-        right_digest = _digest(right_state)
-        if left_digest != right_digest:
-            first_mismatch = {
-                "command": index + 1,
-                "reason": "telemetry_state",
-                "baseline_digest": left_digest,
-                "candidate_digest": right_digest,
-            }
-            break
+    baseline_errors = _integrity_errors(left_capture)
+    candidate_errors = _integrity_errors(right_capture)
+    if baseline_errors or candidate_errors:
+        first_mismatch = {
+            "command": 0,
+            "reason": "capture_integrity",
+            "baseline_errors": baseline_errors,
+            "candidate_errors": candidate_errors,
+        }
+
+    if first_mismatch is None:
+        for index in range(compared):
+            left_probe = left[index]["probe"]
+            right_probe = right[index]["probe"]
+            if left_probe.get("requested_action") != right_probe.get("requested_action"):
+                first_mismatch = {
+                    "command": index + 1,
+                    "reason": "requested_action",
+                    "baseline": left_probe.get("requested_action"),
+                    "candidate": right_probe.get("requested_action"),
+                }
+                break
+            left_state = canonical_telemetry(left[index]["telemetry"])
+            right_state = canonical_telemetry(right[index]["telemetry"])
+            left_digest = _digest(left_state)
+            right_digest = _digest(right_state)
+            if left_digest != right_digest:
+                first_mismatch = {
+                    "command": index + 1,
+                    "reason": "telemetry_state",
+                    "baseline_digest": left_digest,
+                    "candidate_digest": right_digest,
+                }
+                break
 
     if first_mismatch is None and len(left) != len(right):
         first_mismatch = {

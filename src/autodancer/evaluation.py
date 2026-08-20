@@ -65,7 +65,7 @@ def run_episode(
         )
     )
     return EpisodeResult(
-        seed=int((info.get("seed") if seed is None else seed) or 0),
+        seed=int(info.get("seed") if info.get("seed") is not None else seed),
         completed=completed,
         furthest_zone=int(info.get("zone", 0) or 0),
         furthest_floor=int(info.get("floor", 0) or 0),

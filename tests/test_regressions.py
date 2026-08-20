@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
-
 from autodancer.constants import ActorKind, PlayerFeature
 from autodancer.envs.sim import AutoDancerSimEnv
 from autodancer.model import Actor

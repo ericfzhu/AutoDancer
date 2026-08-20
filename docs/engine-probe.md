@@ -291,8 +291,10 @@ These bands can be revised when the target training-step budget is known.
 
 `autodancer-benchmark-engine compare` returns:
 
-- `0` — both captures are equivalent under the current canonical comparison;
-- `1` — the captures differ or have different lengths.
+- `0` — both captures are complete, pass the recorded integrity checks, and are
+  equivalent under the current canonical comparison;
+- `1` — either capture is incomplete or fails integrity, or the captures differ
+  or have different lengths.
 
 PowerShell exposes the code as `$LASTEXITCODE`. Preserve the JSON output even on
 non-zero exits because it contains the diagnostic reason.

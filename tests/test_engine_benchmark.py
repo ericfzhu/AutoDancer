@@ -11,6 +11,7 @@ from autodancer.live.benchmark import (
     summarize,
     write_capture,
 )
+from autodancer.live.benchmark import main as benchmark_main
 
 
 def _line(marker: str, value: dict) -> str:
@@ -112,6 +113,8 @@ def test_capture_comparison_ignores_entity_ids_but_detects_state_change(
         collector.feed_line(_line(PROBE_MARKER, _start()))
         collector.feed_line(_line(TELEMETRY_MARKER, _telemetry(1)))
         collector.feed_line(_line(PROBE_MARKER, _turn(1)))
+        collector.feed_line(_line(TELEMETRY_MARKER, _telemetry(2)))
+        collector.feed_line(_line(PROBE_MARKER, _turn(2)))
         collector.feed_line(_line(PROBE_MARKER, _finish()))
 
     baseline = tmp_path / "baseline.jsonl"
@@ -124,8 +127,38 @@ def test_capture_comparison_ignores_entity_ids_but_detects_state_change(
     changed.feed_line(_line(PROBE_MARKER, _start()))
     changed.feed_line(_line(TELEMETRY_MARKER, _telemetry(99)))
     changed.feed_line(_line(PROBE_MARKER, _turn(1)))
+    changed.feed_line(_line(TELEMETRY_MARKER, _telemetry(2)))
+    changed.feed_line(_line(PROBE_MARKER, _turn(2)))
     changed.feed_line(_line(PROBE_MARKER, _finish()))
     write_capture(candidate, changed, summarize(changed, 0.02))
     result = compare_captures(baseline, candidate)
     assert not result["equivalent"]
     assert result["first_mismatch"]["reason"] == "telemetry_state"
+
+
+def test_capture_comparison_rejects_empty_and_incomplete_captures(tmp_path: Path) -> None:
+    empty_a = tmp_path / "empty-a.jsonl"
+    empty_b = tmp_path / "empty-b.jsonl"
+    empty_a.write_text("", encoding="utf-8")
+    empty_b.write_text("", encoding="utf-8")
+
+    empty_result = compare_captures(empty_a, empty_b)
+    assert not empty_result["equivalent"]
+    assert empty_result["first_mismatch"]["reason"] == "capture_integrity"
+    assert "missing_finish" in empty_result["first_mismatch"]["baseline_errors"]
+    assert benchmark_main(["compare", str(empty_a), str(empty_b)]) == 1
+
+    partial_collector = ProbeCollector()
+    partial_collector.feed_line(_line(PROBE_MARKER, _start()))
+    partial_collector.feed_line(_line(TELEMETRY_MARKER, _telemetry(1)))
+    partial_collector.feed_line(_line(PROBE_MARKER, _turn(1)))
+    partial_a = tmp_path / "partial-a.jsonl"
+    partial_b = tmp_path / "partial-b.jsonl"
+    partial_summary = summarize(partial_collector, 0.02)
+    write_capture(partial_a, partial_collector, partial_summary)
+    write_capture(partial_b, partial_collector, partial_summary)
+
+    partial_result = compare_captures(partial_a, partial_b)
+    assert not partial_result["equivalent"]
+    assert partial_result["first_mismatch"]["reason"] == "capture_integrity"
+    assert "status_not_completed" in partial_result["first_mismatch"]["baseline_errors"]
