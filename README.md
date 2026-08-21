@@ -43,9 +43,27 @@ chunks, four update epochs, action masking, periodic deterministic evaluation,
 atomic checkpoints, and JSONL metrics. Continue an exact optimizer/model/RNG
 state with `--resume .\runs\bard-ppo\latest.pt`.
 
+Establish a reproducible gameplay baseline by comparing a checkpoint's
+deterministic policy with a masked-random policy on the same explicit seeds:
+
+```powershell
+uv run autodancer-baseline `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --checkpoint ".\runs\bard-ppo\final.pt" `
+  --num-instances 4 `
+  --seeds "17001,17002,17003,17004,17005,17006,17007,17008" `
+  --max-steps 256 `
+  --output ".\runs\bard-ppo\baseline.json"
+```
+
+The report records per-seed returns, survival, progress, gold, damage, kills,
+pickups, deaths, and completions for both policies, plus their aggregate deltas.
+
 The default action order is `up`, `right`, `down`, `left`, `wait`, `bomb`,
 `item 1`, `item 2`, `throw`, `spell 1`, and `spell 2`. Observations contain a
 `21 × 21 × 7` symbolic grid, a 16-value player vector, an `8 × 3` inventory,
 and an 11-value legal-action mask.
 
 See [`docs/protocol.md`](docs/protocol.md) for the schema-4 wire contract.
+The first measured live-training reference is recorded in
+[`docs/baseline.md`](docs/baseline.md).

@@ -31,6 +31,7 @@ autodancer-live-explore = "autodancer.live.explore:main"
 autodancer-live-start = "autodancer.live.start:main"
 autodancer-live-smoke = "autodancer.live.smoke:main"
 autodancer-train = "autodancer.training.train:main"
+autodancer-baseline = "autodancer.training.baseline:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]
