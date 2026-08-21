@@ -55,6 +55,10 @@ def test_dashboard_server_serves_html_and_json() -> None:
         with urlopen(f"{server.url}api/state", timeout=2) as response:  # noqa: S310
             payload = json.load(response)
         assert "AutoDancer — live Bard workers" in html
+        assert "height: 100%; overflow: hidden" in html
+        assert "function layoutCards(count)" in html
+        assert 'class="stat-row ${className}"' in html
+        assert 'statRow("Reward parts"' in html
         assert payload["status"] == "starting"
         assert payload["workers"] == []
     finally:

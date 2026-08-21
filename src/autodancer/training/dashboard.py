@@ -21,31 +21,61 @@ DASHBOARD_HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AutoDancer Live Workers</title>
 <style>
-:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  --cols: 1; --rows: 1; }
 * { box-sizing: border-box; }
-body { margin: 0; background: #090b10; color: #e8ecf2; }
-header { position: sticky; top: 0; z-index: 2; padding: 14px 18px; background: #11151ddd;
-  backdrop-filter: blur(8px); border-bottom: 1px solid #283142; }
-h1 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
-#summary { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #aab4c3; font-size: 13px; }
-#workers { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-  gap: 12px; padding: 12px; }
-.worker { background: #121722; border: 1px solid #273044; border-radius: 9px; overflow: hidden; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { margin: 0; display: grid; grid-template-rows: 48px minmax(0, 1fr);
+  background: #090b10; color: #e8ecf2; }
+header { z-index: 2; min-width: 0; padding: 7px 12px; display: grid;
+  grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 18px;
+  background: #11151ddd; backdrop-filter: blur(8px); border-bottom: 1px solid #283142; }
+h1 { margin: 0; font-size: 17px; line-height: 1; font-weight: 700; white-space: nowrap; }
+#summary { min-width: 0; display: flex; flex-wrap: nowrap; justify-content: flex-end;
+  gap: 5px 14px; overflow: hidden; color: #aab4c3; font-size: 12px; white-space: nowrap; }
+#summary span { flex: 0 0 auto; }
+#workers { min-width: 0; min-height: 0; display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr)); gap: 8px; padding: 8px;
+  overflow: hidden; }
+.worker { min-width: 0; min-height: 0; container-type: size; display: grid;
+  grid-template-rows: 30px minmax(0, 1fr) 23px; background: #121722;
+  border: 1px solid #273044; border-radius: 7px; overflow: hidden; }
 .worker.unhealthy { border-color: #d05252; }
-.worker-head { padding: 9px 11px; display: flex; justify-content: space-between; gap: 8px;
-  border-bottom: 1px solid #273044; font-size: 13px; }
-.worker-id { font-weight: 700; }
+.worker-head { min-width: 0; padding: 6px 8px; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; border-bottom: 1px solid #273044; font-size: 12px; }
+.worker-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.status { flex: 0 0 auto; }
 .running { color: #67d391; } .dead, .aborted { color: #ef7676; } .won { color: #ffd166; }
-.body { display: grid; grid-template-columns: minmax(252px, 1fr) 132px; gap: 9px; padding: 9px; }
-canvas { width: 100%; aspect-ratio: 1; background: #07090d; image-rendering: pixelated;
-  border: 1px solid #202838; border-radius: 4px; }
-.stats { font-size: 12px; color: #aeb8c8; line-height: 1.55; overflow-wrap: anywhere; }
-.stats b { color: #eef2f8; font-weight: 600; }
-.events { color: #f2c879; margin-top: 7px; }
-.legend { padding: 0 10px 10px; color: #7f8a9b; font-size: 11px; }
+.body { min-width: 0; min-height: 0; display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(112px, 31%, 180px); gap: 7px; padding: 7px; overflow: hidden; }
+canvas { align-self: center; justify-self: center; width: 100%; height: 100%; max-width: 100%;
+  max-height: 100%; aspect-ratio: 1; object-fit: contain; background: #07090d;
+  image-rendering: pixelated; border: 1px solid #202838; border-radius: 4px; }
+.stats { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 1px;
+  overflow: hidden; font-size: 11px; color: #aeb8c8; line-height: 1.25; }
+.stat-row { min-width: 0; display: flex; justify-content: space-between; gap: 5px;
+  padding: 1px 0; border-bottom: 1px solid #222b3a; }
+.stat-label { flex: 0 0 auto; color: #eef2f8; font-weight: 600; }
+.stat-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.dynamic { color: #f2c879; }
+.legend { min-width: 0; height: 23px; padding: 3px 8px; overflow: hidden;
+  color: #7f8a9b; font-size: 10px; white-space: nowrap; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 9px; }
 .dot:first-child { margin-left: 0; }
-@media (max-width: 480px) { .body { grid-template-columns: 1fr; } }
+@container (max-height: 285px) {
+  .worker { grid-template-rows: 26px minmax(0, 1fr) 0; }
+  .worker-head { padding: 4px 6px; font-size: 11px; }
+  .body { padding: 5px; gap: 5px; grid-template-columns: minmax(0, 1fr) clamp(104px, 34%, 150px); }
+  .stats { font-size: 10px; }
+  .legend, .secondary { display: none; }
+}
+@media (max-width: 700px) {
+  body { grid-template-rows: 42px minmax(0, 1fr); }
+  header { padding: 5px 8px; gap: 8px; }
+  h1 { font-size: 13px; }
+  #summary { font-size: 10px; gap: 4px 8px; }
+}
 </style>
 </head>
 <body>
@@ -57,10 +87,38 @@ const TERRAIN = ["#080a0e", "#252b34", "#687382", "#8a5dd1"];
 const workersNode = document.getElementById("workers");
 const summaryNode = document.getElementById("summary");
 let cards = new Map();
+let lastWorkerCount = 0;
 
 function fmt(value, digits=2) {
   if (value === null || value === undefined) return "—";
   return typeof value === "number" ? value.toFixed(digits).replace(/\.00$/, "") : value;
+}
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[character]);
+}
+function statRow(label, value, className="", title=value) {
+  return `<div class="stat-row ${className}"><span class="stat-label">${escapeHTML(label)}</span>
+    <span class="stat-value" title="${escapeHTML(title)}">${escapeHTML(value)}</span></div>`;
+}
+function layoutCards(count) {
+  lastWorkerCount = count;
+  if (!count) return;
+  const gap=8, padding=16, availableWidth=Math.max(window.innerWidth-padding,1);
+  const availableHeight=Math.max(workersNode.clientHeight-padding,1);
+  let best={score:-Infinity,cols:1,rows:count};
+  for (let cols=1; cols<=count; cols++) {
+    const rows=Math.ceil(count/cols);
+    const cellWidth=(availableWidth-gap*(cols-1))/cols;
+    const cellHeight=(availableHeight-gap*(rows-1))/rows;
+    const mapScale=Math.min(cellHeight-55, cellWidth*.68);
+    const narrowPenalty=cellWidth < 210 ? (210-cellWidth)*1.5 : 0;
+    const score=mapScale-narrowPenalty;
+    if (score > best.score) best={score,cols,rows};
+  }
+  workersNode.style.setProperty("--cols", best.cols);
+  workersNode.style.setProperty("--rows", best.rows);
 }
 function ensureCard(worker) {
   if (cards.has(worker.instance_id)) return cards.get(worker.instance_id);
@@ -108,14 +166,20 @@ function updateCard(worker) {
     .map(([k,v])=>`${k} ${Number(v).toFixed(3)}`).join(", ") || "turn pending";
   const inventory=(worker.inventory||[]).map((slot,index)=>({slot,index}))
     .filter(item=>item.slot.some(value=>value)).map(item=>`${item.index}:${item.slot.join("/")}`).join(", ") || "empty";
-  node.querySelector(".stats").innerHTML = `<b>Zone/floor</b> ${info.zone??0}-${info.floor??0}<br>
-    <b>HP</b> ${p[0]??0}/${p[1]??0}<br><b>Gold</b> ${p[2]??0} · <b>Bombs</b> ${p[9]??0}<br>
-    <b>Inventory</b> ${inventory}<br>
-    <b>Turn</b> ${info.turns??p[8]??0}<br><b>Action</b> ${action}<br><b>Reward</b> ${fmt(worker.reward,3)}<br>
-    <b>Seed</b> ${info.seed??"—"}<br><b>Run</b> ${info.run_id??"—"}<br>
-    <b>Latency</b> ${fmt(h.last_latency,3)}s<br><b>Restarts</b> ${h.restart_count??0}<br>
-    <div class="events"><b>Reward parts</b> ${rewardParts}</div>
-    <div class="events"><b>Events</b> ${events}</div>`;
+  node.querySelector(".stats").innerHTML = [
+    statRow("Zone/floor", `${info.zone??0}-${info.floor??0}`),
+    statRow("HP", `${p[0]??0}/${p[1]??0}`),
+    statRow("Gold · bombs", `${p[2]??0} · ${p[9]??0}`),
+    statRow("Turn", info.turns??p[8]??0),
+    statRow("Action", action),
+    statRow("Reward", fmt(worker.reward,3)),
+    statRow("Inventory", inventory, "secondary", inventory),
+    statRow("Seed", info.seed??"—", "secondary"),
+    statRow("Run", info.run_id??"—", "secondary", info.run_id??"—"),
+    statRow("Latency · restarts", `${fmt(h.last_latency,3)}s · ${h.restart_count??0}`, "secondary"),
+    statRow("Reward parts", rewardParts, "dynamic", rewardParts),
+    statRow("Events", events, "dynamic", events),
+  ].join("");
 }
 async function refresh() {
   try {
@@ -125,9 +189,12 @@ async function refresh() {
       <span>Update <b>${t.updates??0}</b></span><span>Throughput <b>${fmt(t.steps_per_second)} steps/s</b></span>
       <span>Episodes <b>${t.episodes??0}</b></span><span>Kills <b>${t.enemy_kills??0}</b></span>
       <span>Pickups <b>${t.items_collected??0}</b></span><span>Restarts <b>${t.worker_restarts??0}</b></span>`;
-    (state.workers||[]).forEach(updateCard);
+    const workers=state.workers||[];
+    workers.forEach(updateCard);
+    layoutCards(workers.length);
   } catch (error) { summaryNode.textContent=`Dashboard disconnected: ${error}`; }
 }
+window.addEventListener("resize", () => layoutCards(lastWorkerCount));
 setInterval(refresh, 500); refresh();
 </script>
 </body></html>"""
