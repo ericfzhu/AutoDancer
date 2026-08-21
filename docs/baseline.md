@@ -3,6 +3,9 @@
 This is the first measured AutoDancer baseline against the live game. It is a
 reference point for future experiments, not a claim of competent play.
 
+The schema-5 architecture and reward-v1 follow-up is recorded in
+[`reward-v1-baseline.md`](reward-v1-baseline.md).
+
 ## Run
 
 - Date: 2026-08-21
