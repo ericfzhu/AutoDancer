@@ -11,4 +11,3 @@ def _register(environment_id: str, entry_point: str, **kwargs: object) -> None:
 
 
 _register("AutoDancer-Live-v0", "autodancer.envs:AutoDancerLiveEnv")
-

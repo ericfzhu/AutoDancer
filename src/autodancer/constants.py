@@ -3,10 +3,11 @@
 from enum import IntEnum
 
 GRID_SIZE = 21
-GRID_CHANNELS = 7
+GRID_CHANNELS = 11
 PLAYER_FEATURES = 16
 INVENTORY_SLOTS = 8
-INVENTORY_FEATURES = 3
+INVENTORY_FEATURES = 4
+TYPE_VOCAB_SIZE = 4096
 RGB_SIZE = 256
 
 
@@ -28,13 +29,17 @@ ACTION_COUNT = len(Action)
 
 
 class GridChannel(IntEnum):
-    TERRAIN = 0
-    ACTOR = 1
-    HEALTH = 2
-    ITEM = 3
-    TRAP = 4
-    VISIBILITY = 5
-    STATUS = 6
+    TERRAIN_CLASS = 0
+    TERRAIN_TYPE = 1
+    ACTOR_CLASS = 2
+    ACTOR_TYPE = 3
+    HEALTH = 4
+    MAX_HEALTH = 5
+    ITEM_CLASS = 6
+    ITEM_TYPE = 7
+    TRAP = 8
+    VISIBILITY = 9
+    STATUS = 10
 
 
 class PlayerFeature(IntEnum):
@@ -79,6 +84,7 @@ class ActorKind(IntEnum):
     MONKEY = 12
     SKELETON_2 = 13
     DRAGON = 14
+    OTHER = 15
 
 
 class ItemKind(IntEnum):

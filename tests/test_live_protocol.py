@@ -25,15 +25,11 @@ class FakeBridge:
 
     def send_action(self, action: Action) -> BridgeCommand:
         self.actions.append(action)
-        return BridgeCommand(
-            "test-session", len(self.actions), action, "ACTION", "worker-0000"
-        )
+        return BridgeCommand("test-session", len(self.actions), action, "ACTION", "worker-0000")
 
     def reset(self, seed: int) -> BridgeCommand:
         self.restarts += 1
-        return BridgeCommand(
-            "test-session", self.restarts, None, "RESET", "worker-0000", seed
-        )
+        return BridgeCommand("test-session", self.restarts, None, "RESET", "worker-0000", seed)
 
     def restart(self) -> BridgeCommand:
         return self.reset(7)
@@ -62,7 +58,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "instance_id": "worker-0000",
         "role": "worker",
         "run_id": run_id,
@@ -74,9 +70,9 @@ def record(
         "zone": 1,
         "floor": 1,
         "observation": {
-            "grid": np.zeros((21, 21, 7), dtype=int).tolist(),
+            "grid": np.zeros((21, 21, 11), dtype=int).tolist(),
             "player": player.tolist(),
-            "inventory": np.zeros((8, 3), dtype=int).tolist(),
+            "inventory": np.zeros((8, 4), dtype=int).tolist(),
             "action_mask": mask.tolist(),
         },
         "events": events or [],
@@ -137,8 +133,8 @@ def test_live_victory_terminates_and_reports_completion() -> None:
 def test_live_adapter_rederives_deployment_features() -> None:
     payload = record(0, "reset")
     grid = np.asarray(payload["observation"]["grid"], dtype=int)
-    grid[10, 10, GridChannel.TERRAIN] = Terrain.STAIRS
-    grid[10, 11, GridChannel.ACTOR] = 2
+    grid[10, 10, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    grid[10, 11, GridChannel.ACTOR_CLASS] = 2
     grid[10, 11, GridChannel.VISIBILITY] = 2
     payload["observation"]["grid"] = grid.tolist()
     environment = AutoDancerLiveEnv(
@@ -153,9 +149,7 @@ def test_live_adapter_rederives_deployment_features() -> None:
 
 
 def test_live_environment_applies_client_turn_limit() -> None:
-    source = QueueTurnSource(
-        [record(0, "reset"), record(1, "turn", requested_action=Action.UP)]
-    )
+    source = QueueTurnSource([record(0, "reset"), record(1, "turn", requested_action=Action.UP)])
     environment = AutoDancerLiveEnv(
         turn_source=source,
         bridge=FakeBridge(),
@@ -183,9 +177,7 @@ def test_protocol_detects_lost_turn_and_run_change() -> None:
     with pytest.raises(ProtocolError, match="expected 1"):
         source.read()
 
-    source = QueueTurnSource(
-        [record(0, "reset"), record(1, "turn", run_id="another-run")]
-    )
+    source = QueueTurnSource([record(0, "reset"), record(1, "turn", run_id="another-run")])
     source.read()
     with pytest.raises(ProtocolError, match="Run identity changed"):
         source.read()
@@ -195,6 +187,11 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
     payload = record(0, "reset")
     payload["observation"]["action_mask"][0] = 2
     with pytest.raises(ProtocolError, match="only 0 or 1"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
+    payload["observation"]["inventory"][0][1] = 4096
+    with pytest.raises(ProtocolError, match="exact type identifier"):
         validate_record(payload)
 
     payload = record(0, "reset")
@@ -230,7 +227,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 4
+    assert info["protocol_schema_version"] == 5
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.049)
@@ -251,9 +248,7 @@ def test_live_reset_ignores_post_death_turn_before_reset() -> None:
 
 
 def test_queue_source_accepts_a_fresh_reset_after_attach() -> None:
-    source = QueueTurnSource(
-        [record(7, "turn"), record(0, "reset", run_id="new-run")]
-    )
+    source = QueueTurnSource([record(7, "turn"), record(0, "reset", run_id="new-run")])
     source.read_latest()
     assert source.read()["sequence"] == 0
 
@@ -326,19 +321,15 @@ def test_placeholder_build_is_rejected() -> None:
         validate_record(payload)
 
 
-def test_schema_four_rejects_cross_worker_and_mismatched_seed() -> None:
+def test_schema_five_rejects_cross_worker_and_mismatched_seed() -> None:
     payload = record(0, "reset")
     payload["instance_id"] = "worker-0001"
-    environment = AutoDancerLiveEnv(
-        turn_source=QueueTurnSource([payload]), bridge=FakeBridge()
-    )
+    environment = AutoDancerLiveEnv(turn_source=QueueTurnSource([payload]), bridge=FakeBridge())
     with pytest.raises(ProtocolError, match="Expected worker 'worker-0000'"):
         environment.reset(seed=7)
 
     payload = record(0, "reset")
     payload["seed"] = 8
-    environment = AutoDancerLiveEnv(
-        turn_source=QueueTurnSource([payload]), bridge=FakeBridge()
-    )
+    environment = AutoDancerLiveEnv(turn_source=QueueTurnSource([payload]), bridge=FakeBridge())
     with pytest.raises(ProtocolError, match="acknowledgement mismatch"):
         environment.reset(seed=7)

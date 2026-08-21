@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from autodancer.constants import Action, ActorKind, GridChannel, Terrain
+from autodancer.constants import (
+    GRID_CHANNELS,
+    INVENTORY_FEATURES,
+    Action,
+    ActorKind,
+    GridChannel,
+    Terrain,
+)
 from autodancer.live.explore import LiveExplorer
 
 
 def observation() -> dict[str, np.ndarray]:
-    grid = np.zeros((21, 21, 7), dtype=np.int16)
-    grid[10, 10, GridChannel.TERRAIN] = Terrain.FLOOR
+    grid = np.zeros((21, 21, GRID_CHANNELS), dtype=np.int16)
+    grid[10, 10, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
     grid[10, 10, GridChannel.VISIBILITY] = 2
     player = np.zeros(16, dtype=np.int32)
     action_mask = np.zeros(11, dtype=np.int8)
@@ -16,16 +23,16 @@ def observation() -> dict[str, np.ndarray]:
     return {
         "grid": grid,
         "player": player,
-        "inventory": np.zeros((8, 3), dtype=np.int16),
+        "inventory": np.zeros((8, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": action_mask,
     }
 
 
 def test_explorer_attacks_adjacent_visible_enemy() -> None:
     value = observation()
-    value["grid"][10, 11, GridChannel.TERRAIN] = Terrain.FLOOR
+    value["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
     value["grid"][10, 11, GridChannel.VISIBILITY] = 2
-    value["grid"][10, 11, GridChannel.ACTOR] = ActorKind.GREEN_SLIME
+    value["grid"][10, 11, GridChannel.ACTOR_CLASS] = ActorKind.GREEN_SLIME
     assert LiveExplorer().choose(value) == Action.RIGHT
 
 
@@ -35,7 +42,7 @@ def test_explorer_advances_into_unexplored_frontier() -> None:
 
 def test_explorer_prioritizes_visible_stairs() -> None:
     value = observation()
-    value["grid"][10, 11, GridChannel.TERRAIN] = Terrain.STAIRS
+    value["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
     value["grid"][10, 11, GridChannel.VISIBILITY] = 2
     explorer = LiveExplorer()
     assert explorer.choose(value) == Action.RIGHT
@@ -49,9 +56,7 @@ def test_route_preserves_zero_valued_up_as_first_action() -> None:
         (0, -1): Terrain.FLOOR,
         (1, -1): Terrain.STAIRS,
     }
-    assert (
-        explorer._route((0, 0), {(1, -1)}, allow_final_unknown=False) == Action.UP
-    )
+    assert explorer._route((0, 0), {(1, -1)}, allow_final_unknown=False) == Action.UP
 
 
 def test_reset_level_discards_previous_floor_routing_state() -> None:
@@ -80,7 +85,7 @@ def test_explorer_rotates_fallback_actions_after_frontiers_are_exhausted() -> No
 
 def test_explorer_attempts_an_indestructible_wall_only_once() -> None:
     value = observation()
-    value["grid"][9, 10, GridChannel.TERRAIN] = Terrain.WALL
+    value["grid"][9, 10, GridChannel.TERRAIN_CLASS] = Terrain.WALL
     value["grid"][9, 10, GridChannel.VISIBILITY] = 2
     explorer = LiveExplorer()
     assert explorer.choose(value) == Action.RIGHT
@@ -97,18 +102,18 @@ def test_explorer_attempts_an_indestructible_wall_only_once() -> None:
 
 def test_explorer_does_not_route_through_a_known_bounce_trap() -> None:
     value = observation()
-    value["grid"][10, 11, GridChannel.TERRAIN] = Terrain.FLOOR
+    value["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
     value["grid"][10, 11, GridChannel.TRAP] = 2
     value["grid"][10, 11, GridChannel.VISIBILITY] = 2
-    value["grid"][10, 12, GridChannel.TERRAIN] = Terrain.FLOOR
-    value["grid"][10, 12, GridChannel.ACTOR] = ActorKind.GREEN_SLIME
+    value["grid"][10, 12, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
+    value["grid"][10, 12, GridChannel.ACTOR_CLASS] = ActorKind.GREEN_SLIME
     value["grid"][10, 12, GridChannel.VISIBILITY] = 2
     assert LiveExplorer().choose(value) != Action.RIGHT
 
 
 def test_explorer_does_not_revisit_an_exhausted_frontier() -> None:
     value = observation()
-    value["grid"][10, 11, GridChannel.TERRAIN] = Terrain.FLOOR
+    value["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
     value["grid"][10, 11, GridChannel.VISIBILITY] = 2
     explorer = LiveExplorer()
     explorer.update(value)

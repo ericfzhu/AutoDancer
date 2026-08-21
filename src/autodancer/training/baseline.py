@@ -18,7 +18,7 @@ from autodancer.constants import PlayerFeature
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
-from autodancer.training.model import RecurrentActorCritic
+from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
 
@@ -69,9 +69,7 @@ class EpisodeAccumulator:
         return {**asdict(self), "status": status}
 
 
-def masked_random_actions(
-    action_mask: np.ndarray, rng: np.random.Generator
-) -> np.ndarray:
+def masked_random_actions(action_mask: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     actions: list[int] = []
     for mask in action_mask:
         legal = np.flatnonzero(mask)
@@ -86,8 +84,7 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         raise ValueError("At least one episode is required")
     count = len(episodes)
     progress = [
-        max(int(episode["furthest_zone"]) - 1, 0) * 4
-        + int(episode["furthest_floor"])
+        max(int(episode["furthest_zone"]) - 1, 0) * 4 + int(episode["furthest_floor"])
         for episode in episodes
     ]
     return {
@@ -96,8 +93,7 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "completion_rate": sum(episode["status"] == "won" for episode in episodes) / count,
         "death_rate": sum(episode["status"] == "dead" for episode in episodes) / count,
         "abort_rate": sum(episode["status"] == "aborted" for episode in episodes) / count,
-        "step_limit_rate": sum(episode["status"] == "step_limit" for episode in episodes)
-        / count,
+        "step_limit_rate": sum(episode["status"] == "step_limit" for episode in episodes) / count,
         "mean_return": float(np.mean([episode["episode_return"] for episode in episodes])),
         "mean_turns": float(np.mean([episode["turns"] for episode in episodes])),
         "mean_progress": float(np.mean(progress)),
@@ -125,9 +121,7 @@ def compare_summaries(reference: dict[str, Any], trained: dict[str, Any]) -> dic
         "enemy_damage",
         "player_damage",
     )
-    return {
-        f"{field}_delta": float(trained[field]) - float(reference[field]) for field in fields
-    }
+    return {f"{field}_delta": float(trained[field]) - float(reference[field]) for field in fields}
 
 
 def _model_actions(
@@ -135,8 +129,12 @@ def _model_actions(
     observation: dict[str, np.ndarray],
     hidden: Tensor,
     device: torch.device,
+    previous_actions: np.ndarray,
+    previous_rewards: np.ndarray,
 ) -> tuple[np.ndarray, Tensor]:
     tensors = {key: torch.from_numpy(value).to(device) for key, value in observation.items()}
+    tensors["previous_action"] = torch.from_numpy(previous_actions).to(device)
+    tensors["previous_reward"] = torch.from_numpy(previous_rewards).to(device)
     with torch.inference_mode():
         actions, _, _, _, next_hidden = model.act(tensors, hidden, deterministic=True)
     return actions.cpu().numpy(), next_hidden
@@ -146,7 +144,7 @@ def zero_hidden_rows(hidden: Tensor, indices: list[int]) -> Tensor:
     """Reset selected recurrent slots without mutating inference tensors."""
     keep = torch.ones(hidden.shape[0], dtype=hidden.dtype, device=hidden.device)
     keep[indices] = 0
-    return hidden * keep.unsqueeze(-1)
+    return hidden * keep.reshape(hidden.shape[0], *([1] * (hidden.ndim - 1)))
 
 
 def evaluate_live_policy(
@@ -183,6 +181,8 @@ def evaluate_live_policy(
         hidden = (
             model.initial_state(environment.num_envs, device=device) if model is not None else None
         )
+        previous_actions = np.full(environment.num_envs, START_ACTION, dtype=np.int64)
+        previous_rewards = np.zeros(environment.num_envs, dtype=np.float32)
 
         while any(accumulator is not None for accumulator in accumulators):
             if model is None:
@@ -190,7 +190,9 @@ def evaluate_live_policy(
                 next_hidden = None
             else:
                 assert hidden is not None
-                actions, next_hidden = _model_actions(model, observation, hidden, device)
+                actions, next_hidden = _model_actions(
+                    model, observation, hidden, device, previous_actions, previous_rewards
+                )
             next_observation, rewards, terminated, truncated, step_infos = environment.step(actions)
             reset_indices: list[int] = []
             for index, accumulator in enumerate(accumulators):
@@ -229,6 +231,10 @@ def evaluate_live_policy(
                     next_hidden = zero_hidden_rows(next_hidden, reset_indices)
             observation = next_observation
             hidden = next_hidden
+            previous_actions = actions.astype(np.int64, copy=True)
+            previous_rewards = rewards.astype(np.float32, copy=True)
+            previous_actions[reset_indices] = START_ACTION
+            previous_rewards[reset_indices] = 0.0
     return results
 
 
@@ -243,7 +249,10 @@ def _checkpoint_hash(path: Path) -> str:
 def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
-    model = RecurrentActorCritic().to(device)
+    expected = RecurrentActorCritic(ModelConfig())
+    if payload.get("architecture") != expected.architecture_spec():
+        raise ValueError("Checkpoint model architecture is incompatible with the schema-5 policy")
+    model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
     config = SupervisorConfig(

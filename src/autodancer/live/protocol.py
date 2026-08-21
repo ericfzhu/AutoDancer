@@ -28,7 +28,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
@@ -76,9 +76,7 @@ def _integer_array(
     except (TypeError, ValueError) as error:
         raise ProtocolError(f"Observation field {label!r} is not a rectangular array") from error
     if raw.shape != shape:
-        raise ProtocolError(
-            f"Observation field {label!r} has shape {raw.shape}; expected {shape}"
-        )
+        raise ProtocolError(f"Observation field {label!r} has shape {raw.shape}; expected {shape}")
     if not np.issubdtype(raw.dtype, np.integer):
         raise ProtocolError(f"Observation field {label!r} must contain integers")
     return raw.astype(dtype, copy=False)
@@ -116,10 +114,14 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
 
     grid = observation["grid"]
     channel_ranges = {
-        GridChannel.TERRAIN: (0, len(Terrain) - 1),
-        GridChannel.ACTOR: (0, len(ActorKind) - 1),
+        GridChannel.TERRAIN_CLASS: (0, len(Terrain) - 1),
+        GridChannel.TERRAIN_TYPE: (0, 4095),
+        GridChannel.ACTOR_CLASS: (0, len(ActorKind) - 1),
+        GridChannel.ACTOR_TYPE: (0, 4095),
         GridChannel.HEALTH: (0, 32767),
-        GridChannel.ITEM: (0, len(ItemKind) - 1),
+        GridChannel.MAX_HEALTH: (0, 32767),
+        GridChannel.ITEM_CLASS: (0, len(ItemKind) - 1),
+        GridChannel.ITEM_TYPE: (0, 4095),
         GridChannel.TRAP: (0, len(TrapKind) - 1),
         GridChannel.VISIBILITY: (0, 2),
         GridChannel.STATUS: (0, len(StatusFlag) - 1),
@@ -136,6 +138,8 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         raise ProtocolError("Inventory values cannot be negative")
     if np.any(inventory[:, 0] >= len(ItemKind)):
         raise ProtocolError("Inventory contains an unknown item identifier")
+    if np.any(inventory[:, 1] >= 4096):
+        raise ProtocolError("Inventory contains an out-of-range exact type identifier")
 
     mask = observation["action_mask"]
     if np.any((mask != 0) & (mask != 1)):

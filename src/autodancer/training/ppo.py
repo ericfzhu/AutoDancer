@@ -130,8 +130,8 @@ class RecurrentPPO:
                 old_log_probs = self._chunks(rollout.old_log_probs, selected).to(self.device)
                 batch_advantages = self._chunks(advantages, selected).to(self.device)
                 batch_returns = self._chunks(returns, selected).to(self.device)
-                episode_starts = self._chunks(rollout.episode_starts, selected).bool().to(
-                    self.device
+                episode_starts = (
+                    self._chunks(rollout.episode_starts, selected).bool().to(self.device)
                 )
                 initial_hidden = torch.stack(
                     [rollout.hiddens[start, worker] for worker, start in selected]
@@ -177,6 +177,7 @@ class RecurrentPPO:
         temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         payload = {
             "model": self.model.state_dict(),
+            "architecture": self.model.architecture_spec(),
             "optimizer": self.optimizer.state_dict(),
             "config": asdict(self.config),
             "global_step": self.global_step,
@@ -192,6 +193,10 @@ class RecurrentPPO:
 
     def load(self, path: str | Path) -> dict[str, Any]:
         payload = torch.load(Path(path), map_location=self.device, weights_only=False)
+        if payload.get("architecture") != self.model.architecture_spec():
+            raise ValueError(
+                "Checkpoint model architecture is incompatible with the schema-5 policy"
+            )
         if payload.get("config") != asdict(self.config):
             raise ValueError("Checkpoint PPO configuration does not match the current run")
         self.model.load_state_dict(payload["model"])

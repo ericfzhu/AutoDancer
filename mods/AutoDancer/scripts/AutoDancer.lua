@@ -13,13 +13,13 @@ local Vision = require "necro.game.vision.Vision"
 local Entities = require "system.game.Entities"
 
 local GRID_SIZE = 21
-local GRID_CHANNELS = 7
+local GRID_CHANNELS = 11
 local PLAYER_FEATURES = 16
 local INVENTORY_SLOTS = 8
-local INVENTORY_FEATURES = 3
+local INVENTORY_FEATURES = 4
 local ACTION_COUNT = 11
 local LOG_MARKER = "AUTODANCER_JSON:"
-local SCHEMA_VERSION = 4
+local SCHEMA_VERSION = 5
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -152,6 +152,16 @@ local function hasComponent(entity, component)
     return entity ~= nil and Entities.typeHasComponent(entity.name, component) == true
 end
 
+-- Deterministic across Lua processes and runs. Zero means "no type".
+local function typeID(name)
+    local hash = 0
+    name = string.lower(name or "")
+    for index = 1, #name do
+        hash = (hash * 31 + string.byte(name, index)) % 4095
+    end
+    return #name > 0 and hash + 1 or 0
+end
+
 local function actorKind(entity)
     if not entity
         or not (hasComponent(entity, "character") and hasComponent(entity, "health"))
@@ -186,7 +196,7 @@ local function actorKind(entity)
     elseif hasComponent(entity, "boss") then
         return 9
     end
-    return 0
+    return 15
 end
 
 local function itemKind(entity)
@@ -217,8 +227,9 @@ local function encodeInventoryItem(inventory, row, entityID)
         return
     end
     inventory[row][1] = itemKind(item)
-    inventory[row][2] = hasComponent(item, "itemStack") and item.itemStack.quantity or 1
-    inventory[row][3] = hasComponent(item, "weapon") and item.weapon.damage or 0
+    inventory[row][2] = typeID(item.name)
+    inventory[row][3] = hasComponent(item, "itemStack") and item.itemStack.quantity or 1
+    inventory[row][4] = hasComponent(item, "weapon") and item.weapon.damage or 0
 end
 
 local function encodeVisibleEntities(x, y, cell)
@@ -228,34 +239,38 @@ local function encodeVisibleEntities(x, y, cell)
             local name = string.lower(entity.name or "")
             local actor = actorKind(entity)
             if actor ~= 0 then
-                cell[2] = actor
-                cell[3] = entity.health.health or 0
+                cell[3] = actor
+                cell[4] = typeID(entity.name)
+                cell[5] = entity.health.health or 0
+                cell[6] = entity.health.maxHealth or cell[5]
             end
             if hasComponent(entity, "item") then
-                cell[4] = itemKind(entity)
+                cell[7] = itemKind(entity)
+                cell[8] = typeID(entity.name)
             end
             if hasComponent(entity, "trap") then
                 if string.find(name, "spike", 1, true) then
-                    cell[5] = 1
+                    cell[9] = 1
                 elseif string.find(name, "bouncetrapright", 1, true) then
-                    cell[5] = 2
+                    cell[9] = 2
                 elseif string.find(name, "bouncetrapup", 1, true) then
-                    cell[5] = 3
+                    cell[9] = 3
                 elseif string.find(name, "bouncetrapleft", 1, true) then
-                    cell[5] = 4
+                    cell[9] = 4
                 elseif string.find(name, "bouncetrapdown", 1, true) then
-                    cell[5] = 5
+                    cell[9] = 5
                 elseif string.find(name, "tempodowntrap", 1, true) then
-                    cell[5] = 6
+                    cell[9] = 6
                 elseif string.find(name, "trapdoor", 1, true) then
-                    cell[5] = 7
+                    cell[9] = 7
                 end
             end
             if string.find(name, "stairs", 1, true) then
                 cell[1] = 3
+                cell[2] = typeID(entity.name)
             end
             if string.find(name, "bomblit", 1, true) then
-                cell[7] = 1
+                cell[11] = 1
             end
         end
     end
@@ -295,10 +310,11 @@ local function buildObservation()
                     else
                         grid[row][column][1] = Tile.isSolid(x, y) and 2 or 1
                     end
-                    grid[row][column][6] = visible and 2 or 1
+                    grid[row][column][2] = typeID(tileInfo.name)
+                    grid[row][column][10] = visible and 2 or 1
                     if visible then
                         encodeVisibleEntities(x, y, grid[row][column])
-                        if grid[row][column][2] > 1 then
+                        if grid[row][column][3] > 1 then
                             visibleEnemies = visibleEnemies + 1
                         end
                     end
@@ -306,8 +322,10 @@ local function buildObservation()
             end
         end
 
-        grid[centre][centre][2] = 1
-        grid[centre][centre][3] = health
+        grid[centre][centre][3] = 1
+        grid[centre][centre][4] = typeID(player.name)
+        grid[centre][centre][5] = health
+        grid[centre][centre][6] = maxHealth
 
         playerValues[1] = health
         playerValues[2] = maxHealth
@@ -331,8 +349,8 @@ local function buildObservation()
         encodeInventoryItem(inventory, 7, slots.bomb and slots.bomb[1])
         encodeInventoryItem(inventory, 8, slots.misc and slots.misc[1])
 
-        playerValues[10] = inventory[7][2]
-        playerValues[11] = inventory[1][3]
+        playerValues[10] = inventory[7][3]
+        playerValues[11] = inventory[1][4]
         mask[6] = inventory[7][1] ~= 0 and 1 or 0
         mask[7] = inventory[2][1] ~= 0 and 1 or 0
         mask[8] = inventory[3][1] ~= 0 and 1 or 0

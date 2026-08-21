@@ -112,9 +112,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._episode_done = record["episode_status"] != "running"
         return self._accept_record(record)
 
-    def step(
-        self, action: int
-    ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+    def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         if self._episode_done:
             raise RuntimeError("step() was called after the live episode ended; call reset()")
         source, bridge = self._dependencies()
@@ -144,9 +142,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if not terminated and not truncated and self._episode_steps >= self.max_turns:
             truncated = True
             status = "aborted"
-            events.append(
-                {"kind": "failure", "amount": 1, "data": {"reason": "client_turn_limit"}}
-            )
+            events.append({"kind": "failure", "amount": 1, "data": {"reason": "client_turn_limit"}})
             info["episode_status"] = status
             info["client_turn_limit"] = self.max_turns
         info["raw_events"] = events
@@ -186,13 +182,13 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         player = observation["player"]
         player[PlayerFeature.VISIBLE_ENEMIES] = int(
             np.count_nonzero(
-                (grid[..., GridChannel.ACTOR] > ActorKind.PLAYER)
+                (grid[..., GridChannel.ACTOR_CLASS] > ActorKind.PLAYER)
                 & (grid[..., GridChannel.VISIBILITY] == 2)
             )
         )
         centre = GRID_SIZE // 2
         player[PlayerFeature.ON_STAIRS] = int(
-            grid[centre, centre, GridChannel.TERRAIN] == Terrain.STAIRS
+            grid[centre, centre, GridChannel.TERRAIN_CLASS] == Terrain.STAIRS
         )
         player[PlayerFeature.TASK] = 0
         status = str(record["episode_status"])

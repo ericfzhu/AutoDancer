@@ -39,7 +39,7 @@ class LiveExplorer:
         radius = grid.shape[0] // 2
         for row, column in np.argwhere(grid[..., GridChannel.VISIBILITY] > 0):
             position = px + int(column) - radius, py + int(row) - radius
-            self.terrain[position] = int(grid[row, column, GridChannel.TERRAIN])
+            self.terrain[position] = int(grid[row, column, GridChannel.TERRAIN_CLASS])
             self.traps[position] = int(grid[row, column, GridChannel.TRAP])
         return px, py
 
@@ -59,9 +59,7 @@ class LiveExplorer:
             return action
 
         stairs = {
-            position
-            for position, terrain in self.terrain.items()
-            if terrain == Terrain.STAIRS
+            position for position, terrain in self.terrain.items() if terrain == Terrain.STAIRS
         }
         action = self._route(player, stairs, allow_final_unknown=False)
         if action is not None:
@@ -75,8 +73,7 @@ class LiveExplorer:
             and position not in self.retired_frontiers
             and self.traps.get(position, 0) == 0
             and any(
-                neighbor not in self.terrain
-                and (position, neighbor) not in self.attempted_unknown
+                neighbor not in self.terrain and (position, neighbor) not in self.attempted_unknown
                 for neighbor in self._neighbors(position)
             )
         }
@@ -111,9 +108,7 @@ class LiveExplorer:
                     self.last_reason = "frontier"
                     return action
         else:
-            action = self._route(
-                player, {self.frontier_target}, allow_final_unknown=False
-            )
+            action = self._route(player, {self.frontier_target}, allow_final_unknown=False)
             if action is not None:
                 if self._action_target(player, action) != previous_position:
                     self.last_reason = "frontier"
@@ -152,14 +147,12 @@ class LiveExplorer:
                 return action
         raise RuntimeError("The live observation masks every movement action")
 
-    def _visible_enemies(
-        self, observation: dict[str, np.ndarray]
-    ) -> set[tuple[int, int]]:
+    def _visible_enemies(self, observation: dict[str, np.ndarray]) -> set[tuple[int, int]]:
         grid = observation["grid"]
         px, py = (int(value) for value in observation["player"][4:6])
         radius = grid.shape[0] // 2
         result: set[tuple[int, int]] = set()
-        for row, column in np.argwhere(grid[..., GridChannel.ACTOR] > 1):
+        for row, column in np.argwhere(grid[..., GridChannel.ACTOR_CLASS] > 1):
             result.add((px + int(column) - radius, py + int(row) - radius))
         return result
 
@@ -182,8 +175,7 @@ class LiveExplorer:
                 is_goal = neighbor in goals
                 terrain = self.terrain.get(neighbor, Terrain.UNKNOWN)
                 walkable = (
-                    terrain in {Terrain.FLOOR, Terrain.STAIRS}
-                    and self.traps.get(neighbor, 0) == 0
+                    terrain in {Terrain.FLOOR, Terrain.STAIRS} and self.traps.get(neighbor, 0) == 0
                 )
                 if not walkable and not (is_goal and allow_final_unknown):
                     continue
@@ -213,9 +205,7 @@ class LiveExplorer:
         return position[0] + dx, position[1] + dy
 
     @staticmethod
-    def _adjacent_action(
-        player: tuple[int, int], enemies: set[tuple[int, int]]
-    ) -> Action | None:
+    def _adjacent_action(player: tuple[int, int], enemies: set[tuple[int, int]]) -> Action | None:
         return next(
             (
                 action

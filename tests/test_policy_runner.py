@@ -30,9 +30,9 @@ def observation() -> dict[str, np.ndarray]:
     mask[0] = 1
     mask[3] = 1
     return {
-        "grid": np.zeros((21, 21, 7), dtype=np.int16),
+        "grid": np.zeros((21, 21, 11), dtype=np.int16),
         "player": np.zeros(16, dtype=np.int32),
-        "inventory": np.zeros((8, 3), dtype=np.int16),
+        "inventory": np.zeros((8, 4), dtype=np.int16),
         "action_mask": mask,
     }
 

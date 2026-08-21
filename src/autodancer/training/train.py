@@ -19,7 +19,7 @@ from torch import Tensor
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.training.dashboard import DashboardServer, DashboardState
-from autodancer.training.model import RecurrentActorCritic
+from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
 
 TelemetryCallback = Callable[
@@ -76,11 +76,11 @@ class RolloutCollector:
         self.rng = np.random.default_rng(seed)
         self.observation, self.infos = environment.reset(self._seeds())
         self.hidden = model.initial_state(environment.num_envs, device=device)
+        self.previous_actions = np.full(environment.num_envs, START_ACTION, dtype=np.int64)
+        self.previous_rewards = np.zeros(environment.num_envs, dtype=np.float32)
         self.episode_starts = torch.ones(environment.num_envs, dtype=torch.bool, device=device)
         self.episode_returns = np.zeros(environment.num_envs, dtype=np.float64)
-        self.episode_events: list[list[dict[str, Any]]] = [
-            [] for _ in range(environment.num_envs)
-        ]
+        self.episode_events: list[list[dict[str, Any]]] = [[] for _ in range(environment.num_envs)]
         self.furthest_zone = np.zeros(environment.num_envs, dtype=np.int32)
         self.furthest_floor = np.zeros(environment.num_envs, dtype=np.int32)
         self.completed_episodes: list[dict[str, Any]] = []
@@ -93,7 +93,11 @@ class RolloutCollector:
         return self.rng.integers(0, 2**31, size=count, dtype=np.int64).tolist()
 
     def collect(self, length: int) -> RolloutBatch:
-        observations: dict[str, list[Tensor]] = {key: [] for key in self.observation}
+        observations: dict[str, list[Tensor]] = {
+            **{key: [] for key in self.observation},
+            "previous_action": [],
+            "previous_reward": [],
+        }
         actions: list[Tensor] = []
         log_probs: list[Tensor] = []
         rewards: list[Tensor] = []
@@ -105,11 +109,20 @@ class RolloutCollector:
         for _ in range(length):
             for key, value in self.observation.items():
                 observations[key].append(torch.from_numpy(value.copy()))
+            observations["previous_action"].append(torch.from_numpy(self.previous_actions.copy()))
+            observations["previous_reward"].append(torch.from_numpy(self.previous_rewards.copy()))
             episode_starts.append(self.episode_starts.detach().cpu())
             hiddens.append(self.hidden.detach().cpu())
             with torch.inference_mode():
+                policy_observation = tensor_observation(self.observation, self.device)
+                policy_observation["previous_action"] = torch.from_numpy(self.previous_actions).to(
+                    self.device
+                )
+                policy_observation["previous_reward"] = torch.from_numpy(self.previous_rewards).to(
+                    self.device
+                )
                 action, log_prob, _, value, next_hidden = self.model.act(
-                    tensor_observation(self.observation, self.device), self.hidden
+                    policy_observation, self.hidden
                 )
             next_observation, reward, terminated, truncated, infos = self.environment.step(
                 action.cpu().numpy()
@@ -163,20 +176,20 @@ class RolloutCollector:
                     self.episode_events[index] = []
                     self.furthest_zone[index] = 0
                     self.furthest_floor[index] = 0
-            alive = torch.from_numpy(~done).to(self.device).float().unsqueeze(-1)
+            self.previous_actions = action.cpu().numpy().astype(np.int64, copy=True)
+            self.previous_rewards = reward.astype(np.float32, copy=True)
+            self.previous_actions[done] = START_ACTION
+            self.previous_rewards[done] = 0.0
+            alive = torch.from_numpy(~done).to(self.device).float().reshape(-1, 1, 1)
             self.hidden = next_hidden * alive
             self.episode_starts = torch.from_numpy(done).to(self.device)
             self.observation = next_observation
             self.infos = infos
         with torch.inference_mode():
             current = tensor_observation(self.observation, self.device)
-            _, next_value, _ = self.model.step(
-                current["grid"],
-                current["player"],
-                current["inventory"],
-                current["action_mask"],
-                self.hidden,
-            )
+            current["previous_action"] = torch.from_numpy(self.previous_actions).to(self.device)
+            current["previous_reward"] = torch.from_numpy(self.previous_rewards).to(self.device)
+            _, next_value, _ = self.model.step(current, self.hidden)
         return RolloutBatch(
             observations={key: torch.stack(value) for key, value in observations.items()},
             actions=torch.stack(actions),
@@ -220,17 +233,18 @@ def evaluate_policy(
         rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist()
     )
     hidden = model.initial_state(environment.num_envs, device=device)
+    previous_actions = np.full(environment.num_envs, START_ACTION, dtype=np.int64)
+    previous_rewards = np.zeros(environment.num_envs, dtype=np.float32)
     returns = np.zeros(environment.num_envs, dtype=np.float64)
     completed: list[float] = []
     model.eval()
     for _ in range(steps):
         with torch.inference_mode():
-            action, _, _, _, next_hidden = model.act(
-                tensor_observation(observation, device), hidden, deterministic=True
-            )
-        observation, reward, terminated, truncated, _ = environment.step(
-            action.cpu().numpy()
-        )
+            policy_observation = tensor_observation(observation, device)
+            policy_observation["previous_action"] = torch.from_numpy(previous_actions).to(device)
+            policy_observation["previous_reward"] = torch.from_numpy(previous_rewards).to(device)
+            action, _, _, _, next_hidden = model.act(policy_observation, hidden, deterministic=True)
+        observation, reward, terminated, truncated, _ = environment.step(action.cpu().numpy())
         returns += reward
         done = terminated | truncated
         done_indices = np.flatnonzero(done).tolist()
@@ -242,10 +256,12 @@ def evaluate_policy(
             )
             replace_observation_rows(observation, done_indices, [item[0] for item in resets])
             returns[done_indices] = 0.0
-        hidden = next_hidden * torch.from_numpy(~done).to(device).float().unsqueeze(-1)
-    environment.reset(
-        rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist()
-    )
+        previous_actions = action.cpu().numpy().astype(np.int64, copy=True)
+        previous_rewards = reward.astype(np.float32, copy=True)
+        previous_actions[done] = START_ACTION
+        previous_rewards[done] = 0.0
+        hidden = next_hidden * torch.from_numpy(~done).to(device).float().reshape(-1, 1, 1)
+    environment.reset(rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist())
     scores = completed if completed else returns.tolist()
     return {
         "evaluation_episodes": float(len(completed)),
@@ -305,7 +321,7 @@ def train(arguments: argparse.Namespace) -> None:
 
             telemetry_callback = publish_telemetry if dashboard_state is not None else None
             try:
-                model = RecurrentActorCritic()
+                model = RecurrentActorCritic(ModelConfig())
                 algorithm = RecurrentPPO(model, ppo_config, device=device)
                 if arguments.resume:
                     algorithm.load(arguments.resume)
@@ -379,6 +395,7 @@ def train(arguments: argparse.Namespace) -> None:
                     json.dumps(
                         {
                             "ppo": asdict(ppo_config),
+                            "architecture": model.architecture_spec(),
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),

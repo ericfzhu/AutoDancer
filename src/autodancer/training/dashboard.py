@@ -79,8 +79,8 @@ function drawGrid(canvas, grid) {
   const ctx = canvas.getContext("2d"); const size = grid.length; const cell = canvas.width / size;
   ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
-    const v = grid[y][x], terrain=v[0]||0, actor=v[1]||0, health=v[2]||0,
-      item=v[3]||0, trap=v[4]||0, visibility=v[5]||0;
+    const v = grid[y][x], terrain=v[0]||0, actor=v[2]||0, health=v[4]||0,
+      item=v[6]||0, trap=v[8]||0, visibility=v[9]||0;
     ctx.fillStyle = TERRAIN[terrain] || "#38404a"; ctx.fillRect(x*cell,y*cell,cell+0.5,cell+0.5);
     if (visibility === 0) { ctx.fillStyle="#050609e8"; ctx.fillRect(x*cell,y*cell,cell+0.5,cell+0.5); continue; }
     if (visibility === 1) { ctx.fillStyle="#0506098c"; ctx.fillRect(x*cell,y*cell,cell+0.5,cell+0.5); }

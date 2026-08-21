@@ -12,7 +12,7 @@ from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig, S
 def test_ready_log_discovery_preserves_worker_identity(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer-worker.log"
     marker = {
-        "schema_version": 4,
+        "schema_version": 5,
         "instance_id": "worker-0007",
         "role": "worker",
         "game_version": "v4.2.1-b5713",
@@ -25,12 +25,8 @@ def test_ready_log_discovery_preserves_worker_identity(tmp_path: Path) -> None:
 
 def test_supervisor_refuses_unowned_game_process(monkeypatch: pytest.MonkeyPatch) -> None:
     process = SimpleNamespace(info={"pid": 77, "name": "NecroDancer.exe", "exe": "game"})
-    monkeypatch.setattr(
-        "autodancer.live.supervisor.psutil.process_iter", lambda _: [process]
-    )
-    supervisor = AutoDancerSupervisor(
-        SupervisorConfig(Path("game"), Path("mod"), num_instances=4)
-    )
+    monkeypatch.setattr("autodancer.live.supervisor.psutil.process_iter", lambda _: [process])
+    supervisor = AutoDancerSupervisor(SupervisorConfig(Path("game"), Path("mod"), num_instances=4))
     with pytest.raises(SupervisorError, match=r"PIDs: \[77\]"):
         supervisor._refuse_existing_processes()
 

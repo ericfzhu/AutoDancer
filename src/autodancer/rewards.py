@@ -35,4 +35,3 @@ def reward_from_event_dicts(
         elif kind == "reveal":
             reward += configured["reveal"] * amount
     return float(reward)
-
