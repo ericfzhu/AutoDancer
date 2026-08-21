@@ -24,3 +24,10 @@ def test_file_bridge_publishes_restart(tmp_path: Path) -> None:
     command = FileCommandBridge(path, session_id="session-2").restart()
     assert command.action is None
     assert path.read_text(encoding="ascii") == "RESTART session-2 1 -1\n"
+
+
+def test_file_bridge_publishes_all_zones_bard_start(tmp_path: Path) -> None:
+    path = tmp_path / "bridge-command.txt"
+    command = FileCommandBridge(path, session_id="session-3").start()
+    assert command.kind == "START"
+    assert path.read_text(encoding="ascii") == "START session-3 1 -1\n"

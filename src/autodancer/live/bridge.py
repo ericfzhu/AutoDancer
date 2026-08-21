@@ -24,9 +24,11 @@ class ActionBridge(Protocol):
 
     def restart(self) -> BridgeCommand: ...
 
+    def start(self) -> BridgeCommand: ...
+
 
 class FileCommandBridge:
-    """Atomically publish commands for the installed Lua mod to poll."""
+    """Publish commands without replacing the file mounted by the game."""
 
     def __init__(self, path: str | Path, *, session_id: str | None = None) -> None:
         self.path = Path(path)
@@ -46,11 +48,14 @@ class FileCommandBridge:
         action_value = -1 if action is None else int(action)
         payload = f"{kind} {command.session_id} {command.command_id} {action_value}\n"
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(
-            f".{self.path.name}.{os.getpid()}.{command.command_id}.tmp"
-        )
-        temporary.write_text(payload, encoding="ascii")
-        os.replace(temporary, self.path)
+        encoded = payload.encode("ascii")
+        mode = "r+b" if self.path.exists() else "w+b"
+        with self.path.open(mode) as command_file:
+            command_file.seek(0)
+            command_file.write(encoded)
+            command_file.truncate()
+            command_file.flush()
+            os.fsync(command_file.fileno())
         return command
 
     def send_action(self, action: Action) -> BridgeCommand:
@@ -58,3 +63,6 @@ class FileCommandBridge:
 
     def restart(self) -> BridgeCommand:
         return self._publish("RESTART", None)
+
+    def start(self) -> BridgeCommand:
+        return self._publish("START", None)

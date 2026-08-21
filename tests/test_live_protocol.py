@@ -221,6 +221,18 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     assert info["episode_status"] == "running"
 
 
+def test_live_reset_ignores_post_death_turn_before_reset() -> None:
+    source = QueueTurnSource(
+        [
+            record(83, "turn", run_id="dead-run"),
+            record(0, "reset", run_id="restarted-run"),
+        ]
+    )
+    environment = AutoDancerLiveEnv(turn_source=source, bridge=FakeBridge())
+    _, info = environment.reset()
+    assert info["run_id"] == "restarted-run"
+
+
 def test_queue_source_accepts_a_fresh_reset_after_attach() -> None:
     source = QueueTurnSource(
         [record(7, "turn"), record(0, "reset", run_id="new-run")]

@@ -28,6 +28,7 @@ test = [
 [project.scripts]
 autodancer-live-run = "autodancer.live.run:main"
 autodancer-live-explore = "autodancer.live.explore:main"
+autodancer-live-start = "autodancer.live.start:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]

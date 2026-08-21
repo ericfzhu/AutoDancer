@@ -1,20 +1,24 @@
 -- Single-instance Python -> SYNCHRONY action bridge.
 --
--- Python atomically replaces bridge-command.txt in the installed AutoDancer
--- mod directory. This module polls that resource, injects exactly one engine
+-- Python updates bridge-command.txt in the installed AutoDancer mod directory.
+-- The command is addressed through the mod's logical asset path, so the engine's
+-- unpacked-mod reloader sees external updates. This module injects exactly one engine
 -- action, and exposes the completed command to AutoDancer.lua so the resulting
 -- observation carries an unambiguous command acknowledgement.
 
 local Action = require "necro.game.system.Action"
 local CurrentLevel = require "necro.game.level.CurrentLevel"
+local CharacterSelector = require "necro.client.CharacterSelector"
 local FileIO = require "system.game.FileIO"
+local GameSession = require "necro.client.GameSession"
 local GameInput = require "necro.client.Input"
 local Player = require "necro.game.character.Player"
+local SinglePlayer = require "necro.client.SinglePlayer"
 local StateControl = require "necro.client.StateControl"
 
 local Bridge = {}
 
-local COMMAND_RESOURCE = "user_data_transient://mods/AutoDancer/bridge-command.txt"
+local COMMAND_RESOURCE = "mods/AutoDancer/bridge-command.txt"
 local MAX_COMMAND_BYTES = 512
 
 local LOGICAL_TO_ENGINE = {
@@ -49,6 +53,8 @@ local function readPayload()
     return payload
 end
 
+print("AUTODANCER_BRIDGE_READY:" .. COMMAND_RESOURCE)
+
 local function parse(payload)
     local kind, sessionID, commandText, actionText = string.match(
         payload,
@@ -63,7 +69,7 @@ end
 local function acceptAction(sessionID, commandID, logicalAction)
     local engineAction = LOGICAL_TO_ENGINE[logicalAction]
     if not engineAction or pending or not playable() then
-        return
+        return false
     end
     pending = {
         session_id = sessionID,
@@ -76,6 +82,14 @@ local function acceptAction(sessionID, commandID, logicalAction)
         AutoDancer_session_id = sessionID,
         AutoDancer_command_id = commandID,
     })
+    return true
+end
+
+local function startAllZonesBard()
+    SinglePlayer.setActive(true)
+    CharacterSelector.setPreferredCharacter(1, "Bard")
+    CharacterSelector.setSelectedCharacter(1, "Bard")
+    GameSession.start({mode = GameSession.Mode.AllZones}, 0)
 end
 
 event.clientAddInput.add("captureAutoDancerBridgeInput", {
@@ -107,14 +121,25 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
     if not payload or payload == lastPayload then
         return
     end
-    lastPayload = payload
     local kind, sessionID, commandID, logicalAction = parse(payload)
+    local accepted = false
     if kind == "ACTION" and logicalAction ~= nil then
-        acceptAction(sessionID, commandID, logicalAction)
+        accepted = acceptAction(sessionID, commandID, logicalAction)
+    elseif kind == "START" and CurrentLevel.isLobby() then
+        pending = nil
+        completed = nil
+        startAllZonesBard()
+        accepted = true
     elseif kind == "RESTART" and StateControl.isRestartAllowed() then
         pending = nil
         completed = nil
         StateControl.restart(0)
+        accepted = true
+    elseif not kind then
+        accepted = true
+    end
+    if accepted then
+        lastPayload = payload
     end
 end)
 

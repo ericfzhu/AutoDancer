@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +85,19 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             record = source.read_latest(self.turn_timeout)
         else:
             bridge.restart()
-            record = source.read(self.turn_timeout)
+            deadline = time.monotonic() + self.turn_timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"No AutoDancer reset record arrived within {self.turn_timeout:.1f} seconds"
+                    )
+                try:
+                    record = source.read(remaining)
+                    break
+                except ProtocolError as error:
+                    if "must start with a reset record" not in str(error):
+                        raise
         validate_record(record)
         if not self.attach_existing and record["kind"] != "reset":
             raise ProtocolError("The first record after RESTART must have kind 'reset'")

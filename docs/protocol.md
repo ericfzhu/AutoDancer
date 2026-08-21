@@ -2,7 +2,7 @@
 
 Protocol schema 3 controls one running game instance through two local files:
 
-- Python atomically replaces `bridge-command.txt` in the installed mod folder.
+- Python updates `bridge-command.txt` in place in the installed mod folder.
 - Lua prints `AUTODANCER_JSON:` records to `NecroDancer.log`.
 
 ## Commands
@@ -11,12 +11,17 @@ Each command is one ASCII line:
 
 ```text
 ACTION <session_id> <command_id> <logical_action>
+START <session_id> <command_id> -1
 RESTART <session_id> <command_id> -1
 ```
 
 Logical actions are integers `0..10`. Command IDs increase within a randomly
-generated Python session. Atomic replacement prevents Lua from reading a
-partially written command.
+generated Python session. Keeping the same file lets Synchrony's unpacked-mod
+asset reloader expose each update at `mods/AutoDancer/bridge-command.txt`.
+
+`START` selects Bard and starts the built-in normal `AllZones` mode.
+Commands that arrive while the engine cannot accept them remain pending and
+are retried on later ticks.
 
 ## Transition acknowledgement
 

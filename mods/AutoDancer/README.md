@@ -14,6 +14,10 @@ run. Python writes `bridge-command.txt` beside `mod.json`; the Lua bridge polls
 that file, injects one action, and emits the resulting symbolic transition to
 `NecroDancer.log`.
 
+Do not remove the included `bridge-command.txt`: Synchrony mounts it as the
+logical asset `mods/AutoDancer/bridge-command.txt`, and Python preserves that
+file while updating its contents.
+
 The mod never accepts an uncorrelated transition as an agent step. Every
 agent-driven turn contains the exact Python `session_id`, monotonic
 `command_id`, logical action, engine action, and observed input action.

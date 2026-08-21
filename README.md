@@ -23,6 +23,10 @@ Copy [`mods/AutoDancer`](mods/AutoDancer) to the unpackaged SYNCHRONY mod
 directory and enable it under **Customize → Mods**. After changing Lua files,
 reload the mod or restart the game.
 
+Keep the included `bridge-command.txt` in the installed mod directory. It must
+exist when Synchrony mounts the mod so later atomic command replacements remain
+visible to Lua.
+
 For the current Windows installation, the two paths used by Python are:
 
 ```text
