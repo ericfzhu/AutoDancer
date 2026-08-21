@@ -38,6 +38,22 @@ uv run autodancer-train `
   --device auto
 ```
 
+Add `--dashboard` to serve the live symbolic worker view at
+`http://127.0.0.1:8765/`, or use `--dashboard PORT` to choose another port:
+
+```powershell
+uv run autodancer-train `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --num-instances 8 `
+  --total-steps 1000000 `
+  --run-dir ".\runs\bard-ppo" `
+  --dashboard
+```
+
+The page renders the exact 21 × 21 symbolic grid seen by each policy, plus
+health, inventory, action, reward, events, seed, floor, latency, worker health,
+and PPO progress. It does not capture or transmit game frames.
+
 Rollouts contain 128 valid transitions per worker. PPO uses 32-step recurrent
 chunks, four update epochs, action masking, periodic deterministic evaluation,
 atomic checkpoints, and JSONL metrics. Continue an exact optimizer/model/RNG

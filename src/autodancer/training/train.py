@@ -7,6 +7,7 @@ import json
 import os
 import random
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -17,8 +18,14 @@ from torch import Tensor
 
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import RecurrentActorCritic
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
+
+TelemetryCallback = Callable[
+    [dict[str, np.ndarray], list[dict[str, Any]], np.ndarray | None, np.ndarray | None],
+    None,
+]
 
 
 def resolve_device(name: str) -> torch.device:
@@ -61,6 +68,7 @@ class RolloutCollector:
         *,
         device: torch.device,
         seed: int,
+        telemetry_callback: TelemetryCallback | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -76,6 +84,9 @@ class RolloutCollector:
         self.furthest_zone = np.zeros(environment.num_envs, dtype=np.int32)
         self.furthest_floor = np.zeros(environment.num_envs, dtype=np.int32)
         self.completed_episodes: list[dict[str, Any]] = []
+        self.telemetry_callback = telemetry_callback
+        if self.telemetry_callback is not None:
+            self.telemetry_callback(self.observation, self.infos, None, None)
 
     def _seeds(self, count: int | None = None) -> list[int]:
         count = self.environment.num_envs if count is None else count
@@ -103,6 +114,13 @@ class RolloutCollector:
             next_observation, reward, terminated, truncated, infos = self.environment.step(
                 action.cpu().numpy()
             )
+            if self.telemetry_callback is not None:
+                self.telemetry_callback(
+                    next_observation,
+                    infos,
+                    action.cpu().numpy(),
+                    reward,
+                )
             done = terminated | truncated
             self.episode_returns += reward
             for index, info in enumerate(infos):
@@ -254,82 +272,131 @@ def train(arguments: argparse.Namespace) -> None:
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
-    with AutoDancerSupervisor(supervisor_config) as supervisor:
-        environment = AutoDancerVectorEnv(supervisor)
-        try:
-            model = RecurrentActorCritic()
-            algorithm = RecurrentPPO(model, ppo_config, device=device)
-            if arguments.resume:
-                algorithm.load(arguments.resume)
-            collector = RolloutCollector(
-                environment, algorithm.model, device=device, seed=arguments.seed
-            )
-            started = time.monotonic()
-            metrics: dict[str, Any] = {
-                "global_step": algorithm.global_step,
-                "updates": algorithm.updates,
-            }
-            next_evaluation = (
-                algorithm.global_step + arguments.evaluation_interval
-                if arguments.evaluation_interval > 0
-                else None
-            )
-            while algorithm.global_step < arguments.total_steps:
-                rollout = collector.collect(ppo_config.rollout_length)
-                update_metrics = algorithm.update(rollout)
-                elapsed = max(time.monotonic() - started, 1.0e-6)
-                metrics = {
+    dashboard_state = DashboardState() if arguments.dashboard is not None else None
+    dashboard_server = (
+        DashboardServer(dashboard_state, host=arguments.dashboard_host, port=arguments.dashboard)
+        if dashboard_state is not None
+        else None
+    )
+    if dashboard_server is not None:
+        dashboard_server.start()
+        print(json.dumps({"dashboard_url": dashboard_server.url}, sort_keys=True))
+    try:
+        with AutoDancerSupervisor(supervisor_config) as supervisor:
+            environment = AutoDancerVectorEnv(supervisor)
+            if dashboard_state is not None:
+                dashboard_state.set_status("training")
+
+            def publish_telemetry(
+                observation: dict[str, np.ndarray],
+                infos: list[dict[str, Any]],
+                actions: np.ndarray | None,
+                rewards: np.ndarray | None,
+            ) -> None:
+                assert dashboard_state is not None
+                dashboard_state.update_workers(
+                    environment.worker_ids,
+                    observation,
+                    infos,
+                    actions=actions,
+                    rewards=rewards,
+                    health=supervisor.health(),
+                )
+
+            telemetry_callback = publish_telemetry if dashboard_state is not None else None
+            try:
+                model = RecurrentActorCritic()
+                algorithm = RecurrentPPO(model, ppo_config, device=device)
+                if arguments.resume:
+                    algorithm.load(arguments.resume)
+                collector = RolloutCollector(
+                    environment,
+                    algorithm.model,
+                    device=device,
+                    seed=arguments.seed,
+                    telemetry_callback=telemetry_callback,
+                )
+                started = time.monotonic()
+                metrics: dict[str, Any] = {
                     "global_step": algorithm.global_step,
                     "updates": algorithm.updates,
-                    "steps_per_second": algorithm.global_step / elapsed,
-                    **update_metrics,
-                    **episode_metrics(collector.completed_episodes),
-                    "worker_restarts": sum(
-                        handle.restart_count for handle in supervisor.workers.values()
-                    ),
                 }
-                if next_evaluation is not None and algorithm.global_step >= next_evaluation:
-                    metrics.update(
-                        evaluate_policy(
+                next_evaluation = (
+                    algorithm.global_step + arguments.evaluation_interval
+                    if arguments.evaluation_interval > 0
+                    else None
+                )
+                while algorithm.global_step < arguments.total_steps:
+                    rollout = collector.collect(ppo_config.rollout_length)
+                    update_metrics = algorithm.update(rollout)
+                    elapsed = max(time.monotonic() - started, 1.0e-6)
+                    metrics = {
+                        "global_step": algorithm.global_step,
+                        "updates": algorithm.updates,
+                        "steps_per_second": algorithm.global_step / elapsed,
+                        **update_metrics,
+                        **episode_metrics(collector.completed_episodes),
+                        "worker_restarts": sum(
+                            handle.restart_count for handle in supervisor.workers.values()
+                        ),
+                    }
+                    if next_evaluation is not None and algorithm.global_step >= next_evaluation:
+                        if dashboard_state is not None:
+                            dashboard_state.set_status("evaluating")
+                        metrics.update(
+                            evaluate_policy(
+                                environment,
+                                algorithm.model,
+                                device=device,
+                                seed=arguments.seed + algorithm.updates,
+                                steps=arguments.evaluation_steps,
+                            )
+                        )
+                        if dashboard_state is not None:
+                            dashboard_state.set_status("training")
+                        collector = RolloutCollector(
                             environment,
                             algorithm.model,
                             device=device,
-                            seed=arguments.seed + algorithm.updates,
-                            steps=arguments.evaluation_steps,
+                            seed=arguments.seed + algorithm.global_step,
+                            telemetry_callback=telemetry_callback,
                         )
-                    )
-                    collector = RolloutCollector(
-                        environment,
-                        algorithm.model,
-                        device=device,
-                        seed=arguments.seed + algorithm.global_step,
-                    )
-                    next_evaluation += arguments.evaluation_interval
-                collector.completed_episodes.clear()
-                with metrics_path.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(metrics, sort_keys=True) + "\n")
-                print(json.dumps(metrics, sort_keys=True))
-                if algorithm.global_step % arguments.checkpoint_interval < (
-                    ppo_config.rollout_length * arguments.num_instances
-                ):
-                    algorithm.save(arguments.run_dir / "latest.pt", metrics=metrics)
-            algorithm.save(arguments.run_dir / "final.pt", metrics=metrics)
-            (arguments.run_dir / "config.json").write_text(
-                json.dumps(
-                    {
-                        "ppo": asdict(ppo_config),
-                        "supervisor": {
-                            "num_instances": arguments.num_instances,
-                            "game_dir": str(arguments.game_dir),
-                            "mod_dir": str(arguments.mod_dir),
+                        next_evaluation += arguments.evaluation_interval
+                    collector.completed_episodes.clear()
+                    if dashboard_state is not None:
+                        dashboard_state.update_training(metrics)
+                    with metrics_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(metrics, sort_keys=True) + "\n")
+                    print(json.dumps(metrics, sort_keys=True))
+                    if algorithm.global_step % arguments.checkpoint_interval < (
+                        ppo_config.rollout_length * arguments.num_instances
+                    ):
+                        algorithm.save(arguments.run_dir / "latest.pt", metrics=metrics)
+                algorithm.save(arguments.run_dir / "final.pt", metrics=metrics)
+                if dashboard_state is not None:
+                    dashboard_state.set_status("complete")
+                (arguments.run_dir / "config.json").write_text(
+                    json.dumps(
+                        {
+                            "ppo": asdict(ppo_config),
+                            "supervisor": {
+                                "num_instances": arguments.num_instances,
+                                "game_dir": str(arguments.game_dir),
+                                "mod_dir": str(arguments.mod_dir),
+                            },
+                            "dashboard_url": (
+                                dashboard_server.url if dashboard_server is not None else None
+                            ),
                         },
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-        finally:
-            environment.close()
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            finally:
+                environment.close()
+    finally:
+        if dashboard_server is not None:
+            dashboard_server.stop()
 
 
 def main() -> int:
@@ -350,11 +417,22 @@ def main() -> int:
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--max-turns", type=int, default=10000)
+    parser.add_argument(
+        "--dashboard",
+        nargs="?",
+        type=int,
+        const=8765,
+        metavar="PORT",
+        help="serve the live symbolic worker dashboard (default port: 8765)",
+    )
+    parser.add_argument("--dashboard-host", default="127.0.0.1")
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.total_steps <= 0 or arguments.num_instances <= 0:
         parser.error("--total-steps and --num-instances must be positive")
+    if arguments.dashboard is not None and not 0 <= arguments.dashboard <= 65535:
+        parser.error("--dashboard port must be in [0, 65535]")
     train(arguments)
     return 0
 
