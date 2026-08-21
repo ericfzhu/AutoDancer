@@ -25,11 +25,18 @@ class FakeBridge:
 
     def send_action(self, action: Action) -> BridgeCommand:
         self.actions.append(action)
-        return BridgeCommand("test-session", len(self.actions), action, "ACTION")
+        return BridgeCommand(
+            "test-session", len(self.actions), action, "ACTION", "worker-0000"
+        )
+
+    def reset(self, seed: int) -> BridgeCommand:
+        self.restarts += 1
+        return BridgeCommand(
+            "test-session", self.restarts, None, "RESET", "worker-0000", seed
+        )
 
     def restart(self) -> BridgeCommand:
-        self.restarts += 1
-        return BridgeCommand("test-session", self.restarts, None, "RESTART")
+        return self.reset(7)
 
 
 def record(
@@ -55,11 +62,13 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 3,
+        "schema_version": 4,
+        "instance_id": "worker-0000",
+        "role": "worker",
         "run_id": run_id,
         "sequence": sequence,
         "kind": kind,
-        "game": {"version": "4.2.1", "steam_build": "22938426"},
+        "game": {"version": "v4.2.1-b5713", "steam_build": "22938426"},
         "character": "Bard",
         "seed": 7,
         "zone": 1,
@@ -75,9 +84,17 @@ def record(
         "terminated": terminal,
         "truncated": truncated,
         "metrics": {"turns": sequence},
-        "bridge": None
+        "bridge": {
+            "kind": "RESET",
+            "session_id": "test-session",
+            "command_id": 1,
+            "seed": 7,
+        }
+        if kind == "reset"
+        else None
         if requested_action is None
         else {
+            "kind": "ACTION",
             "session_id": "test-session",
             "command_id": sequence if command_id is None else command_id,
             "requested_action": int(requested_action),
@@ -106,7 +123,7 @@ def test_live_victory_terminates_and_reports_completion() -> None:
         bridge=sender,
         max_turns=10,
     )
-    environment.reset()
+    environment.reset(seed=7)
     observation, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert terminated and not truncated
     assert info["episode_status"] == "won"
@@ -144,7 +161,7 @@ def test_live_environment_applies_client_turn_limit() -> None:
         bridge=FakeBridge(),
         max_turns=1,
     )
-    environment.reset()
+    environment.reset(seed=7)
     _, reward, terminated, truncated, info = environment.step(Action.UP)
     assert not terminated and truncated
     assert info["episode_status"] == "aborted"
@@ -210,10 +227,10 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
         ]
     )
     environment = AutoDancerLiveEnv(turn_source=source, bridge=sender)
-    observation, info = environment.reset()
+    observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 3
+    assert info["protocol_schema_version"] == 4
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.049)
@@ -229,7 +246,7 @@ def test_live_reset_ignores_post_death_turn_before_reset() -> None:
         ]
     )
     environment = AutoDancerLiveEnv(turn_source=source, bridge=FakeBridge())
-    _, info = environment.reset()
+    _, info = environment.reset(seed=7)
     assert info["run_id"] == "restarted-run"
 
 
@@ -305,5 +322,23 @@ def test_live_environment_can_attach_without_restart() -> None:
 def test_placeholder_build_is_rejected() -> None:
     payload = record(0, "reset")
     payload["game"]["version"] = "SET_GAME_VERSION"
-    with pytest.raises(ProtocolError, match="pin the game"):
+    with pytest.raises(ProtocolError, match="Unsupported game build"):
         validate_record(payload)
+
+
+def test_schema_four_rejects_cross_worker_and_mismatched_seed() -> None:
+    payload = record(0, "reset")
+    payload["instance_id"] = "worker-0001"
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource([payload]), bridge=FakeBridge()
+    )
+    with pytest.raises(ProtocolError, match="Expected worker 'worker-0000'"):
+        environment.reset(seed=7)
+
+    payload = record(0, "reset")
+    payload["seed"] = 8
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource([payload]), bridge=FakeBridge()
+    )
+    with pytest.raises(ProtocolError, match="acknowledgement mismatch"):
+        environment.reset(seed=7)

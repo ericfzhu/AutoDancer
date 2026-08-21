@@ -45,14 +45,16 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         turn_timeout: float = 5.0,
         attach_existing: bool = False,
         max_turns: int = 10000,
+        instance_id: str = "worker-0000",
     ) -> None:
         if turn_source is None and log_path is None:
             self._source: TurnSource | None = None
         else:
             self._source = turn_source or JsonlTurnSource(Path(log_path))  # type: ignore[arg-type]
         if bridge is None and command_path is not None:
-            bridge = FileCommandBridge(command_path)
+            bridge = FileCommandBridge(command_path, instance_id=instance_id)
         self._bridge = bridge
+        self.instance_id = instance_id
         self.turn_timeout = float(turn_timeout)
         self.attach_existing = bool(attach_existing)
         self.max_turns = int(max_turns)
@@ -84,7 +86,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self.attach_existing:
             record = source.read_latest(self.turn_timeout)
         else:
-            bridge.restart()
+            selected_seed = int(seed if seed is not None else self.np_random.integers(0, 2**31))
+            command = bridge.reset(selected_seed)
             deadline = time.monotonic() + self.turn_timeout
             while True:
                 remaining = deadline - time.monotonic()
@@ -98,6 +101,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 except ProtocolError as error:
                     if "must start with a reset record" not in str(error):
                         raise
+            self._verify_acknowledgement(record, command)
         validate_record(record)
         if not self.attach_existing and record["kind"] != "reset":
             raise ProtocolError("The first record after RESTART must have kind 'reset'")
@@ -152,15 +156,22 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
     @staticmethod
     def _verify_acknowledgement(record: dict[str, Any], command: BridgeCommand) -> None:
         acknowledgement = record.get("bridge")
-        expected_action = None if command.action is None else int(command.action)
         if not isinstance(acknowledgement, dict):
             raise ProtocolError("Lua did not acknowledge the Python bridge command")
-        received = (
+        received = [
+            acknowledgement.get("kind"),
             acknowledgement.get("session_id"),
             acknowledgement.get("command_id"),
-            acknowledgement.get("requested_action"),
-        )
-        expected = (command.session_id, command.command_id, expected_action)
+        ]
+        expected = [command.kind, command.session_id, command.command_id]
+        if command.kind == "ACTION":
+            received.append(acknowledgement.get("requested_action"))
+            expected.append(None if command.action is None else int(command.action))
+        elif command.kind == "RESET":
+            received.append(acknowledgement.get("seed"))
+            expected.append(command.seed)
+            received.append(record.get("seed"))
+            expected.append(command.seed)
         if received != expected:
             raise ProtocolError(
                 f"Bridge acknowledgement mismatch: expected {expected}, received {received}"
@@ -189,11 +200,16 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
     def _accept_record(
         self, record: dict[str, Any]
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        if record.get("instance_id") != self.instance_id:
+            raise ProtocolError(
+                f"Expected worker {self.instance_id!r}, received {record.get('instance_id')!r}"
+            )
         observation = self._adapt_observation(record)
         self._last_observation = observation
         status = str(record["episode_status"])
         info = {
             "protocol_schema_version": record["schema_version"],
+            "instance_id": record["instance_id"],
             "run_id": record["run_id"],
             "sequence": record["sequence"],
             "seed": record.get("seed"),

@@ -1,25 +1,27 @@
--- Single-instance Python -> SYNCHRONY action bridge.
---
--- Python updates bridge-command.txt in the installed AutoDancer mod directory.
--- The command is addressed through the mod's logical asset path, so the engine's
--- unpacked-mod reloader sees external updates. This module injects exactly one engine
--- action, and exposes the completed command to AutoDancer.lua so the resulting
--- observation carries an unambiguous command acknowledgement.
+-- Arbitrary-N Python -> SYNCHRONY bridge.
 
 local Action = require "necro.game.system.Action"
-local CurrentLevel = require "necro.game.level.CurrentLevel"
 local CharacterSelector = require "necro.client.CharacterSelector"
+local CurrentLevel = require "necro.game.level.CurrentLevel"
 local FileIO = require "system.game.FileIO"
-local GameSession = require "necro.client.GameSession"
 local GameInput = require "necro.client.Input"
+local GameSession = require "necro.client.GameSession"
+local MultiInstance = require "necro.client.MultiInstance"
 local Player = require "necro.game.character.Player"
 local SinglePlayer = require "necro.client.SinglePlayer"
-local StateControl = require "necro.client.StateControl"
 
 local Bridge = {}
 
-local COMMAND_RESOURCE = "mods/AutoDancer/bridge-command.txt"
+local SCHEMA_VERSION = 4
+local GAME_VERSION = "v4.2.1-b5713"
+local STEAM_BUILD = "22938426"
 local MAX_COMMAND_BYTES = 512
+local isWorker = MultiInstance.isDuplicate()
+local instanceID = isWorker and MultiInstance.getSessionUID() or "coordinator"
+instanceID = tostring(instanceID or "worker-unknown")
+instanceID = string.gsub(instanceID, "[^%w%-_]", "_")
+local role = isWorker and "worker" or "coordinator"
+local commandResource = "mods/AutoDancer/bridge-command." .. instanceID .. ".txt"
 
 local LOGICAL_TO_ENGINE = {
     [0] = Action.Direction.UP,
@@ -38,32 +40,40 @@ local LOGICAL_TO_ENGINE = {
 local lastPayload = nil
 local pending = nil
 local completed = nil
-
-local function playable()
-    return not CurrentLevel.isLoading()
-        and not CurrentLevel.isLobby()
-        and Player.getPlayerEntity(1) ~= nil
-end
+local spawnedInstances = {}
 
 local function readPayload()
-    local ok, payload = pcall(FileIO.readFileToString, COMMAND_RESOURCE, MAX_COMMAND_BYTES)
+    local ok, payload = pcall(FileIO.readFileToString, commandResource, MAX_COMMAND_BYTES)
     if not ok or type(payload) ~= "string" or payload == "" then
         return nil
     end
     return payload
 end
 
-print("AUTODANCER_BRIDGE_READY:" .. COMMAND_RESOURCE)
+local function printReady()
+    print("AUTODANCER_READY:{\"schema_version\":" .. tostring(SCHEMA_VERSION)
+        .. ",\"instance_id\":\"" .. instanceID
+        .. "\",\"role\":\"" .. role
+        .. "\",\"game_version\":\"" .. GAME_VERSION
+        .. "\",\"steam_build\":\"" .. STEAM_BUILD
+        .. "\",\"command_resource\":\"" .. commandResource .. "\"}")
+end
 
-local function parse(payload)
-    local kind, sessionID, commandText, actionText = string.match(
-        payload,
-        "^([A-Z]+)%s+([%w%-_]+)%s+(%d+)%s*([%-]?%d*)%s*$"
-    )
-    if not kind then
-        return nil
-    end
-    return kind, sessionID, tonumber(commandText), tonumber(actionText)
+local function printCoordinatorResult(kind, sessionID, commandID, workerID, ok)
+    print("AUTODANCER_COORDINATOR_JSON:{\"schema_version\":" .. tostring(SCHEMA_VERSION)
+        .. ",\"kind\":\"" .. kind
+        .. "\",\"session_id\":\"" .. sessionID
+        .. "\",\"command_id\":" .. tostring(commandID)
+        .. ",\"worker_id\":\"" .. tostring(workerID)
+        .. "\",\"ok\":" .. tostring(ok == true) .. "}")
+end
+
+printReady()
+
+local function playable()
+    return not CurrentLevel.isLoading()
+        and not CurrentLevel.isLobby()
+        and Player.getPlayerEntity(1) ~= nil
 end
 
 local function acceptAction(sessionID, commandID, logicalAction)
@@ -72,6 +82,7 @@ local function acceptAction(sessionID, commandID, logicalAction)
         return false
     end
     pending = {
+        kind = "ACTION",
         session_id = sessionID,
         command_id = commandID,
         requested_action = logicalAction,
@@ -85,11 +96,55 @@ local function acceptAction(sessionID, commandID, logicalAction)
     return true
 end
 
-local function startAllZonesBard()
+local function startAllZonesBard(seed)
     SinglePlayer.setActive(true)
     CharacterSelector.setPreferredCharacter(1, "Bard")
     CharacterSelector.setSelectedCharacter(1, "Bard")
-    GameSession.start({mode = GameSession.Mode.AllZones}, 0)
+    GameSession.start({mode = GameSession.Mode.AllZones, seed = seed}, 0)
+end
+
+local function acceptReset(sessionID, commandID, seed)
+    if CurrentLevel.isLoading() or not seed then
+        return false
+    end
+    pending = nil
+    completed = {
+        kind = "RESET",
+        session_id = sessionID,
+        command_id = commandID,
+        seed = seed,
+    }
+    startAllZonesBard(seed)
+    return true
+end
+
+local function spawnWorker(sessionID, commandID, workerID)
+    if spawnedInstances[workerID] and spawnedInstances[workerID].isOpen() then
+        printCoordinatorResult("SPAWN", sessionID, commandID, workerID, true)
+        return true
+    end
+    local ok, instance = pcall(MultiInstance.create, {
+        independent = true,
+        uid = workerID,
+        configName = "AutoDancer-" .. workerID .. ".lua",
+        windowTitle = "AutoDancer " .. workerID,
+    })
+    if ok and instance then
+        spawnedInstances[workerID] = instance
+    end
+    printCoordinatorResult("SPAWN", sessionID, commandID, workerID, ok and instance ~= nil)
+    return ok and instance ~= nil
+end
+
+local function closeWorker(sessionID, commandID, workerID)
+    local instance = spawnedInstances[workerID]
+    local ok = instance ~= nil
+    if instance then
+        ok = pcall(instance.close)
+        spawnedInstances[workerID] = nil
+    end
+    printCoordinatorResult("CLOSE", sessionID, commandID, workerID, ok)
+    return true
 end
 
 event.clientAddInput.add("captureAutoDancerBridgeInput", {
@@ -105,7 +160,6 @@ event.clientAddInput.add("captureAutoDancerBridgeInput", {
     end
 end)
 
--- This must run immediately before AutoDancer's telemetry event.
 event.turn.add("completeAutoDancerBridgeCommand", {
     order = "turnID",
     sequence = -2,
@@ -121,23 +175,32 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
     if not payload or payload == lastPayload then
         return
     end
-    local kind, sessionID, commandID, logicalAction = parse(payload)
-    local accepted = false
-    if kind == "ACTION" and logicalAction ~= nil then
-        accepted = acceptAction(sessionID, commandID, logicalAction)
-    elseif kind == "START" and CurrentLevel.isLobby() then
-        pending = nil
-        completed = nil
-        startAllZonesBard()
-        accepted = true
-    elseif kind == "RESTART" and StateControl.isRestartAllowed() then
-        pending = nil
-        completed = nil
-        StateControl.restart(0)
-        accepted = true
-    elseif not kind then
-        accepted = true
+
+    local kind, sessionID, commandText, argument = string.match(
+        payload,
+        "^([A-Z_]+)%s+([%w%-_]+)%s+(%d+)%s+([%w%-_]*)%s*$"
+    )
+    if not kind then
+        lastPayload = payload
+        return
     end
+
+    local commandID = tonumber(commandText)
+    local accepted = false
+    if isWorker then
+        if kind == "ACTION" then
+            accepted = acceptAction(sessionID, commandID, tonumber(argument))
+        elseif kind == "RESET" then
+            accepted = acceptReset(sessionID, commandID, tonumber(argument))
+        end
+    else
+        if kind == "SPAWN" then
+            accepted = spawnWorker(sessionID, commandID, argument)
+        elseif kind == "CLOSE" then
+            accepted = closeWorker(sessionID, commandID, argument)
+        end
+    end
+
     if accepted then
         lastPayload = payload
     end
@@ -147,6 +210,14 @@ function Bridge.consumeCompletedCommand()
     local result = completed
     completed = nil
     return result
+end
+
+function Bridge.getInstanceID()
+    return instanceID
+end
+
+function Bridge.getRole()
+    return role
 end
 
 return Bridge

@@ -28,7 +28,9 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
+SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
 RECORD_KINDS = frozenset({"reset", "turn", "terminal"})
 _JSON_DECODER = json.JSONDecoder()
@@ -194,6 +196,13 @@ def validate_record(record: Mapping[str, Any]) -> None:
     run_id = record.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ProtocolError("Each record must contain a non-empty run_id")
+    instance_id = record.get("instance_id")
+    if not isinstance(instance_id, str) or not instance_id.strip():
+        raise ProtocolError("Each record must contain a non-empty instance_id")
+    if not all(character.isalnum() or character in "-_" for character in instance_id):
+        raise ProtocolError("instance_id contains unsupported characters")
+    if record.get("role") != "worker":
+        raise ProtocolError("Turn telemetry must have role 'worker'")
     sequence = _integer(record.get("sequence"), "sequence", minimum=0)
     kind = record.get("kind")
     if kind not in RECORD_KINDS:
@@ -231,13 +240,12 @@ def validate_record(record: Mapping[str, Any]) -> None:
         raise ProtocolError("Record game metadata must be an object")
     version = str(game.get("version", ""))
     steam_build = str(game.get("steam_build", ""))
-    if (
-        not version
-        or not steam_build
-        or version.startswith("SET_")
-        or steam_build.startswith("SET_")
-    ):
-        raise ProtocolError("Each record must pin the game version and Steam build")
+    if version != SUPPORTED_GAME_VERSION or steam_build != SUPPORTED_STEAM_BUILD:
+        raise ProtocolError(
+            "Unsupported game build "
+            f"{version!r}/{steam_build!r}; expected "
+            f"{SUPPORTED_GAME_VERSION!r}/{SUPPORTED_STEAM_BUILD!r}"
+        )
 
     zone = _integer(record.get("zone", 0), "zone", minimum=0)
     floor = _integer(record.get("floor", 0), "floor", minimum=0)
@@ -259,14 +267,20 @@ def validate_record(record: Mapping[str, Any]) -> None:
         if not isinstance(session_id, str) or not session_id.strip():
             raise ProtocolError("Bridge acknowledgement requires a session_id")
         _integer(bridge.get("command_id"), "bridge command_id", minimum=1)
-        requested = _integer(
-            bridge.get("requested_action"), "bridge requested_action", minimum=0
-        )
-        if requested >= ACTION_COUNT:
-            raise ProtocolError(f"bridge requested_action must be below {ACTION_COUNT}")
-        _integer(bridge.get("engine_action"), "bridge engine_action", minimum=0)
-        if bridge.get("observed_action") is not None:
-            _integer(bridge["observed_action"], "bridge observed_action", minimum=0)
+        bridge_kind = bridge.get("kind")
+        if bridge_kind == "ACTION":
+            requested = _integer(
+                bridge.get("requested_action"), "bridge requested_action", minimum=0
+            )
+            if requested >= ACTION_COUNT:
+                raise ProtocolError(f"bridge requested_action must be below {ACTION_COUNT}")
+            _integer(bridge.get("engine_action"), "bridge engine_action", minimum=0)
+            if bridge.get("observed_action") is not None:
+                _integer(bridge["observed_action"], "bridge observed_action", minimum=0)
+        elif bridge_kind == "RESET":
+            _integer(bridge.get("seed"), "bridge seed", minimum=0)
+        else:
+            raise ProtocolError("Bridge acknowledgement kind must be ACTION or RESET")
 
 
 class TurnSource(Protocol):

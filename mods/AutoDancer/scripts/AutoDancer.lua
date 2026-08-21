@@ -19,7 +19,7 @@ local INVENTORY_SLOTS = 8
 local INVENTORY_FEATURES = 3
 local ACTION_COUNT = 11
 local LOG_MARKER = "AUTODANCER_JSON:"
-local SCHEMA_VERSION = 3
+local SCHEMA_VERSION = 4
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -422,6 +422,8 @@ local function emitRecord(kind, status, observation, context, debugEntities, bri
     local truncated = status == "aborted"
     local record = {
         schema_version = SCHEMA_VERSION,
+        instance_id = Bridge.getInstanceID(),
+        role = Bridge.getRole(),
         run_id = activeRunID,
         sequence = sequence,
         kind = kind,

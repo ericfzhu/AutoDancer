@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from autodancer.constants import Action
-from autodancer.live.bridge import FileCommandBridge
+from autodancer.live.bridge import CoordinatorBridge, FileCommandBridge
 
 
 def test_file_bridge_publishes_monotonic_action_commands(tmp_path: Path) -> None:
@@ -19,15 +19,25 @@ def test_file_bridge_publishes_monotonic_action_commands(tmp_path: Path) -> None
     assert path.read_text(encoding="ascii") == "ACTION session-1 2 5\n"
 
 
-def test_file_bridge_publishes_restart(tmp_path: Path) -> None:
+def test_file_bridge_publishes_seeded_reset(tmp_path: Path) -> None:
     path = tmp_path / "bridge-command.txt"
-    command = FileCommandBridge(path, session_id="session-2").restart()
+    command = FileCommandBridge(path, session_id="session-2").reset(12345)
     assert command.action is None
-    assert path.read_text(encoding="ascii") == "RESTART session-2 1 -1\n"
+    assert command.seed == 12345
+    assert path.read_text(encoding="ascii") == "RESET session-2 1 12345\n"
 
 
 def test_file_bridge_publishes_all_zones_bard_start(tmp_path: Path) -> None:
     path = tmp_path / "bridge-command.txt"
     command = FileCommandBridge(path, session_id="session-3").start()
-    assert command.kind == "START"
-    assert path.read_text(encoding="ascii") == "START session-3 1 -1\n"
+    assert command.kind == "RESET"
+    assert path.read_text(encoding="ascii").startswith("RESET session-3 1 ")
+
+
+def test_coordinator_routes_worker_lifecycle_commands(tmp_path: Path) -> None:
+    path = tmp_path / "bridge-command.coordinator.txt"
+    bridge = CoordinatorBridge(path, session_id="supervisor")
+    bridge.spawn("worker-0003")
+    assert path.read_text(encoding="ascii") == "SPAWN supervisor 1 worker-0003\n"
+    bridge.close("worker-0003")
+    assert path.read_text(encoding="ascii") == "CLOSE supervisor 2 worker-0003\n"

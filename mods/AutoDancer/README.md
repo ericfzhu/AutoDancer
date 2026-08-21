@@ -1,26 +1,19 @@
 # AutoDancer SYNCHRONY mod
 
-This unpackaged mod is the only control and telemetry interface used by Python.
-It is Bard-only.
-
-Install this complete directory as:
+This unpackaged Bard-only mod is Python's sole control and telemetry interface.
+Install this complete directory at:
 
 ```text
 %LOCALAPPDATA%\NecroDancer\mods\AutoDancer
 ```
 
-Enable **AutoDancer** under **Customize → Mods**, then start or attach to a Bard
-run. Python writes `bridge-command.txt` beside `mod.json`; the Lua bridge polls
-that file, injects one action, and emits the resulting symbolic transition to
-`NecroDancer.log`.
+Enable **AutoDancer** under **Customize → Mods**. Python starts a hidden
+coordinator, which reads `bridge-command.coordinator.txt` and creates native
+independent workers. Each worker reads its own predictable file, such as
+`bridge-command.worker-0000.txt`, and emits schema-4 symbolic transitions in
+its engine-assigned log.
 
-Do not remove the included `bridge-command.txt`: Synchrony mounts it as the
-logical asset `mods/AutoDancer/bridge-command.txt`, and Python preserves that
-file while updating its contents.
-
-The mod never accepts an uncorrelated transition as an agent step. Every
-agent-driven turn contains the exact Python `session_id`, monotonic
-`command_id`, logical action, engine action, and observed input action.
-
-There are no probe hotkeys, keyboard automation, screenshots, or simulator
-comparison paths.
+The Python supervisor precreates all worker command files before launch. Every
+transition identifies its worker and acknowledges the exact session, command,
+action or reset seed. There are no probe hotkeys, keyboard controls,
+screenshots, or simulator paths.

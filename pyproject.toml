@@ -12,11 +12,11 @@ license = { text = "MIT" }
 dependencies = [
   "gymnasium>=0.29,<1",
   "numpy>=1.26,<2",
+  "psutil>=6,<8",
 ]
 
 [project.optional-dependencies]
 train = [
-  "sample-factory>=2.1.1,<3; platform_system != 'Windows'",
   "tensorboard>=2.17",
   "torch>=2.3",
 ]
@@ -29,6 +29,7 @@ test = [
 autodancer-live-run = "autodancer.live.run:main"
 autodancer-live-explore = "autodancer.live.explore:main"
 autodancer-live-start = "autodancer.live.start:main"
+autodancer-train = "autodancer.training.train:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]
