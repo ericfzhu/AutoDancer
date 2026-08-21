@@ -16,12 +16,20 @@ local SCHEMA_VERSION = 4
 local GAME_VERSION = "v4.2.1-b5713"
 local STEAM_BUILD = "22938426"
 local MAX_COMMAND_BYTES = 512
-local isWorker = MultiInstance.isDuplicate()
-local instanceID = isWorker and MultiInstance.getSessionUID() or "coordinator"
+local assignmentResource = "mods/AutoDancer/bridge-assignment.txt"
+local assignmentOK, assignment = pcall(FileIO.readFileToString, assignmentResource, 64)
+local assignedID = assignmentOK and type(assignment) == "string"
+    and string.match(assignment, "^%s*([%w%-_]+)%s*$") or nil
+local sessionUID = MultiInstance.getSessionUID()
+local instanceID = assignedID or sessionUID or "coordinator"
+local isWorker = instanceID ~= "coordinator"
 instanceID = tostring(instanceID or "worker-unknown")
 instanceID = string.gsub(instanceID, "[^%w%-_]", "_")
 local role = isWorker and "worker" or "coordinator"
-local commandResource = "mods/AutoDancer/bridge-command." .. instanceID .. ".txt"
+local commandModuleID = string.gsub(instanceID, "%-", "_")
+local commandModuleName = "AutoDancer.scripts.BridgeCommand_" .. commandModuleID
+local Command = require(commandModuleName)
+local commandResource = "scripts/BridgeCommand_" .. commandModuleID .. ".lua"
 
 local LOGICAL_TO_ENGINE = {
     [0] = Action.Direction.UP,
@@ -43,8 +51,8 @@ local completed = nil
 local spawnedInstances = {}
 
 local function readPayload()
-    local ok, payload = pcall(FileIO.readFileToString, commandResource, MAX_COMMAND_BYTES)
-    if not ok or type(payload) ~= "string" or payload == "" then
+    local payload = Command.payload
+    if type(payload) ~= "string" or payload == "" or #payload > MAX_COMMAND_BYTES then
         return nil
     end
     return payload
@@ -125,6 +133,7 @@ local function spawnWorker(sessionID, commandID, workerID)
     end
     local ok, instance = pcall(MultiInstance.create, {
         independent = true,
+        external = true,
         uid = workerID,
         configName = "AutoDancer-" .. workerID .. ".lua",
         windowTitle = "AutoDancer " .. workerID,
@@ -132,8 +141,8 @@ local function spawnWorker(sessionID, commandID, workerID)
     if ok and instance then
         spawnedInstances[workerID] = instance
     end
-    printCoordinatorResult("SPAWN", sessionID, commandID, workerID, ok and instance ~= nil)
-    return ok and instance ~= nil
+    printCoordinatorResult("SPAWN", sessionID, commandID, workerID, ok and not not instance)
+    return ok and not not instance
 end
 
 local function closeWorker(sessionID, commandID, workerID)

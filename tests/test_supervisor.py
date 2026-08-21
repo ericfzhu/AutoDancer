@@ -36,12 +36,23 @@ def test_supervisor_refuses_unowned_game_process(monkeypatch: pytest.MonkeyPatch
 
 
 def test_supervisor_worker_slots_and_command_files_are_predictable(tmp_path: Path) -> None:
-    config = SupervisorConfig(tmp_path / "game", tmp_path / "mod", num_instances=3)
+    config = SupervisorConfig(
+        tmp_path / "game",
+        tmp_path / "mod",
+        num_instances=3,
+        profile_root=tmp_path / "profiles",
+    )
     supervisor = AutoDancerSupervisor(config)
     assert supervisor.worker_ids == ["worker-0000", "worker-0001", "worker-0002"]
     supervisor._prepare_command_files()
-    expected = [config.mod_dir / f"bridge-command.worker-000{index}.txt" for index in range(3)]
-    assert all(path.read_text(encoding="ascii") == "NOOP\n" for path in expected)
+    expected = [
+        config.mod_dir / "scripts" / f"BridgeCommand_worker_000{index}.lua"
+        for index in range(3)
+    ]
+    assert all(
+        path.read_text(encoding="ascii") == 'return {payload="NOOP\\n"}\n'
+        for path in expected
+    )
 
 
 def test_malformed_readiness_times_out_without_reducing_capacity(
@@ -59,4 +70,6 @@ def test_malformed_readiness_times_out_without_reducing_capacity(
     )
     monkeypatch.setattr(AutoDancerSupervisor, "_log_paths", lambda _: [path])
     with pytest.raises(SupervisorError, match="Timed out waiting for worker"):
-        supervisor._wait_for_ready("worker-0000", {path: 0}, role="worker")
+        supervisor._wait_for_ready(
+            "worker-0000", {path: (0, path.stat().st_mtime_ns)}, role="worker"
+        )

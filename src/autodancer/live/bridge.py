@@ -118,6 +118,9 @@ def _safe_identifier(value: str, label: str) -> str:
 
 def _write_mounted_file(path: Path, payload: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == ".lua":
+        escaped = payload.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        payload = f'return {{payload="{escaped}"}}\n'
     encoded = payload.encode("ascii")
     mode = "r+b" if path.exists() else "w+b"
     with path.open(mode) as command_file:

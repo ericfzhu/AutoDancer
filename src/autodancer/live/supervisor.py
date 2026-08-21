@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 import uuid
@@ -36,10 +37,12 @@ class SupervisorConfig:
     startup_timeout: float = 45.0
     turn_timeout: float = 10.0
     max_turns: int = 10000
+    profile_root: Path = Path(".runtime/live-profiles")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "game_dir", Path(self.game_dir).resolve())
         object.__setattr__(self, "mod_dir", Path(self.mod_dir).resolve())
+        object.__setattr__(self, "profile_root", Path(self.profile_root).resolve())
         if self.num_instances <= 0:
             raise ValueError("num_instances must be positive")
         if self.startup_timeout <= 0 or self.turn_timeout <= 0:
@@ -71,6 +74,9 @@ class AutoDancerSupervisor:
     workers: dict[str, InstanceHandle] = field(default_factory=dict, init=False)
     _coordinator: subprocess.Popen[bytes] | None = field(default=None, init=False)
     _coordinator_bridge: CoordinatorBridge | None = field(default=None, init=False)
+    _worker_processes: dict[str, subprocess.Popen[bytes]] = field(
+        default_factory=dict, init=False
+    )
     _owned_pids: set[int] = field(default_factory=set, init=False)
 
     @property
@@ -79,7 +85,23 @@ class AutoDancerSupervisor:
 
     @property
     def coordinator_command_path(self) -> Path:
-        return self.config.mod_dir / "bridge-command.coordinator.txt"
+        return self.config.mod_dir / "scripts" / "BridgeCommand_coordinator.lua"
+
+    @property
+    def assignment_path(self) -> Path:
+        return self.config.mod_dir / "bridge-assignment.txt"
+
+    def _profile_dir(self, instance_id: str) -> Path:
+        return self.config.profile_root / self.session_id / instance_id
+
+    def _profile_mod_dir(self, instance_id: str) -> Path:
+        return (
+            self._profile_dir(instance_id)
+            / "Local"
+            / "NecroDancer"
+            / "mods"
+            / "AutoDancer"
+        )
 
     def start(self) -> AutoDancerSupervisor:
         self._validate_installation()
@@ -88,11 +110,11 @@ class AutoDancerSupervisor:
         baseline = self._log_offsets()
         self._coordinator = self._launch_coordinator()
         self._owned_pids.add(self._coordinator.pid)
-        self._wait_for_ready("coordinator", baseline, role="coordinator")
-        self._coordinator_bridge = CoordinatorBridge(
-            self.coordinator_command_path, session_id=self.session_id
-        )
         try:
+            self._wait_for_ready("coordinator", baseline, role="coordinator")
+            self._coordinator_bridge = CoordinatorBridge(
+                self.coordinator_command_path, session_id=self.session_id
+            )
             for worker_id in self.worker_ids:
                 self._spawn_worker(worker_id, restart_count=0)
         except Exception:
@@ -124,14 +146,63 @@ class AutoDancerSupervisor:
     def _prepare_command_files(self) -> None:
         paths = [self.coordinator_command_path]
         paths.extend(
-            self.config.mod_dir / f"bridge-command.{worker_id}.txt"
+            self.config.mod_dir
+            / "scripts"
+            / f"BridgeCommand_{worker_id.replace('-', '_')}.lua"
             for worker_id in self.worker_ids
         )
         for path in paths:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("NOOP\n", encoding="ascii")
+            path.write_text('return {payload="NOOP\\n"}\n', encoding="ascii")
+        self._assign_process("coordinator")
+
+    def _assign_process(self, instance_id: str) -> None:
+        self.assignment_path.write_text(f"{instance_id}\n", encoding="ascii")
+
+    def _prepare_profiles(self) -> None:
+        roaming_source = Path(os.environ["APPDATA"]) / "NecroDancer"
+        local_source = Path(os.environ["LOCALAPPDATA"]) / "NecroDancer"
+        for instance_id in ["coordinator", *self.worker_ids]:
+            profile = self._profile_dir(instance_id)
+            roaming = profile / "Roaming" / "NecroDancer"
+            local = profile / "Local" / "NecroDancer"
+            roaming.mkdir(parents=True, exist_ok=True)
+            local.mkdir(parents=True, exist_ok=True)
+            if roaming_source.is_dir():
+                shutil.copytree(roaming_source, roaming, dirs_exist_ok=True)
+            for name in ("saves",):
+                source = local_source / name
+                if source.is_dir():
+                    shutil.copytree(source, local / name, dirs_exist_ok=True)
+            for source in local_source.glob("*.necronch"):
+                shutil.copy2(source, local / source.name)
+            shutil.copytree(
+                self.config.mod_dir, self._profile_mod_dir(instance_id), dirs_exist_ok=True
+            )
+            self._enable_mod_in_profile(roaming)
+
+    @staticmethod
+    def _enable_mod_in_profile(roaming: Path) -> None:
+        addition = '{name="AutoDancer",package=false,version="0.1.0"}'
+        for path in roaming.glob("*.lua"):
+            text = path.read_text(encoding="utf-8")
+            lines = text.splitlines(keepends=True)
+            changed = False
+            for index, line in enumerate(lines):
+                if '["modLoader.list"]' in line and 'name="AutoDancer"' not in line:
+                    position = line.rfind("}},")
+                    if position >= 0:
+                        lines[index] = line[: position + 1] + "," + addition + line[position + 1 :]
+                        changed = True
+            if changed:
+                path.write_text("".join(lines), encoding="utf-8")
 
     def _launch_coordinator(self) -> subprocess.Popen[bytes]:
+        return self._launch_process("coordinator", [])
+
+    def _launch_process(
+        self, instance_id: str, arguments: list[str]
+    ) -> subprocess.Popen[bytes]:
         startupinfo = None
         creationflags = 0
         if os.name == "nt":
@@ -140,8 +211,9 @@ class AutoDancerSupervisor:
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         return subprocess.Popen(
-            [str(self.config.executable)],
+            [str(self.config.executable), *arguments],
             cwd=self.config.game_dir,
+            env=os.environ.copy(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -152,8 +224,11 @@ class AutoDancerSupervisor:
     def _log_paths(self) -> list[Path]:
         return sorted(self.config.game_dir.glob("NecroDancer*.log"))
 
-    def _log_offsets(self) -> dict[Path, int]:
-        return {path: path.stat().st_size for path in self._log_paths()}
+    def _log_offsets(self) -> dict[Path, tuple[int, int]]:
+        return {
+            path: (path.stat().st_size, path.stat().st_mtime_ns)
+            for path in self._log_paths()
+        }
 
     @staticmethod
     def _ready_records(path: Path, offset: int) -> list[dict[str, Any]]:
@@ -180,7 +255,7 @@ class AutoDancerSupervisor:
     def _wait_for_ready(
         self,
         instance_id: str,
-        baseline: dict[Path, int],
+        baseline: dict[Path, tuple[int, int]],
         *,
         role: str,
     ) -> Path:
@@ -189,7 +264,14 @@ class AutoDancerSupervisor:
             if self._coordinator is not None and self._coordinator.poll() is not None:
                 raise SupervisorError("Coordinator exited during startup")
             for path in self._log_paths():
-                for record in self._ready_records(path, baseline.get(path, 0)):
+                previous = baseline.get(path)
+                stat = path.stat()
+                offset = (
+                    previous[0]
+                    if previous is not None and previous[1] == stat.st_mtime_ns
+                    else 0
+                )
+                for record in self._ready_records(path, offset):
                     if (
                         record.get("schema_version") == SCHEMA_VERSION
                         and record.get("instance_id") == instance_id
@@ -202,20 +284,27 @@ class AutoDancerSupervisor:
         raise SupervisorError(f"Timed out waiting for {role} {instance_id!r}")
 
     def _spawn_worker(self, worker_id: str, *, restart_count: int) -> InstanceHandle:
-        if self._coordinator_bridge is None:
-            raise SupervisorError("Coordinator bridge is not initialized")
         baseline = self._log_offsets()
-        before_pids = self._game_pids()
-        self._coordinator_bridge.spawn(worker_id)
+        config_name = f"AutoDancer-{worker_id}.lua"
+        log_name = f"NecroDancer-{worker_id}.log"
+        self._assign_process(worker_id)
+        process = self._launch_process(
+            worker_id,
+            [
+                f"-cwos.game.debug.logging.file.name={log_name}",
+            ],
+        )
+        self._worker_processes[worker_id] = process
+        self._owned_pids.add(process.pid)
         log_path = self._wait_for_ready(worker_id, baseline, role="worker")
-        new_pids = self._game_pids() - before_pids
-        self._owned_pids.update(new_pids)
         handle = InstanceHandle(
             instance_id=worker_id,
-            command_path=self.config.mod_dir / f"bridge-command.{worker_id}.txt",
+            command_path=self.config.mod_dir
+            / "scripts"
+            / f"BridgeCommand_{worker_id.replace('-', '_')}.lua",
             log_path=log_path,
-            pid=next(iter(new_pids), None),
-            config_name=f"AutoDancer-{worker_id}.lua",
+            pid=process.pid,
+            config_name=config_name,
             restart_count=restart_count,
         )
         self.workers[worker_id] = handle
@@ -245,10 +334,13 @@ class AutoDancerSupervisor:
     def replace_worker(self, worker_id: str) -> InstanceHandle:
         previous = self.workers[worker_id]
         previous.healthy = False
-        if self._coordinator_bridge is None:
-            raise SupervisorError("Coordinator bridge is unavailable")
-        self._coordinator_bridge.close(worker_id)
-        time.sleep(0.25)
+        process = self._worker_processes.pop(worker_id, None)
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
         return self._spawn_worker(worker_id, restart_count=previous.restart_count + 1)
 
     def health(self) -> dict[str, dict[str, Any]]:
@@ -266,12 +358,6 @@ class AutoDancerSupervisor:
         }
 
     def close(self) -> None:
-        if self._coordinator_bridge is not None:
-            for worker_id in list(self.workers):
-                try:
-                    self._coordinator_bridge.close(worker_id)
-                except OSError:
-                    pass
         time.sleep(0.1)
         for pid in sorted(self._owned_pids, reverse=True):
             try:
@@ -295,6 +381,7 @@ class AutoDancerSupervisor:
         self._owned_pids.clear()
         self._coordinator = None
         self._coordinator_bridge = None
+        self._worker_processes.clear()
 
     def __enter__(self) -> AutoDancerSupervisor:
         return self.start()

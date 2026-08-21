@@ -29,6 +29,7 @@ test = [
 autodancer-live-run = "autodancer.live.run:main"
 autodancer-live-explore = "autodancer.live.explore:main"
 autodancer-live-start = "autodancer.live.start:main"
+autodancer-live-smoke = "autodancer.live.smoke:main"
 autodancer-train = "autodancer.training.train:main"
 
 [tool.hatch.build.targets.wheel]
