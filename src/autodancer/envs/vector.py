@@ -83,6 +83,7 @@ class AutoDancerVectorEnv:
                             "worker_replaced": True,
                             "failure": type(error).__name__,
                             "bridge": None,
+                            "reward_components": {"worker_failure": -1.0},
                         },
                     )
                 )

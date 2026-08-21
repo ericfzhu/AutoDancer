@@ -77,11 +77,13 @@ class RecurrentPPO:
         config: PPOConfig,
         *,
         device: torch.device,
+        checkpoint_metadata: dict[str, Any] | None = None,
     ) -> None:
         self.model = model.to(device)
         self.config = config
         self.device = device
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.learning_rate)
+        self.checkpoint_metadata = dict(checkpoint_metadata or {})
         self.global_step = 0
         self.updates = 0
 
@@ -178,6 +180,7 @@ class RecurrentPPO:
         payload = {
             "model": self.model.state_dict(),
             "architecture": self.model.architecture_spec(),
+            "checkpoint_metadata": self.checkpoint_metadata,
             "optimizer": self.optimizer.state_dict(),
             "config": asdict(self.config),
             "global_step": self.global_step,
@@ -197,6 +200,8 @@ class RecurrentPPO:
             raise ValueError(
                 "Checkpoint model architecture is incompatible with the schema-5 policy"
             )
+        if payload.get("checkpoint_metadata", {}) != self.checkpoint_metadata:
+            raise ValueError("Checkpoint training metadata does not match the current run")
         if payload.get("config") != asdict(self.config):
             raise ValueError("Checkpoint PPO configuration does not match the current run")
         self.model.load_state_dict(payload["model"])

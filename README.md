@@ -6,7 +6,7 @@ capture, keyboard automation, or UI control.
 
 One hidden coordinator and a fixed number of workers are launched by the Python
 supervisor. Each worker has its own UID, config, authenticated named pipe,
-engine log, seed, run ID, and GRU state. Python refuses to start around an
+engine log, seed, run ID, and LSTM state. Python refuses to start around an
 unowned NecroDancer process and never silently trains with fewer workers than
 requested.
 
@@ -77,9 +77,14 @@ pickups, deaths, and completions for both policies, plus their aggregate deltas.
 
 The default action order is `up`, `right`, `down`, `left`, `wait`, `bomb`,
 `item 1`, `item 2`, `throw`, `spell 1`, and `spell 2`. Observations contain a
-`21 × 21 × 7` symbolic grid, a 16-value player vector, an `8 × 3` inventory,
+`21 × 21 × 11` symbolic grid, a 16-value player vector, an `8 × 4` inventory,
 and an 11-value legal-action mask.
 
-See [`docs/protocol.md`](docs/protocol.md) for the schema-4 wire contract.
+The default versioned reward profile prioritizes floor progress over bounded
+exploration and combat shaping. Pass `--reward-config weights.json` to override
+individual weights; the exact profile is stored in checkpoints and must match
+on resume. See [`docs/rewards.md`](docs/rewards.md) for the design and defaults.
+
+See [`docs/protocol.md`](docs/protocol.md) for the schema-5 wire contract.
 The first measured live-training reference is recorded in
 [`docs/baseline.md`](docs/baseline.md).

@@ -104,6 +104,8 @@ function updateCard(worker) {
   drawGrid(node.querySelector("canvas"), worker.grid);
   const action = worker.action === null ? "—" : `${worker.action}: ${ACTIONS[worker.action] ?? "?"}`;
   const events=(info.raw_events||[]).map(e=>e.kind).join(", ") || "none";
+  const rewardParts=Object.entries(info.reward_components||{}).filter(([,v])=>v!==0)
+    .map(([k,v])=>`${k} ${Number(v).toFixed(3)}`).join(", ") || "turn pending";
   const inventory=(worker.inventory||[]).map((slot,index)=>({slot,index}))
     .filter(item=>item.slot.some(value=>value)).map(item=>`${item.index}:${item.slot.join("/")}`).join(", ") || "empty";
   node.querySelector(".stats").innerHTML = `<b>Zone/floor</b> ${info.zone??0}-${info.floor??0}<br>
@@ -112,6 +114,7 @@ function updateCard(worker) {
     <b>Turn</b> ${info.turns??p[8]??0}<br><b>Action</b> ${action}<br><b>Reward</b> ${fmt(worker.reward,3)}<br>
     <b>Seed</b> ${info.seed??"—"}<br><b>Run</b> ${info.run_id??"—"}<br>
     <b>Latency</b> ${fmt(h.last_latency,3)}s<br><b>Restarts</b> ${h.restart_count??0}<br>
+    <div class="events"><b>Reward parts</b> ${rewardParts}</div>
     <div class="events"><b>Events</b> ${events}</div>`;
 }
 async function refresh() {

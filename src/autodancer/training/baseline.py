@@ -299,6 +299,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_sha256": _checkpoint_hash(arguments.checkpoint),
         "checkpoint_global_step": int(payload.get("global_step", 0)),
         "checkpoint_updates": int(payload.get("updates", 0)),
+        "reward": payload.get("checkpoint_metadata", {}).get("reward"),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,

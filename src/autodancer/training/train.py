@@ -18,6 +18,7 @@ from torch import Tensor
 
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.rewards import load_reward_config
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
@@ -84,6 +85,7 @@ class RolloutCollector:
         self.furthest_zone = np.zeros(environment.num_envs, dtype=np.int32)
         self.furthest_floor = np.zeros(environment.num_envs, dtype=np.int32)
         self.completed_episodes: list[dict[str, Any]] = []
+        self.last_reward_components: dict[str, float] = {}
         self.telemetry_callback = telemetry_callback
         if self.telemetry_callback is not None:
             self.telemetry_callback(self.observation, self.infos, None, None)
@@ -93,6 +95,7 @@ class RolloutCollector:
         return self.rng.integers(0, 2**31, size=count, dtype=np.int64).tolist()
 
     def collect(self, length: int) -> RolloutBatch:
+        reward_components: dict[str, float] = {}
         observations: dict[str, list[Tensor]] = {
             **{key: [] for key in self.observation},
             "previous_action": [],
@@ -137,6 +140,10 @@ class RolloutCollector:
             done = terminated | truncated
             self.episode_returns += reward
             for index, info in enumerate(infos):
+                for name, component_value in info.get("reward_components", {}).items():
+                    reward_components[name] = reward_components.get(name, 0.0) + float(
+                        component_value
+                    )
                 self.episode_events[index].extend(info.get("raw_events", []))
                 self.furthest_zone[index] = max(
                     self.furthest_zone[index], int(info.get("zone") or 0)
@@ -185,6 +192,7 @@ class RolloutCollector:
             self.episode_starts = torch.from_numpy(done).to(self.device)
             self.observation = next_observation
             self.infos = infos
+        self.last_reward_components = reward_components
         with torch.inference_mode():
             current = tensor_observation(self.observation, self.device)
             current["previous_action"] = torch.from_numpy(self.previous_actions).to(self.device)
@@ -278,6 +286,7 @@ def train(arguments: argparse.Namespace) -> None:
         rollout_length=arguments.rollout_length,
         sequence_length=arguments.sequence_length,
     )
+    reward_config = load_reward_config(arguments.reward_config)
     supervisor_config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -285,6 +294,7 @@ def train(arguments: argparse.Namespace) -> None:
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
         max_turns=arguments.max_turns,
+        reward_config=reward_config,
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -322,7 +332,12 @@ def train(arguments: argparse.Namespace) -> None:
             telemetry_callback = publish_telemetry if dashboard_state is not None else None
             try:
                 model = RecurrentActorCritic(ModelConfig())
-                algorithm = RecurrentPPO(model, ppo_config, device=device)
+                algorithm = RecurrentPPO(
+                    model,
+                    ppo_config,
+                    device=device,
+                    checkpoint_metadata={"reward": reward_config.specification()},
+                )
                 if arguments.resume:
                     algorithm.load(arguments.resume)
                 collector = RolloutCollector(
@@ -352,6 +367,10 @@ def train(arguments: argparse.Namespace) -> None:
                         "steps_per_second": algorithm.global_step / elapsed,
                         **update_metrics,
                         **episode_metrics(collector.completed_episodes),
+                        **{
+                            f"reward_{name}": value
+                            for name, value in collector.last_reward_components.items()
+                        },
                         "worker_restarts": sum(
                             handle.restart_count for handle in supervisor.workers.values()
                         ),
@@ -396,6 +415,7 @@ def train(arguments: argparse.Namespace) -> None:
                         {
                             "ppo": asdict(ppo_config),
                             "architecture": model.architecture_spec(),
+                            "reward": reward_config.specification(),
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),
@@ -434,6 +454,11 @@ def main() -> int:
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--max-turns", type=int, default=10000)
+    parser.add_argument(
+        "--reward-config",
+        type=Path,
+        help="JSON object overriding the versioned default reward weights",
+    )
     parser.add_argument(
         "--dashboard",
         nargs="?",

@@ -15,6 +15,7 @@ from autodancer.training.ppo import (
     RolloutBatch,
     generalized_advantage_estimate,
 )
+from autodancer.training.train import RolloutCollector
 
 
 def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:
@@ -77,6 +78,85 @@ def test_legacy_checkpoint_is_rejected(tmp_path: Path) -> None:
     torch.save({"model": algorithm.model.state_dict(), "config": {}}, path)
     with pytest.raises(ValueError, match="architecture is incompatible"):
         algorithm.load(path)
+
+
+def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    path = tmp_path / "checkpoint.pt"
+    RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={"reward": {"version": 1}},
+    ).save(path)
+    incompatible = RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={"reward": {"version": 2}},
+    )
+    with pytest.raises(ValueError, match="training metadata"):
+        incompatible.load(path)
+
+
+def test_rollout_collects_reward_components_without_overwriting_values() -> None:
+    class FakeModel:
+        def eval(self) -> None:
+            pass
+
+        def initial_state(self, batch_size: int, *, device=None) -> torch.Tensor:
+            return torch.zeros(batch_size, 2, 1, device=device)
+
+        def act(self, observation, state):
+            del observation
+            return (
+                torch.zeros(1, dtype=torch.long),
+                torch.zeros(1),
+                torch.zeros(1),
+                torch.tensor([0.5]),
+                state,
+            )
+
+        def step(self, observation, state):
+            del observation
+            return torch.zeros(1, ACTION_COUNT), torch.tensor([0.5]), state
+
+    class FakeEnvironment:
+        num_envs = 1
+        worker_ids = ["worker-0000"]
+
+        def reset(self, seeds):
+            del seeds
+            policy_context = {"previous_action", "previous_reward"}
+            return (
+                {
+                    key: value[0].numpy()
+                    for key, value in observations(1, 1).items()
+                    if key not in policy_context
+                },
+                [{}],
+            )
+
+        def step(self, actions):
+            del actions
+            value, _ = self.reset([1])
+            return (
+                value,
+                np.asarray([0.02], dtype=np.float32),
+                np.asarray([False]),
+                np.asarray([False]),
+                [{"reward_components": {"enemy_damage": 0.025}}],
+            )
+
+    collector = RolloutCollector(
+        FakeEnvironment(),  # type: ignore[arg-type]
+        FakeModel(),  # type: ignore[arg-type]
+        device=torch.device("cpu"),
+        seed=1,
+    )
+    rollout = collector.collect(1)
+    assert rollout.values.tolist() == [[0.5]]
+    assert collector.last_reward_components == {"enemy_damage": 0.025}
 
 
 def test_recurrent_gae_stops_at_episode_boundaries() -> None:

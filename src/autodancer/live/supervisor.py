@@ -21,6 +21,7 @@ from autodancer.live.protocol import (
     SUPPORTED_GAME_VERSION,
     SUPPORTED_STEAM_BUILD,
 )
+from autodancer.rewards import RewardConfig
 
 READY_MARKER = "AUTODANCER_READY:"
 
@@ -39,6 +40,7 @@ class SupervisorConfig:
     reset_timeout: float = 30.0
     max_turns: int = 10000
     profile_root: Path = Path(".runtime/live-profiles")
+    reward_config: RewardConfig = RewardConfig()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "game_dir", Path(self.game_dir).resolve())
@@ -269,6 +271,7 @@ class AutoDancerSupervisor:
             reset_timeout=self.config.reset_timeout,
             max_turns=self.config.max_turns,
             instance_id=worker_id,
+            reward_config=self.config.reward_config,
         )
 
     def replace_worker(self, worker_id: str) -> InstanceHandle:

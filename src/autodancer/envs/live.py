@@ -27,7 +27,7 @@ from autodancer.live.protocol import (
     validate_record,
 )
 from autodancer.observation import observation_space
-from autodancer.rewards import reward_from_event_dicts
+from autodancer.rewards import RewardConfig, RewardTracker
 
 
 class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
@@ -47,6 +47,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         attach_existing: bool = False,
         max_turns: int = 10000,
         instance_id: str = "worker-0000",
+        reward_config: RewardConfig | None = None,
     ) -> None:
         if turn_source is None and log_path is None:
             self._source: TurnSource | None = None
@@ -67,6 +68,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._last_observation: dict[str, np.ndarray] | None = None
         self._episode_steps = 0
         self._episode_done = False
+        self.reward_tracker = RewardTracker(reward_config)
 
     def _dependencies(self) -> tuple[TurnSource, ActionBridge]:
         if self._source is None:
@@ -110,7 +112,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             raise ProtocolError("The first record after RESTART must have kind 'reset'")
         self._episode_steps = 0
         self._episode_done = record["episode_status"] != "running"
-        return self._accept_record(record)
+        observation, info = self._accept_record(record)
+        self.reward_tracker.reset(observation, info)
+        return observation, info
 
     def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         if self._episode_done:
@@ -150,7 +154,15 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         info["deaths"] = int(status == "dead")
         info["turns"] = self._episode_steps
         self._episode_done = terminated or truncated
-        return observation, reward_from_event_dicts(events), terminated, truncated, info
+        reward, components = self.reward_tracker.score(
+            observation,
+            info,
+            events,
+            terminated=terminated,
+            truncated=truncated,
+        )
+        info["reward_components"] = components
+        return observation, reward, terminated, truncated, info
 
     @staticmethod
     def _verify_acknowledgement(record: dict[str, Any], command: BridgeCommand) -> None:
