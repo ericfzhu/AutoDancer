@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import time
 import uuid
@@ -15,7 +14,8 @@ from typing import Any
 import psutil
 
 from autodancer.envs.live import AutoDancerLiveEnv
-from autodancer.live.bridge import CoordinatorBridge
+from autodancer.live.bridge import NativePipeCommandBridge
+from autodancer.live.native_pipe import NativePipeServer, pipe_name
 from autodancer.live.protocol import (
     SCHEMA_VERSION,
     SUPPORTED_GAME_VERSION,
@@ -36,6 +36,7 @@ class SupervisorConfig:
     num_instances: int
     startup_timeout: float = 45.0
     turn_timeout: float = 10.0
+    reset_timeout: float = 30.0
     max_turns: int = 10000
     profile_root: Path = Path(".runtime/live-profiles")
 
@@ -45,7 +46,7 @@ class SupervisorConfig:
         object.__setattr__(self, "profile_root", Path(self.profile_root).resolve())
         if self.num_instances <= 0:
             raise ValueError("num_instances must be positive")
-        if self.startup_timeout <= 0 or self.turn_timeout <= 0:
+        if self.startup_timeout <= 0 or self.turn_timeout <= 0 or self.reset_timeout <= 0:
             raise ValueError("timeouts must be positive")
 
     @property
@@ -56,8 +57,9 @@ class SupervisorConfig:
 @dataclass(slots=True)
 class InstanceHandle:
     instance_id: str
-    command_path: Path
     log_path: Path
+    pipe_name: str
+    transport: NativePipeServer
     pid: int | None = None
     config_name: str = ""
     healthy: bool = True
@@ -73,7 +75,7 @@ class AutoDancerSupervisor:
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     workers: dict[str, InstanceHandle] = field(default_factory=dict, init=False)
     _coordinator: subprocess.Popen[bytes] | None = field(default=None, init=False)
-    _coordinator_bridge: CoordinatorBridge | None = field(default=None, init=False)
+    _pipe_servers: dict[str, NativePipeServer] = field(default_factory=dict, init=False)
     _worker_processes: dict[str, subprocess.Popen[bytes]] = field(
         default_factory=dict, init=False
     )
@@ -83,38 +85,15 @@ class AutoDancerSupervisor:
     def worker_ids(self) -> list[str]:
         return [f"worker-{index:04d}" for index in range(self.config.num_instances)]
 
-    @property
-    def coordinator_command_path(self) -> Path:
-        return self.config.mod_dir / "scripts" / "BridgeCommand_coordinator.lua"
-
-    @property
-    def assignment_path(self) -> Path:
-        return self.config.mod_dir / "bridge-assignment.txt"
-
-    def _profile_dir(self, instance_id: str) -> Path:
-        return self.config.profile_root / self.session_id / instance_id
-
-    def _profile_mod_dir(self, instance_id: str) -> Path:
-        return (
-            self._profile_dir(instance_id)
-            / "Local"
-            / "NecroDancer"
-            / "mods"
-            / "AutoDancer"
-        )
-
     def start(self) -> AutoDancerSupervisor:
         self._validate_installation()
         self._refuse_existing_processes()
-        self._prepare_command_files()
+        self._prepare_pipes()
         baseline = self._log_offsets()
         self._coordinator = self._launch_coordinator()
         self._owned_pids.add(self._coordinator.pid)
         try:
             self._wait_for_ready("coordinator", baseline, role="coordinator")
-            self._coordinator_bridge = CoordinatorBridge(
-                self.coordinator_command_path, session_id=self.session_id
-            )
             for worker_id in self.worker_ids:
                 self._spawn_worker(worker_id, restart_count=0)
         except Exception:
@@ -125,6 +104,9 @@ class AutoDancerSupervisor:
     def _validate_installation(self) -> None:
         if not self.config.executable.is_file():
             raise SupervisorError(f"Game executable not found: {self.config.executable}")
+        native_library = self.config.game_dir / "autodancer_native.dll"
+        if not native_library.is_file():
+            raise SupervisorError(f"Native bridge library not found: {native_library}")
         for relative in ("mod.json", "scripts/AutoDancer.lua", "scripts/Bridge.lua"):
             if not (self.config.mod_dir / relative).is_file():
                 raise SupervisorError(f"Installed mod is missing {relative}")
@@ -143,59 +125,10 @@ class AutoDancerSupervisor:
                 f"(PIDs: {existing})"
             )
 
-    def _prepare_command_files(self) -> None:
-        paths = [self.coordinator_command_path]
-        paths.extend(
-            self.config.mod_dir
-            / "scripts"
-            / f"BridgeCommand_{worker_id.replace('-', '_')}.lua"
-            for worker_id in self.worker_ids
-        )
-        for path in paths:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text('return {payload="NOOP\\n"}\n', encoding="ascii")
-        self._assign_process("coordinator")
-
-    def _assign_process(self, instance_id: str) -> None:
-        self.assignment_path.write_text(f"{instance_id}\n", encoding="ascii")
-
-    def _prepare_profiles(self) -> None:
-        roaming_source = Path(os.environ["APPDATA"]) / "NecroDancer"
-        local_source = Path(os.environ["LOCALAPPDATA"]) / "NecroDancer"
+    def _prepare_pipes(self) -> None:
         for instance_id in ["coordinator", *self.worker_ids]:
-            profile = self._profile_dir(instance_id)
-            roaming = profile / "Roaming" / "NecroDancer"
-            local = profile / "Local" / "NecroDancer"
-            roaming.mkdir(parents=True, exist_ok=True)
-            local.mkdir(parents=True, exist_ok=True)
-            if roaming_source.is_dir():
-                shutil.copytree(roaming_source, roaming, dirs_exist_ok=True)
-            for name in ("saves",):
-                source = local_source / name
-                if source.is_dir():
-                    shutil.copytree(source, local / name, dirs_exist_ok=True)
-            for source in local_source.glob("*.necronch"):
-                shutil.copy2(source, local / source.name)
-            shutil.copytree(
-                self.config.mod_dir, self._profile_mod_dir(instance_id), dirs_exist_ok=True
-            )
-            self._enable_mod_in_profile(roaming)
-
-    @staticmethod
-    def _enable_mod_in_profile(roaming: Path) -> None:
-        addition = '{name="AutoDancer",package=false,version="0.1.0"}'
-        for path in roaming.glob("*.lua"):
-            text = path.read_text(encoding="utf-8")
-            lines = text.splitlines(keepends=True)
-            changed = False
-            for index, line in enumerate(lines):
-                if '["modLoader.list"]' in line and 'name="AutoDancer"' not in line:
-                    position = line.rfind("}},")
-                    if position >= 0:
-                        lines[index] = line[: position + 1] + "," + addition + line[position + 1 :]
-                        changed = True
-            if changed:
-                path.write_text("".join(lines), encoding="utf-8")
+            name = pipe_name(self.session_id, instance_id)
+            self._pipe_servers[instance_id] = NativePipeServer(name)
 
     def _launch_coordinator(self) -> subprocess.Popen[bytes]:
         return self._launch_process("coordinator", [])
@@ -210,10 +143,13 @@ class AutoDancerSupervisor:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+        environment = os.environ.copy()
+        environment["AUTODANCER_INSTANCE_ID"] = instance_id
+        environment["AUTODANCER_PIPE"] = self._pipe_servers[instance_id].name
         return subprocess.Popen(
             [str(self.config.executable), *arguments],
             cwd=self.config.game_dir,
-            env=os.environ.copy(),
+            env=environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -287,7 +223,6 @@ class AutoDancerSupervisor:
         baseline = self._log_offsets()
         config_name = f"AutoDancer-{worker_id}.lua"
         log_name = f"NecroDancer-{worker_id}.log"
-        self._assign_process(worker_id)
         process = self._launch_process(
             worker_id,
             [
@@ -299,10 +234,9 @@ class AutoDancerSupervisor:
         log_path = self._wait_for_ready(worker_id, baseline, role="worker")
         handle = InstanceHandle(
             instance_id=worker_id,
-            command_path=self.config.mod_dir
-            / "scripts"
-            / f"BridgeCommand_{worker_id.replace('-', '_')}.lua",
             log_path=log_path,
+            pipe_name=self._pipe_servers[worker_id].name,
+            transport=self._pipe_servers[worker_id],
             pid=process.pid,
             config_name=config_name,
             restart_count=restart_count,
@@ -325,8 +259,14 @@ class AutoDancerSupervisor:
         handle = self.workers[worker_id]
         return AutoDancerLiveEnv(
             log_path=handle.log_path,
-            command_path=handle.command_path,
+            bridge=NativePipeCommandBridge(
+                handle.transport,
+                instance_id=worker_id,
+                session_id=self.session_id,
+                timeout=self.config.turn_timeout,
+            ),
             turn_timeout=self.config.turn_timeout,
+            reset_timeout=self.config.reset_timeout,
             max_turns=self.config.max_turns,
             instance_id=worker_id,
         )
@@ -341,6 +281,9 @@ class AutoDancerSupervisor:
                 process.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 process.kill()
+        previous.transport.close()
+        name = pipe_name(self.session_id, worker_id)
+        self._pipe_servers[worker_id] = NativePipeServer(name)
         return self._spawn_worker(worker_id, restart_count=previous.restart_count + 1)
 
     def health(self) -> dict[str, dict[str, Any]]:
@@ -378,9 +321,11 @@ class AutoDancerSupervisor:
             except (psutil.AccessDenied, psutil.NoSuchProcess):
                 pass
         self.workers.clear()
+        for server in self._pipe_servers.values():
+            server.close()
+        self._pipe_servers.clear()
         self._owned_pids.clear()
         self._coordinator = None
-        self._coordinator_bridge = None
         self._worker_processes.clear()
 
     def __enter__(self) -> AutoDancerSupervisor:

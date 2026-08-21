@@ -3,7 +3,39 @@ from __future__ import annotations
 from pathlib import Path
 
 from autodancer.constants import Action
-from autodancer.live.bridge import CoordinatorBridge, FileCommandBridge
+from autodancer.live.bridge import (
+    CoordinatorBridge,
+    FileCommandBridge,
+    NativePipeCommandBridge,
+)
+
+
+class RecordingTransport:
+    def __init__(self) -> None:
+        self.messages: list[tuple[bytes, float]] = []
+
+    def send(self, payload: bytes, timeout: float = 10.0) -> None:
+        self.messages.append((payload, timeout))
+
+
+def test_native_pipe_bridge_routes_commands_without_files() -> None:
+    transport = RecordingTransport()
+    bridge = NativePipeCommandBridge(
+        transport,
+        instance_id="worker-0007",
+        session_id="session-native",
+        timeout=2.5,
+    )
+
+    action = bridge.send_action(Action.LEFT)
+    reset = bridge.reset(11001)
+
+    assert action.instance_id == "worker-0007"
+    assert reset.seed == 11001
+    assert transport.messages == [
+        (b"ACTION session-native 1 3\n", 2.5),
+        (b"RESET session-native 2 11001\n", 2.5),
+    ]
 
 
 def test_file_bridge_publishes_monotonic_action_commands(tmp_path: Path) -> None:

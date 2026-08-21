@@ -4,8 +4,8 @@ AutoDancer trains a recurrent PPO agent directly against independent
 **Crypt of the NecroDancer** Bard games. There is no simulator, screenshot
 capture, keyboard automation, or UI control.
 
-One hidden coordinator uses SYNCHRONY's native multi-instance API to create a
-fixed number of workers. Each worker has its own UID, config, command file,
+One hidden coordinator and a fixed number of workers are launched by the Python
+supervisor. Each worker has its own UID, config, authenticated named pipe,
 engine log, seed, run ID, and GRU state. Python refuses to start around an
 unowned NecroDancer process and never silently trains with fewer workers than
 requested.
@@ -18,9 +18,10 @@ Install the project and training dependencies:
 uv sync --extra train --extra test
 ```
 
-Copy [`mods/AutoDancer`](mods/AutoDancer) to the unpackaged SYNCHRONY mod
-directory and enable it under **Customize → Mods**. The supported initial game
-build is `v4.2.1-b5713`. Lua changes require a mod reload or a game restart.
+Build `native/autodancer_native.dll`, copy it beside `Necrodancer.exe`, then copy
+[`mods/AutoDancer`](mods/AutoDancer) to the unpackaged SYNCHRONY mod directory
+and enable it under **Customize → Mods**. The supported initial game build is
+`v4.2.1-b5713`. Lua changes require a mod reload or a game restart.
 
 ## Train
 

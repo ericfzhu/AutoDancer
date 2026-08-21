@@ -3,12 +3,17 @@
 local Action = require "necro.game.system.Action"
 local CharacterSelector = require "necro.client.CharacterSelector"
 local CurrentLevel = require "necro.game.level.CurrentLevel"
-local FileIO = require "system.game.FileIO"
+local Cutscene = require "necro.client.Cutscene"
+local GameClient = require "necro.client.GameClient"
 local GameInput = require "necro.client.Input"
 local GameSession = require "necro.client.GameSession"
 local MultiInstance = require "necro.client.MultiInstance"
+local Netplay = require "necro.network.Netplay"
 local Player = require "necro.game.character.Player"
+local PlayerList = require "necro.client.PlayerList"
+local Resources = require "necro.client.Resources"
 local SinglePlayer = require "necro.client.SinglePlayer"
+local Native = require "system.game.AutoDancerNative"
 
 local Bridge = {}
 
@@ -16,20 +21,15 @@ local SCHEMA_VERSION = 4
 local GAME_VERSION = "v4.2.1-b5713"
 local STEAM_BUILD = "22938426"
 local MAX_COMMAND_BYTES = 512
-local assignmentResource = "mods/AutoDancer/bridge-assignment.txt"
-local assignmentOK, assignment = pcall(FileIO.readFileToString, assignmentResource, 64)
-local assignedID = assignmentOK and type(assignment) == "string"
-    and string.match(assignment, "^%s*([%w%-_]+)%s*$") or nil
 local sessionUID = MultiInstance.getSessionUID()
+local assignedID = Native.getInstanceID()
 local instanceID = assignedID or sessionUID or "coordinator"
 local isWorker = instanceID ~= "coordinator"
 instanceID = tostring(instanceID or "worker-unknown")
 instanceID = string.gsub(instanceID, "[^%w%-_]", "_")
 local role = isWorker and "worker" or "coordinator"
-local commandModuleID = string.gsub(instanceID, "%-", "_")
-local commandModuleName = "AutoDancer.scripts.BridgeCommand_" .. commandModuleID
-local Command = require(commandModuleName)
-local commandResource = "scripts/BridgeCommand_" .. commandModuleID .. ".lua"
+local commandResource = "native-pipe"
+local STARTUP_STABLE_TICKS = 360
 
 local LOGICAL_TO_ENGINE = {
     [0] = Action.Direction.UP,
@@ -46,15 +46,22 @@ local LOGICAL_TO_ENGINE = {
 }
 
 local lastPayload = nil
+local queuedPayload = nil
 local pending = nil
 local completed = nil
 local spawnedInstances = {}
+local startupStableTicks = 0
+local bridgeReady = false
 
 local function readPayload()
-    local payload = Command.payload
+    if queuedPayload then
+        return queuedPayload
+    end
+    local payload = Native.poll()
     if type(payload) ~= "string" or payload == "" or #payload > MAX_COMMAND_BYTES then
         return nil
     end
+    queuedPayload = payload
     return payload
 end
 
@@ -75,8 +82,6 @@ local function printCoordinatorResult(kind, sessionID, commandID, workerID, ok)
         .. ",\"worker_id\":\"" .. tostring(workerID)
         .. "\",\"ok\":" .. tostring(ok == true) .. "}")
 end
-
-printReady()
 
 local function playable()
     return not CurrentLevel.isLoading()
@@ -105,14 +110,35 @@ local function acceptAction(sessionID, commandID, logicalAction)
 end
 
 local function startAllZonesBard(seed)
-    SinglePlayer.setActive(true)
+    local playerID = PlayerList.getLocalPlayerID() or PlayerList.getHostPlayerID() or 1
     CharacterSelector.setPreferredCharacter(1, "Bard")
-    CharacterSelector.setSelectedCharacter(1, "Bard")
-    GameSession.start({mode = GameSession.Mode.AllZones, seed = seed}, 0)
+    CharacterSelector.setSelectedCharacter(playerID, "Bard")
+    PlayerList.setAttribute(Netplay.PlayerAttribute.READY, true)
+    PlayerList.setAttribute(Netplay.PlayerAttribute.CHARACTER, "Bard")
+    GameSession.start({
+        modeID = GameSession.Mode.AllZonesSeeded,
+        seed = seed,
+        initialCharacters = {[playerID] = "Bard"},
+        primaryPlayerID = playerID,
+    }, 0)
 end
 
 local function acceptReset(sessionID, commandID, seed)
-    if CurrentLevel.isLoading() or not seed then
+    if not bridgeReady or CurrentLevel.isLoading() or not seed then
+        return false
+    end
+    Cutscene.skipStartupCutscenes()
+    if Cutscene.isActive() then
+        Cutscene.skip(true)
+        return false
+    end
+    if not SinglePlayer.isActive() then
+        SinglePlayer.init({gameState = Netplay.GameState.UNINITIALIZED})
+        return false
+    end
+    if not GameClient.isLoggedIn()
+        or not Resources.isResourceListReady()
+        or not Resources.allTransfersDone() then
         return false
     end
     pending = nil
@@ -180,6 +206,19 @@ event.turn.add("completeAutoDancerBridgeCommand", {
 end)
 
 event.tick.add("pollAutoDancerBridgeCommand", "input", function()
+    if not bridgeReady then
+        if CurrentLevel.isLoading() then
+            startupStableTicks = 0
+            return
+        end
+        startupStableTicks = startupStableTicks + 1
+        if startupStableTicks < STARTUP_STABLE_TICKS then
+            return
+        end
+        bridgeReady = true
+        printReady()
+    end
+
     local payload = readPayload()
     if not payload or payload == lastPayload then
         return
@@ -191,6 +230,7 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
     )
     if not kind then
         lastPayload = payload
+        queuedPayload = nil
         return
     end
 
@@ -212,7 +252,9 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
 
     if accepted then
         lastPayload = payload
+        queuedPayload = nil
     end
+
 end)
 
 function Bridge.consumeCompletedCommand()

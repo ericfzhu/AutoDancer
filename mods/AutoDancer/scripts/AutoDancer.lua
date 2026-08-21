@@ -1,6 +1,6 @@
 -- AutoDancer live telemetry for an unpackaged local SYNCHRONY mod.
 --
--- Python sends actions through Bridge.lua's command file. The resulting turn
+-- Python sends actions through Bridge.lua's native named pipe. The resulting turn
 -- record is written to the normal debug log with the matching command ID.
 
 local Bridge = require "AutoDancer.scripts.Bridge"
@@ -463,6 +463,10 @@ local function emitTurn()
     if CurrentLevel.isLoading() or CurrentLevel.isLobby() then
         return
     end
+    local bridgeCommand = Bridge.consumeCompletedCommand()
+    if activeRunID ~= "" and not bridgeCommand then
+        return
+    end
     local newRun = beginRunIfNeeded()
     local observation = buildObservation()
     local context = currentContext()
@@ -478,7 +482,7 @@ local function emitTurn()
         observation,
         context,
         buildEntityDebug(),
-        Bridge.consumeCompletedCommand()
+        bridgeCommand
     )
 end
 
@@ -579,13 +583,19 @@ end)
 -- turnID is the last stable order key in the supported turn event.
 event.turn.add("emitAutoDancerTelemetry", {order = "turnID", sequence = -1}, emitTurn)
 
--- Emit the policy's initial observation before Bridge.lua accepts its first
--- command. This also bootstraps a mod hot-reloaded during an existing run.
+-- Emit once when a playable level first appears, and once after each level
+-- transition. This carries RESET acknowledgements without requiring an action.
 event.tick.add("emitAutoDancerInitialObservation", {
     order = "input",
     sequence = -100,
 }, function()
-    if activeRunID == "" and not CurrentLevel.isLoading() and not CurrentLevel.isLobby() then
-        emitTurn()
+    local player = Player.getPlayerEntity(1)
+    if player and not CurrentLevel.isLoading() and not CurrentLevel.isLobby() then
+        local levelIdentity = tostring(CurrentLevel.getSeed())
+            .. ":" .. tostring(CurrentLevel.getUniqueID())
+            .. ":" .. tostring(CurrentLevel.getSequentialNumber())
+        if activeRunID == "" or levelIdentity ~= lastLevelIdentity then
+            emitTurn()
+        end
     end
 end)

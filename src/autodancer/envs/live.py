@@ -43,6 +43,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         turn_source: TurnSource | None = None,
         bridge: ActionBridge | None = None,
         turn_timeout: float = 5.0,
+        reset_timeout: float | None = None,
         attach_existing: bool = False,
         max_turns: int = 10000,
         instance_id: str = "worker-0000",
@@ -56,6 +57,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._bridge = bridge
         self.instance_id = instance_id
         self.turn_timeout = float(turn_timeout)
+        self.reset_timeout = float(reset_timeout if reset_timeout is not None else turn_timeout)
         self.attach_existing = bool(attach_existing)
         self.max_turns = int(max_turns)
         if self.max_turns <= 0:
@@ -84,16 +86,17 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         source, bridge = self._dependencies()
         source.reset_sequence()
         if self.attach_existing:
-            record = source.read_latest(self.turn_timeout)
+            record = source.read_latest(self.reset_timeout)
         else:
             selected_seed = int(seed if seed is not None else self.np_random.integers(0, 2**31))
             command = bridge.reset(selected_seed)
-            deadline = time.monotonic() + self.turn_timeout
+            deadline = time.monotonic() + self.reset_timeout
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(
-                        f"No AutoDancer reset record arrived within {self.turn_timeout:.1f} seconds"
+                        "No AutoDancer reset record arrived within "
+                        f"{self.reset_timeout:.1f} seconds"
                     )
                 try:
                     record = source.read(remaining)

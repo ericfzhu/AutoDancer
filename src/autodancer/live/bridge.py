@@ -30,6 +30,60 @@ class ActionBridge(Protocol):
     def restart(self) -> BridgeCommand: ...
 
 
+class CommandTransport(Protocol):
+    def send(self, payload: bytes, timeout: float = 10.0) -> None: ...
+
+
+class NativePipeCommandBridge:
+    """Publish commands to one in-process Lua bridge over a named pipe."""
+
+    def __init__(
+        self,
+        transport: CommandTransport,
+        *,
+        instance_id: str = "worker-0000",
+        session_id: str | None = None,
+        timeout: float = 10.0,
+    ) -> None:
+        self.transport = transport
+        self.instance_id = _safe_identifier(instance_id, "instance_id")
+        self.session_id = _safe_identifier(session_id or uuid.uuid4().hex, "session_id")
+        self.timeout = timeout
+        self._next_command_id = 1
+
+    def _publish(
+        self, kind: str, action: Action | None, *, argument: int, seed: int | None = None
+    ) -> BridgeCommand:
+        command = BridgeCommand(
+            session_id=self.session_id,
+            command_id=self._next_command_id,
+            action=action,
+            kind=kind,
+            instance_id=self.instance_id,
+            seed=seed,
+        )
+        self._next_command_id += 1
+        payload = f"{kind} {command.session_id} {command.command_id} {argument}\n".encode("ascii")
+        self.transport.send(payload, self.timeout)
+        return command
+
+    def send_action(self, action: Action) -> BridgeCommand:
+        selected = Action(action)
+        return self._publish("ACTION", selected, argument=int(selected))
+
+    def reset(self, seed: int) -> BridgeCommand:
+        seed = int(seed)
+        if not 0 <= seed <= 2**31 - 1:
+            raise ValueError("seed must be in 0..2147483647")
+        return self._publish("RESET", None, argument=seed, seed=seed)
+
+    def restart(self) -> BridgeCommand:
+        return self.reset(secrets.randbelow(2**31))
+
+    def start(self) -> BridgeCommand:
+        return self.restart()
+
+
 class FileCommandBridge:
     """Publish commands without replacing the file mounted by the game."""
 

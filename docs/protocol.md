@@ -1,9 +1,9 @@
 # Python/Lua live protocol
 
-Schema 4 identifies every message with `instance_id` and `role`. The
-coordinator reads `bridge-command.coordinator.txt`; worker `worker-0000` reads
-`bridge-command.worker-0000.txt`, and so on. Commands remain in the mounted
-file until the engine accepts them in a safe state.
+Schema 4 identifies every message with `instance_id` and `role`. Python owns a
+current-user-only Windows named pipe for each process. Pipe names include the
+supervisor session and worker identity, so commands cannot cross worker slots.
+Lua retains a received command until the engine accepts it in a safe state.
 
 ## Readiness
 
@@ -27,9 +27,9 @@ RESET <session_id> <command_id> <seed>
 ACTION <session_id> <command_id> <logical_action>
 ```
 
-`SPAWN` creates an independent SYNCHRONY instance with a unique UID and config
-name. `RESET` starts Bard in normal All Zones mode using the exact requested
-seed. Logical actions are integers `0..10`.
+`RESET` starts Bard in normal All Zones mode using the exact requested seed.
+Logical actions are integers `0..10`. Process creation and replacement are
+owned by the Python supervisor; the coordinator never controls the game UI.
 
 ## Transition acknowledgement
 

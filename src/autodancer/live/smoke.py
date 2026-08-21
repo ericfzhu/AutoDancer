@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--startup-timeout", type=float, default=45.0)
+    parser.add_argument("--reset-timeout", type=float, default=30.0)
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
@@ -38,6 +39,7 @@ def main() -> int:
         mod_dir=arguments.mod_dir,
         num_instances=arguments.num_instances,
         startup_timeout=arguments.startup_timeout,
+        reset_timeout=arguments.reset_timeout,
     )
     with AutoDancerSupervisor(config) as supervisor:
         environment = AutoDancerVectorEnv(supervisor)

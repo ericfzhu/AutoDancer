@@ -35,7 +35,7 @@ def test_supervisor_refuses_unowned_game_process(monkeypatch: pytest.MonkeyPatch
         supervisor._refuse_existing_processes()
 
 
-def test_supervisor_worker_slots_and_command_files_are_predictable(tmp_path: Path) -> None:
+def test_supervisor_worker_slots_and_pipe_names_are_predictable(tmp_path: Path) -> None:
     config = SupervisorConfig(
         tmp_path / "game",
         tmp_path / "mod",
@@ -43,16 +43,16 @@ def test_supervisor_worker_slots_and_command_files_are_predictable(tmp_path: Pat
         profile_root=tmp_path / "profiles",
     )
     supervisor = AutoDancerSupervisor(config)
+    supervisor.session_id = "test-session"
     assert supervisor.worker_ids == ["worker-0000", "worker-0001", "worker-0002"]
-    supervisor._prepare_command_files()
-    expected = [
-        config.mod_dir / "scripts" / f"BridgeCommand_worker_000{index}.lua"
-        for index in range(3)
-    ]
-    assert all(
-        path.read_text(encoding="ascii") == 'return {payload="NOOP\\n"}\n'
-        for path in expected
-    )
+    supervisor._prepare_pipes()
+    try:
+        assert [supervisor._pipe_servers[worker].name for worker in supervisor.worker_ids] == [
+            rf"\\.\pipe\AutoDancer-test-session-worker-000{index}" for index in range(3)
+        ]
+    finally:
+        for server in supervisor._pipe_servers.values():
+            server.close()
 
 
 def test_malformed_readiness_times_out_without_reducing_capacity(
