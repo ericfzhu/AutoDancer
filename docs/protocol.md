@@ -58,6 +58,10 @@ and records belonging to another worker.
 
 ## Symbolic observation
 
+Transition records are UTF-8 JSON messages sent directly over the worker's
+duplex named pipe and are limited to 64 KiB. Debug logs carry readiness and
+fatal diagnostics only; Python does not tail them for live transitions.
+
 The worker emits a player-centred `21 × 21 × 11` grid. Its channels are terrain
 class/type, actor class/type/current HP/max HP, item class/type, trap class,
 visibility, and status flags. Exact types use a deterministic 12-bit hash with

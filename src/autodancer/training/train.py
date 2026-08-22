@@ -19,6 +19,7 @@ from torch import Tensor
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
+from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
@@ -295,6 +296,9 @@ def train(arguments: argparse.Namespace) -> None:
         turn_timeout=arguments.turn_timeout,
         max_turns=arguments.max_turns,
         reward_config=reward_config,
+        telemetry_transport=arguments.telemetry_transport,
+        worker_profile=arguments.worker_profile,
+        affinity_policy=arguments.affinity,
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -340,12 +344,13 @@ def train(arguments: argparse.Namespace) -> None:
                 )
                 if arguments.resume:
                     algorithm.load(arguments.resume)
-                collector = RolloutCollector(
+                collector = VersionedAsyncRolloutCollector(
                     environment,
                     algorithm.model,
                     device=device,
                     seed=arguments.seed,
                     telemetry_callback=telemetry_callback,
+                    batch_delay=arguments.inference_batch_delay_ms / 1000.0,
                 )
                 started = time.monotonic()
                 metrics: dict[str, Any] = {
@@ -366,6 +371,7 @@ def train(arguments: argparse.Namespace) -> None:
                         "updates": algorithm.updates,
                         "steps_per_second": algorithm.global_step / elapsed,
                         **update_metrics,
+                        **collector.last_runtime_metrics,
                         **episode_metrics(collector.completed_episodes),
                         **{
                             f"reward_{name}": value
@@ -389,12 +395,14 @@ def train(arguments: argparse.Namespace) -> None:
                         )
                         if dashboard_state is not None:
                             dashboard_state.set_status("training")
-                        collector = RolloutCollector(
+                        collector.close()
+                        collector = VersionedAsyncRolloutCollector(
                             environment,
                             algorithm.model,
                             device=device,
                             seed=arguments.seed + algorithm.global_step,
                             telemetry_callback=telemetry_callback,
+                            batch_delay=arguments.inference_batch_delay_ms / 1000.0,
                         )
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
@@ -408,6 +416,7 @@ def train(arguments: argparse.Namespace) -> None:
                     ):
                         algorithm.save(arguments.run_dir / "latest.pt", metrics=metrics)
                 algorithm.save(arguments.run_dir / "final.pt", metrics=metrics)
+                collector.close()
                 if dashboard_state is not None:
                     dashboard_state.set_status("complete")
                 (arguments.run_dir / "config.json").write_text(
@@ -420,6 +429,11 @@ def train(arguments: argparse.Namespace) -> None:
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),
                                 "mod_dir": str(arguments.mod_dir),
+                                "telemetry_transport": arguments.telemetry_transport,
+                                "worker_profile": arguments.worker_profile,
+                                "affinity": arguments.affinity,
+                                "collector": "versioned-async",
+                                "inference_batch_delay_ms": arguments.inference_batch_delay_ms,
                             },
                             "dashboard_url": (
                                 dashboard_server.url if dashboard_server is not None else None
@@ -455,6 +469,12 @@ def main() -> int:
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--max-turns", type=int, default=10000)
     parser.add_argument(
+        "--telemetry-transport", choices=("native-pipe",), default="native-pipe"
+    )
+    parser.add_argument("--worker-profile", choices=("symbolic",), default="symbolic")
+    parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    parser.add_argument("--inference-batch-delay-ms", type=float, default=2.0)
+    parser.add_argument(
         "--reward-config",
         type=Path,
         help="JSON object overriding the versioned default reward weights",
@@ -475,6 +495,8 @@ def main() -> int:
         parser.error("--total-steps and --num-instances must be positive")
     if arguments.dashboard is not None and not 0 <= arguments.dashboard <= 65535:
         parser.error("--dashboard port must be in [0, 65535]")
+    if arguments.inference_batch_delay_ms < 0:
+        parser.error("--inference-batch-delay-ms cannot be negative")
     train(arguments)
     return 0
 

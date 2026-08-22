@@ -12,10 +12,22 @@ from autodancer.live.bridge import BridgeCommand
 from autodancer.live.protocol import (
     LOG_MARKER,
     JsonlTurnSource,
+    NativePipeTurnSource,
     ProtocolError,
     QueueTurnSource,
     validate_record,
 )
+
+
+class FakeReceiver:
+    def __init__(self, payloads: list[bytes]) -> None:
+        self.payloads = payloads
+
+    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes:
+        del timeout
+        payload = self.payloads.pop(0)
+        assert len(payload) <= max_bytes
+        return payload
 
 
 class FakeBridge:
@@ -98,6 +110,16 @@ def record(
             "observed_action": 1,
         },
     }
+
+
+def test_native_pipe_source_accepts_large_schema5_records_without_log_markers() -> None:
+    reset = record(0, "reset")
+    turn = record(1, "turn", requested_action=Action.UP)
+    encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
+    assert all(len(item) > 4096 for item in encoded)
+    source = NativePipeTurnSource(FakeReceiver(encoded))
+    assert source.read(1)["kind"] == "reset"
+    assert source.read(1)["sequence"] == 1
 
 
 def test_live_victory_terminates_and_reports_completion() -> None:

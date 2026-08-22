@@ -1,7 +1,7 @@
 -- AutoDancer live telemetry for an unpackaged local SYNCHRONY mod.
 --
--- Python sends actions through Bridge.lua's native named pipe. The resulting turn
--- record is written to the normal debug log with the matching command ID.
+-- Python sends actions and receives matching transition records through the
+-- process-local native named pipe.
 
 local Bridge = require "AutoDancer.scripts.Bridge"
 
@@ -11,6 +11,7 @@ local Player = require "necro.game.character.Player"
 local Tile = require "necro.game.tile.Tile"
 local Vision = require "necro.game.vision.Vision"
 local Entities = require "system.game.Entities"
+local Native = require "system.game.AutoDancerNative"
 
 local GRID_SIZE = 21
 local GRID_CHANNELS = 11
@@ -18,7 +19,6 @@ local PLAYER_FEATURES = 16
 local INVENTORY_SLOTS = 8
 local INVENTORY_FEATURES = 4
 local ACTION_COUNT = 11
-local LOG_MARKER = "AUTODANCER_JSON:"
 local SCHEMA_VERSION = 5
 
 -- Replace these values with the values shown by the installed game and Steam.
@@ -432,7 +432,7 @@ local function observationForStatus(observation, status)
     return result
 end
 
-local function emitRecord(kind, status, observation, context, debugEntities, bridgeCommand)
+local function emitRecord(kind, status, observation, context, bridgeCommand)
     if kind == "terminal" and terminalEmitted then
         return
     end
@@ -455,7 +455,6 @@ local function emitRecord(kind, status, observation, context, debugEntities, bri
         floor = context.floor,
         bridge = bridgeCommand,
         observation = observationForStatus(observation, status),
-        debug_entities = debugEntities or {},
         events = pendingEvents,
         episode_status = status,
         terminated = terminated,
@@ -466,8 +465,8 @@ local function emitRecord(kind, status, observation, context, debugEntities, bri
             deaths = status == "dead" and 1 or 0,
         },
     }
-    print(LOG_MARKER .. jsonEncode(record))
-    lastObservation = clone(record.observation)
+    assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
+    lastObservation = record.observation
     lastContext = clone(context)
     pendingEvents = {}
     playerDead = false
@@ -499,7 +498,6 @@ local function emitTurn()
         status,
         observation,
         context,
-        buildEntityDebug(),
         bridgeCommand
     )
 end
@@ -595,7 +593,7 @@ event.runComplete.add("emitAutoDancerRunComplete", {
         floor = 0,
         character = "Bard",
     }
-    emitRecord("terminal", status, observation, context, {})
+    emitRecord("terminal", status, observation, context)
 end)
 
 -- turnID is the last stable order key in the supported turn event.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 import uuid
@@ -20,6 +21,7 @@ from autodancer.live.protocol import (
     SCHEMA_VERSION,
     SUPPORTED_GAME_VERSION,
     SUPPORTED_STEAM_BUILD,
+    NativePipeTurnSource,
 )
 from autodancer.rewards import RewardConfig
 
@@ -41,6 +43,9 @@ class SupervisorConfig:
     max_turns: int = 10000
     profile_root: Path = Path(".runtime/live-profiles")
     reward_config: RewardConfig = RewardConfig()
+    telemetry_transport: str = "native-pipe"
+    worker_profile: str = "symbolic"
+    affinity_policy: str = "auto"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "game_dir", Path(self.game_dir).resolve())
@@ -50,6 +55,12 @@ class SupervisorConfig:
             raise ValueError("num_instances must be positive")
         if self.startup_timeout <= 0 or self.turn_timeout <= 0 or self.reset_timeout <= 0:
             raise ValueError("timeouts must be positive")
+        if self.telemetry_transport != "native-pipe":
+            raise ValueError("live supervisors require telemetry_transport='native-pipe'")
+        if self.worker_profile != "symbolic":
+            raise ValueError("the supported worker profile is 'symbolic'")
+        if self.affinity_policy not in {"auto", "none", "spread"}:
+            raise ValueError("affinity_policy must be auto, none, or spread")
 
     @property
     def executable(self) -> Path:
@@ -76,7 +87,6 @@ class AutoDancerSupervisor:
     config: SupervisorConfig
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     workers: dict[str, InstanceHandle] = field(default_factory=dict, init=False)
-    _coordinator: subprocess.Popen[bytes] | None = field(default=None, init=False)
     _pipe_servers: dict[str, NativePipeServer] = field(default_factory=dict, init=False)
     _worker_processes: dict[str, subprocess.Popen[bytes]] = field(
         default_factory=dict, init=False
@@ -91,11 +101,7 @@ class AutoDancerSupervisor:
         self._validate_installation()
         self._refuse_existing_processes()
         self._prepare_pipes()
-        baseline = self._log_offsets()
-        self._coordinator = self._launch_coordinator()
-        self._owned_pids.add(self._coordinator.pid)
         try:
-            self._wait_for_ready("coordinator", baseline, role="coordinator")
             for worker_id in self.worker_ids:
                 self._spawn_worker(worker_id, restart_count=0)
         except Exception:
@@ -128,12 +134,9 @@ class AutoDancerSupervisor:
             )
 
     def _prepare_pipes(self) -> None:
-        for instance_id in ["coordinator", *self.worker_ids]:
+        for instance_id in self.worker_ids:
             name = pipe_name(self.session_id, instance_id)
             self._pipe_servers[instance_id] = NativePipeServer(name)
-
-    def _launch_coordinator(self) -> subprocess.Popen[bytes]:
-        return self._launch_process("coordinator", [])
 
     def _launch_process(
         self, instance_id: str, arguments: list[str]
@@ -146,6 +149,9 @@ class AutoDancerSupervisor:
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         environment = os.environ.copy()
+        local_profile, roaming_profile = self._prepare_worker_profile(instance_id)
+        environment["LOCALAPPDATA"] = str(local_profile)
+        environment["APPDATA"] = str(roaming_profile)
         environment["AUTODANCER_INSTANCE_ID"] = instance_id
         environment["AUTODANCER_PIPE"] = self._pipe_servers[instance_id].name
         return subprocess.Popen(
@@ -158,6 +164,34 @@ class AutoDancerSupervisor:
             startupinfo=startupinfo,
             creationflags=creationflags,
         )
+
+    def _prepare_worker_profile(self, instance_id: str) -> tuple[Path, Path]:
+        root = (self.config.profile_root / self.session_id / instance_id).resolve()
+        expected = (self.config.profile_root / self.session_id).resolve()
+        if expected not in root.parents:
+            raise SupervisorError("worker profile escaped the owned session directory")
+        local = root / "Local"
+        roaming = root / "Roaming"
+        destination_mod = local / "NecroDancer" / "mods" / "AutoDancer"
+        shutil.copytree(self.config.mod_dir, destination_mod, dirs_exist_ok=True)
+        source_roaming = Path(os.environ.get("APPDATA", "")) / "NecroDancer"
+        destination_roaming = roaming / "NecroDancer"
+        destination_roaming.mkdir(parents=True, exist_ok=True)
+        for name in ("userconfig.json", "ConfigKeys.dat"):
+            source = source_roaming / name
+            if source.is_file():
+                shutil.copy2(source, destination_roaming / name)
+        user_config = destination_roaming / "userconfig.json"
+        if user_config.is_file():
+            try:
+                payload = json.loads(user_config.read_text(encoding="utf-8"))
+                game = payload.setdefault("wos", {}).setdefault("game", {})
+                game.setdefault("window", {})["size"] = [320, 180]
+                game["window"]["maximized"] = False
+                user_config.write_text(json.dumps(payload), encoding="utf-8")
+            except (json.JSONDecodeError, OSError, TypeError):
+                pass
+        return local, roaming
 
     def _log_paths(self) -> list[Path]:
         return sorted(self.config.game_dir.glob("NecroDancer*.log"))
@@ -199,8 +233,6 @@ class AutoDancerSupervisor:
     ) -> Path:
         deadline = time.monotonic() + self.config.startup_timeout
         while time.monotonic() < deadline:
-            if self._coordinator is not None and self._coordinator.poll() is not None:
-                raise SupervisorError("Coordinator exited during startup")
             for path in self._log_paths():
                 previous = baseline.get(path)
                 stat = path.stat()
@@ -229,10 +261,17 @@ class AutoDancerSupervisor:
             worker_id,
             [
                 f"-cwos.game.debug.logging.file.name={log_name}",
+                "-cwos.game.debug.logging.file.flushInterval=0.05",
+                "-cwos.game.debug.logging.console.verbosity=0",
+                "-cwos.game.assets.autoReload.enabled=false",
+                "-cwos.game.steam.enabled=false",
+                "-cwos.game.galaxy.enabled=false",
+                "-cwos.game.size=[320,180]",
             ],
         )
         self._worker_processes[worker_id] = process
         self._owned_pids.add(process.pid)
+        self._apply_affinity(process.pid, self.worker_ids.index(worker_id))
         log_path = self._wait_for_ready(worker_id, baseline, role="worker")
         handle = InstanceHandle(
             instance_id=worker_id,
@@ -260,7 +299,7 @@ class AutoDancerSupervisor:
     def environment(self, worker_id: str) -> AutoDancerLiveEnv:
         handle = self.workers[worker_id]
         return AutoDancerLiveEnv(
-            log_path=handle.log_path,
+            turn_source=NativePipeTurnSource(handle.transport),
             bridge=NativePipeCommandBridge(
                 handle.transport,
                 instance_id=worker_id,
@@ -290,8 +329,20 @@ class AutoDancerSupervisor:
         return self._spawn_worker(worker_id, restart_count=previous.restart_count + 1)
 
     def health(self) -> dict[str, dict[str, Any]]:
-        return {
-            worker_id: {
+        result: dict[str, dict[str, Any]] = {}
+        for worker_id, handle in self.workers.items():
+            process_metrics: dict[str, Any] = {}
+            if handle.pid is not None:
+                try:
+                    process = psutil.Process(handle.pid)
+                    cpu = process.cpu_times()
+                    process_metrics = {
+                        "cpu_seconds": float(cpu.user + cpu.system),
+                        "working_set_bytes": int(process.memory_info().rss),
+                    }
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    pass
+            result[worker_id] = {
                 "healthy": handle.healthy,
                 "pid": handle.pid,
                 "config_name": handle.config_name,
@@ -299,9 +350,22 @@ class AutoDancerSupervisor:
                 "last_latency": handle.last_latency,
                 "episode_status": handle.episode_status,
                 "last_acknowledged_command": handle.last_acknowledged_command,
+                **process_metrics,
             }
-            for worker_id, handle in self.workers.items()
-        }
+        return result
+
+    def _apply_affinity(self, pid: int, slot: int) -> None:
+        if self.config.affinity_policy == "none" or os.name != "nt":
+            return
+        logical = psutil.cpu_count(logical=True) or 1
+        physical = psutil.cpu_count(logical=False) or logical
+        if self.config.affinity_policy == "auto" and self.config.num_instances >= physical:
+            return
+        available = list(range(1, logical)) or [0]
+        try:
+            psutil.Process(pid).cpu_affinity([available[slot % len(available)]])
+        except (AttributeError, psutil.AccessDenied, psutil.NoSuchProcess, ValueError):
+            return
 
     def close(self) -> None:
         time.sleep(0.1)
@@ -328,7 +392,10 @@ class AutoDancerSupervisor:
             server.close()
         self._pipe_servers.clear()
         self._owned_pids.clear()
-        self._coordinator = None
+        session_profiles = (self.config.profile_root / self.session_id).resolve()
+        profile_root = self.config.profile_root.resolve()
+        if profile_root in session_profiles.parents and session_profiles.exists():
+            shutil.rmtree(session_profiles)
         self._worker_processes.clear()
 
     def __enter__(self) -> AutoDancerSupervisor:

@@ -1,4 +1,4 @@
-"""Line-based telemetry protocol for the SYNCHRONY debug log."""
+"""Validated telemetry sources for the SYNCHRONY live bridge."""
 
 from __future__ import annotations
 
@@ -295,6 +295,10 @@ class TurnSource(Protocol):
     def read_latest(self, timeout: float) -> dict[str, Any]: ...
 
 
+class MessageReceiver(Protocol):
+    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes: ...
+
+
 class _SequenceTracker:
     def __init__(self) -> None:
         self._expected_sequence: int | None = None
@@ -408,6 +412,29 @@ class JsonlTurnSource(_SequenceTracker):
         raise TimeoutError(
             f"No existing AutoDancer turn record was found within {timeout:.1f} seconds"
         )
+
+
+class NativePipeTurnSource(_SequenceTracker):
+    """Read schema-5 JSON messages directly from a worker's duplex pipe."""
+
+    def __init__(self, receiver: MessageReceiver) -> None:
+        super().__init__()
+        self.receiver = receiver
+
+    def read(self, timeout: float = 5.0) -> dict[str, Any]:
+        payload = self.receiver.receive(timeout, max_bytes=65536)
+        try:
+            record = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ProtocolError("An AutoDancer pipe record contains invalid JSON") from error
+        if not isinstance(record, dict):
+            raise ProtocolError("An AutoDancer pipe record must be a JSON object")
+        return self.accept(record)
+
+    def read_latest(self, timeout: float = 5.0) -> dict[str, Any]:
+        record = self.read(timeout)
+        self.reset_sequence()
+        return self.accept(record, attach=True)
 
 
 class QueueTurnSource(_SequenceTracker):

@@ -58,7 +58,6 @@ def test_malformed_readiness_times_out_without_reducing_capacity(
         tmp_path / "game", tmp_path / "mod", num_instances=2, startup_timeout=0.01
     )
     supervisor = AutoDancerSupervisor(config)
-    supervisor._coordinator = SimpleNamespace(poll=lambda: None)  # type: ignore[assignment]
     path = tmp_path / "NecroDancer.log"
     path.write_text(
         'AUTODANCER_READY:{"schema_version":3,"instance_id":"worker-0000"}\n',

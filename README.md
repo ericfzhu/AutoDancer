@@ -4,9 +4,9 @@ AutoDancer trains a recurrent PPO agent directly against independent
 **Crypt of the NecroDancer** Bard games. There is no simulator, screenshot
 capture, keyboard automation, or UI control.
 
-One hidden coordinator and a fixed number of workers are launched by the Python
-supervisor. Each worker has its own UID, config, authenticated named pipe,
-engine log, seed, run ID, and LSTM state. Python refuses to start around an
+Exactly the requested fixed number of workers are launched by the Python
+supervisor. Each worker has its own identity, duplex named pipe, engine log,
+seed, run ID, and LSTM state. Python refuses to start around an
 unowned NecroDancer process and never silently trains with fewer workers than
 requested.
 
@@ -25,8 +25,8 @@ and enable it under **Customize → Mods**. The supported initial game build is
 
 ## Train
 
-Close every existing NecroDancer process first. The supervisor launches one
-hidden coordinator plus exactly `--num-instances` native workers:
+Close every existing NecroDancer process first. The supervisor launches exactly
+`--num-instances` hidden, symbolic-only native workers:
 
 ```powershell
 uv run autodancer-train `
@@ -54,10 +54,25 @@ The page renders the exact 21 × 21 symbolic grid seen by each policy, plus
 health, inventory, action, reward, events, seed, floor, latency, worker health,
 and PPO progress. It does not capture or transmit game frames.
 
-Rollouts contain 128 valid transitions per worker. PPO uses 32-step recurrent
+Rollouts contain 128 valid transitions per worker. Workers advance independently
+through a centrally micro-batched frozen policy, then PPO updates after one
+policy-versioned fragment arrives from every slot. PPO uses 32-step recurrent
 chunks, four update epochs, action masking, periodic deterministic evaluation,
-atomic checkpoints, and JSONL metrics. Continue an exact optimizer/model/RNG
-state with `--resume .\runs\bard-ppo\latest.pt`.
+atomic checkpoints, and JSONL metrics. Continue optimizer/model/RNG state with
+`--resume .\runs\bard-ppo\latest.pt`.
+
+Benchmark direct live-worker throughput without PPO updates:
+
+```powershell
+uv run autodancer-benchmark `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --sweep "1,2,4,6,8,10,12" `
+  --steps 128 `
+  --run-dir ".\runs\worker-benchmark"
+```
+
+The benchmark reports throughput, latency percentiles, process memory/CPU use,
+restarts, and the recommended tested worker count.
 
 Establish a reproducible gameplay baseline by comparing a checkpoint's
 deterministic policy with a masked-random policy on the same explicit seeds:

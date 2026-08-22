@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import threading
+import time
 from ctypes import wintypes
 
 
@@ -44,6 +45,23 @@ if os.name == "nt":
         wintypes.LPVOID,
     ]
     _kernel32.WriteFile.restype = wintypes.BOOL
+    _kernel32.ReadFile.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPVOID,
+    ]
+    _kernel32.ReadFile.restype = wintypes.BOOL
+    _kernel32.PeekNamedPipe.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    _kernel32.PeekNamedPipe.restype = wintypes.BOOL
     _kernel32.CancelIoEx.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
     _kernel32.DisconnectNamedPipe.argtypes = [wintypes.HANDLE]
     _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -63,6 +81,7 @@ if os.name == "nt":
     _PIPE_WAIT = 0x00000000
     _PIPE_UNLIMITED_INSTANCES = 255
     _ERROR_PIPE_CONNECTED = 535
+    _PIPE_BUFFER_BYTES = 65536
 
 
 def pipe_name(session_id: str, instance_id: str) -> str:
@@ -82,6 +101,7 @@ class NativePipeServer:
         self._connected = threading.Event()
         self._closed = False
         self._write_lock = threading.Lock()
+        self._read_lock = threading.Lock()
         descriptor = wintypes.LPVOID()
         # Protected DACL: LocalSystem and the object owner (the current user).
         if not _advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -97,8 +117,8 @@ class NativePipeServer:
                 _PIPE_ACCESS_DUPLEX | _FILE_FLAG_FIRST_PIPE_INSTANCE,
                 _PIPE_TYPE_MESSAGE | _PIPE_READMODE_MESSAGE | _PIPE_WAIT,
                 _PIPE_UNLIMITED_INSTANCES,
-                4096,
-                4096,
+                _PIPE_BUFFER_BYTES,
+                _PIPE_BUFFER_BYTES,
                 0,
                 ctypes.byref(attributes),
             )
@@ -131,6 +151,47 @@ class NativePipeServer:
             )
         if not ok or sent.value != len(payload):
             raise NativePipeError(f"WriteFile failed: {ctypes.get_last_error()}")
+
+    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes:
+        """Receive one complete game-to-Python message without polling the filesystem."""
+        if self._closed:
+            raise NativePipeError("named pipe is closed")
+        if not 0 < max_bytes <= _PIPE_BUFFER_BYTES:
+            raise ValueError(f"max_bytes must be in 1..{_PIPE_BUFFER_BYTES}")
+        if not self._connected.wait(timeout):
+            raise NativePipeError(f"timed out waiting for game pipe {self.name}")
+        deadline = time.monotonic() + timeout
+        with self._read_lock:
+            while True:
+                available = wintypes.DWORD()
+                ok = _kernel32.PeekNamedPipe(
+                    self._handle, None, 0, None, ctypes.byref(available), None
+                )
+                if not ok:
+                    raise NativePipeError(f"PeekNamedPipe failed: {ctypes.get_last_error()}")
+                if available.value:
+                    if available.value > max_bytes:
+                        raise NativePipeError(
+                            f"game pipe message is {available.value} bytes; limit is {max_bytes}"
+                        )
+                    buffer = ctypes.create_string_buffer(available.value)
+                    received = wintypes.DWORD()
+                    ok = _kernel32.ReadFile(
+                        self._handle,
+                        buffer,
+                        available.value,
+                        ctypes.byref(received),
+                        None,
+                    )
+                    if not ok or received.value != available.value:
+                        raise NativePipeError(f"ReadFile failed: {ctypes.get_last_error()}")
+                    return buffer.raw[: received.value]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"No AutoDancer pipe record arrived within {timeout:.1f} seconds"
+                    )
+                time.sleep(min(0.001, remaining))
 
     def close(self) -> None:
         if self._closed:
