@@ -12,6 +12,7 @@ from autodancer.constants import (
     PLAYER_FEATURES,
     GridChannel,
     PlayerFeature,
+    Terrain,
 )
 from autodancer.rewards import RewardConfig, RewardTracker, load_reward_config
 
@@ -54,8 +55,8 @@ def test_exploration_reward_is_novelty_bounded_and_not_repeatable() -> None:
         terminated=False,
         truncated=False,
     )
-    assert repeated == pytest.approx(-0.005)
-    assert parts == {"turn": -0.005}
+    assert repeated == pytest.approx(-0.015)
+    assert parts == {"turn": -0.005, "revisit": -0.01}
 
 
 def test_combat_credit_is_deduplicated_and_damage_is_capped() -> None:
@@ -78,7 +79,7 @@ def test_combat_credit_is_deduplicated_and_damage_is_capped() -> None:
     assert parts["enemy_damage"] == pytest.approx(0.075)
     assert parts["enemy_kill"] == pytest.approx(0.25)
     assert parts["player_damage"] == pytest.approx(-0.3)
-    assert reward == pytest.approx(0.02)
+    assert reward == pytest.approx(0.01)
 
 
 def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
@@ -95,10 +96,10 @@ def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
         terminated=False,
         truncated=False,
     )
-    assert parts["floor_complete"] == 3.0
+    assert parts["floor_complete"] == 5.0
     assert parts["new_item_type"] == 0.15
     assert parts["new_position"] == 0.015
-    assert floor_reward == pytest.approx(3.161)
+    assert floor_reward == pytest.approx(5.161)
 
     victory_reward, parts = tracker.score(
         progressed,
@@ -107,8 +108,8 @@ def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
         terminated=True,
         truncated=False,
     )
-    assert parts["victory"] == 25.0
-    assert victory_reward == pytest.approx(24.995)
+    assert parts["victory"] == 50.0
+    assert victory_reward == pytest.approx(49.985)
 
 
 def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
@@ -119,3 +120,74 @@ def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
 
     path.write_text('{"turn": -0.01}', encoding="utf-8")
     assert load_reward_config(path).turn == -0.01
+
+
+def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> None:
+    config = RewardConfig(
+        turn=0,
+        new_position=0,
+        revisit=0,
+        new_tile=0,
+        stairs_discovered=0.5,
+        stair_progress=0.05,
+    )
+    tracker = RewardTracker(config)
+    initial = observation(x=0)
+    tracker.reset(initial, {"zone": 1, "floor": 1})
+
+    discovered = observation(x=0)
+    discovered["grid"][
+        GRID_SIZE // 2, GRID_SIZE // 2 + 2, GridChannel.TERRAIN_CLASS
+    ] = Terrain.STAIRS
+    discovered["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 2, GridChannel.VISIBILITY] = 1
+    reward, parts = tracker.score(
+        discovered,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert reward == pytest.approx(0.5)
+    assert parts["stairs_discovered"] == pytest.approx(0.5)
+    assert "stair_progress" not in parts
+
+    closer = observation(x=1)
+    closer["grid"][
+        GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS
+    ] = Terrain.STAIRS
+    closer["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.VISIBILITY] = 1
+    toward, toward_parts = tracker.score(
+        closer,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    away, away_parts = tracker.score(
+        discovered,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert toward_parts["stair_progress"] == pytest.approx(0.05)
+    assert away_parts["stair_progress"] == pytest.approx(-0.05)
+    assert toward + away == pytest.approx(0)
+
+
+def test_floor_transition_resets_stair_potential_without_cross_floor_credit() -> None:
+    tracker = RewardTracker(RewardConfig(turn=0, new_position=0, revisit=0, new_tile=0))
+    initial = observation()
+    initial["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    tracker.reset(initial, {"zone": 1, "floor": 1})
+    next_floor = observation(x=20, y=20)
+    reward, parts = tracker.score(
+        next_floor,
+        {"zone": 1, "floor": 2, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert reward == pytest.approx(5.0)
+    assert "stair_progress" not in parts
+    assert "stairs_discovered" not in parts

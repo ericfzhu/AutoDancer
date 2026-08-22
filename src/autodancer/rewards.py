@@ -10,9 +10,9 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.constants import GridChannel, PlayerFeature
+from autodancer.constants import GridChannel, PlayerFeature, Terrain
 
-REWARD_PROFILE_VERSION = 1
+REWARD_PROFILE_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,7 @@ class RewardConfig:
 
     turn: float = -0.005
     new_position: float = 0.015
+    revisit: float = -0.01
     new_tile: float = 0.001
     max_new_tiles_per_turn: int = 25
     enemy_damage: float = 0.025
@@ -31,9 +32,12 @@ class RewardConfig:
     currency: float = 0.002
     max_currency_per_turn: int = 25
     container_opened: float = 0.05
-    floor_complete: float = 3.0
-    zone_complete: float = 5.0
-    victory: float = 25.0
+    stairs_discovered: float = 0.5
+    stair_progress: float = 0.05
+    max_stair_distance_delta: int = 4
+    floor_complete: float = 5.0
+    zone_complete: float = 10.0
+    victory: float = 50.0
     death: float = -2.0
     aborted: float = -1.0
 
@@ -42,6 +46,7 @@ class RewardConfig:
             "max_new_tiles_per_turn",
             "max_rewarded_damage_per_enemy",
             "max_currency_per_turn",
+            "max_stair_distance_delta",
         ):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} cannot be negative")
@@ -60,6 +65,8 @@ class RewardTracker:
         self.seen_item_types: set[int] = set()
         self.rewarded_kills: set[int] = set()
         self.rewarded_damage: dict[int, int] = {}
+        self.known_stairs: set[tuple[int, int, int, int]] = set()
+        self.stair_distance: int | None = None
         self.zone = 0
         self.floor = 0
 
@@ -87,6 +94,37 @@ class RewardTracker:
     def _inventory_types(observation: Mapping[str, np.ndarray]) -> set[int]:
         return {int(value) for value in observation["inventory"][:, 1] if int(value) != 0}
 
+    @classmethod
+    def _stairs(
+        cls,
+        observation: Mapping[str, np.ndarray],
+        zone: int,
+        floor: int,
+    ) -> set[tuple[int, int, int, int]]:
+        grid = observation["grid"]
+        px, py = cls._position(observation)
+        centre = grid.shape[0] // 2
+        return {
+            (zone, floor, px + int(column) - centre, py + int(row) - centre)
+            for row, column in np.argwhere(
+                grid[..., GridChannel.TERRAIN_CLASS] == int(Terrain.STAIRS)
+            )
+        }
+
+    @staticmethod
+    def _nearest_stair_distance(
+        position: tuple[int, int],
+        stairs: set[tuple[int, int, int, int]],
+        zone: int,
+        floor: int,
+    ) -> int | None:
+        distances = [
+            abs(position[0] - stair_x) + abs(position[1] - stair_y)
+            for stair_zone, stair_floor, stair_x, stair_y in stairs
+            if stair_zone == zone and stair_floor == floor
+        ]
+        return min(distances) if distances else None
+
     def reset(
         self, observation: Mapping[str, np.ndarray], info: Mapping[str, Any]
     ) -> None:
@@ -96,6 +134,10 @@ class RewardTracker:
         x, y = self._position(observation)
         self.visited_positions = {(self.zone, self.floor, x, y)}
         self.seen_item_types = self._inventory_types(observation)
+        self.known_stairs = self._stairs(observation, self.zone, self.floor)
+        self.stair_distance = self._nearest_stair_distance(
+            (x, y), self.known_stairs, self.zone, self.floor
+        )
         self.rewarded_kills.clear()
         self.rewarded_damage.clear()
 
@@ -115,9 +157,12 @@ class RewardTracker:
         floor = int(info.get("floor") or self.floor)
         x, y = self._position(observation)
         position = (zone, floor, x, y)
+        same_floor = zone == self.zone and floor == self.floor
         if position not in self.visited_positions:
             components["new_position"] = config.new_position
             self.visited_positions.add(position)
+        else:
+            components["revisit"] = config.revisit
 
         revealed = self._revealed_tiles(observation, zone, floor)
         new_tiles = len(revealed - self.seen_tiles)
@@ -131,6 +176,30 @@ class RewardTracker:
         if new_items:
             components["new_item_type"] = config.new_item_type * len(new_items)
             self.seen_item_types.update(item_types)
+
+        observed_stairs = self._stairs(observation, zone, floor)
+        if not same_floor:
+            self.known_stairs = observed_stairs
+            self.stair_distance = self._nearest_stair_distance(
+                (x, y), self.known_stairs, zone, floor
+            )
+        else:
+            new_stairs = observed_stairs - self.known_stairs
+            if new_stairs:
+                components["stairs_discovered"] = config.stairs_discovered * len(new_stairs)
+                self.known_stairs.update(new_stairs)
+            distance = self._nearest_stair_distance((x, y), self.known_stairs, zone, floor)
+            # Discovery changes the potential function itself, so establish a new
+            # baseline instead of paying both discovery and artificial progress.
+            if not new_stairs and distance is not None and self.stair_distance is not None:
+                delta = self.stair_distance - distance
+                credited = max(
+                    -config.max_stair_distance_delta,
+                    min(delta, config.max_stair_distance_delta),
+                )
+                if credited:
+                    components["stair_progress"] = config.stair_progress * credited
+            self.stair_distance = distance
 
         if zone > self.zone:
             components["zone_complete"] = config.zone_complete * (zone - self.zone)

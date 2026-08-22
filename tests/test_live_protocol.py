@@ -147,8 +147,8 @@ def test_live_victory_terminates_and_reports_completion() -> None:
     assert info["episode_status"] == "won"
     assert info["completed"] == 1
     assert observation["player"][PlayerFeature.WON] == 1
-    assert reward == pytest.approx(24.995)
-    assert info["reward_components"]["victory"] == 25.0
+    assert reward == pytest.approx(49.985)
+    assert info["reward_components"]["victory"] == 50.0
     with pytest.raises(RuntimeError, match="episode ended"):
         environment.step(Action.RIGHT)
 
@@ -183,7 +183,7 @@ def test_live_environment_applies_client_turn_limit() -> None:
     assert not terminated and truncated
     assert info["episode_status"] == "aborted"
     assert info["client_turn_limit"] == 1
-    assert reward == pytest.approx(-1.005)
+    assert reward == pytest.approx(-1.015)
     assert info["reward_components"]["aborted"] == -1.0
 
 
@@ -254,7 +254,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     assert info["protocol_schema_version"] == 5
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
-    assert reward == pytest.approx(0.02)
+    assert reward == pytest.approx(0.01)
     assert info["reward_components"]["enemy_damage"] == 0.025
     assert not terminated and not truncated
     assert info["episode_status"] == "running"
