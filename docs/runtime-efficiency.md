@@ -27,7 +27,7 @@ collector transitions/second; final end-to-end throughput was 16.36.
 
 ## Architecture
 
-Commands and schema-5 JSON transitions now share one per-worker 64 KiB duplex
+Commands and schema-6 JSON transitions now share one per-worker 64 KiB duplex
 named pipe. Logs are used only for readiness and fatal diagnostics. Each worker
 uses an isolated ephemeral profile, minimized hidden rendering, disabled asset
 reload and online integrations, and a dedicated recurrent actor state. A single

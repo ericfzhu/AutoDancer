@@ -70,7 +70,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "instance_id": "worker-0000",
         "role": "worker",
         "run_id": run_id,
@@ -112,7 +112,7 @@ def record(
     }
 
 
-def test_native_pipe_source_accepts_large_schema5_records_without_log_markers() -> None:
+def test_native_pipe_source_accepts_large_schema6_records_without_log_markers() -> None:
     reset = record(0, "reset")
     turn = record(1, "turn", requested_action=Action.UP)
     encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
@@ -225,6 +225,18 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
     with pytest.raises(ProtocolError, match="at least 0"):
         validate_record(payload)
 
+    payload = record(0, "reset")
+    payload["observation"]["revealed_map"] = np.zeros((65, 64), dtype=int).tolist()
+    with pytest.raises(ProtocolError, match="revealed_map.*shape"):
+        validate_record(payload)
+
+
+def test_full_revealed_map_fits_pipe_frame_and_validates() -> None:
+    payload = record(0, "reset")
+    payload["observation"]["revealed_map"] = np.full((65, 65), 2, dtype=int).tolist()
+    validate_record(payload)
+    assert len(json.dumps(payload).encode("utf-8")) < 65_536
+
 
 def test_log_source_establishes_boundary_before_fast_restart(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer.log"
@@ -253,7 +265,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 5
+    assert info["protocol_schema_version"] == 6
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.01)

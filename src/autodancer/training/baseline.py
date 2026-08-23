@@ -437,9 +437,15 @@ def _checkpoint_hash(path: Path) -> str:
 def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
-    expected = RecurrentActorCritic(ModelConfig(), initialize=False)
+    architecture = payload.get("architecture", {})
+    model_config = dict(architecture.get("config", {}))
+    if architecture.get("version") == 2:
+        model_config["map_size"] = 0
+    expected = RecurrentActorCritic(ModelConfig(**model_config), initialize=False)
     if payload.get("architecture") != expected.architecture_spec():
-        raise ValueError("Checkpoint model architecture is incompatible with the schema-5 policy")
+        raise ValueError(
+            "Checkpoint model architecture is incompatible with the schema-6 policy"
+        )
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()

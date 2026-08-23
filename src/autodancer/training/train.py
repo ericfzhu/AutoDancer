@@ -344,12 +344,11 @@ def train(arguments: argparse.Namespace) -> None:
 
             telemetry_callback = publish_telemetry if dashboard_state is not None else None
             try:
-                loading_weights = (
-                    arguments.resume is not None or arguments.initialize_from is not None
+                # Resume replaces every tensor, but a warm start can intentionally
+                # leave new architecture modules and the critic at fresh values.
+                model = RecurrentActorCritic(
+                    ModelConfig(), initialize=arguments.resume is None
                 )
-                model = RecurrentActorCritic(ModelConfig(), initialize=not loading_weights)
-                if arguments.initialize_from is not None:
-                    model.initialize_critic()
                 algorithm = RecurrentPPO(
                     model,
                     ppo_config,

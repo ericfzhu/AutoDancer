@@ -93,7 +93,9 @@ pickups, deaths, and completions for both policies, plus their aggregate deltas.
 The default action order is `up`, `right`, `down`, `left`, `wait`, `bomb`,
 `item 1`, `item 2`, `throw`, `spell 1`, and `spell 2`. Observations contain a
 `21 × 21 × 11` symbolic grid, a 16-value player vector, an `8 × 4` inventory,
-and an 11-value legal-action mask.
+a persistent `65 × 65 × 5` current-floor map memory, and an 11-value
+legal-action mask. See [`docs/observation-parity.md`](docs/observation-parity.md)
+for the human-information parity audit and remaining gaps.
 
 The default versioned reward profile prioritizes floor progress over bounded
 exploration and combat shaping. Pass `--reward-config weights.json` to override
@@ -102,6 +104,6 @@ on resume. See [`docs/rewards.md`](docs/rewards.md) for the current defaults and
 [`docs/reward-history.md`](docs/reward-history.md) for the experiment history,
 observations, and next reward hypothesis.
 
-See [`docs/protocol.md`](docs/protocol.md) for the schema-5 wire contract.
+See [`docs/protocol.md`](docs/protocol.md) for the schema-6 wire contract.
 The first measured live-training reference is recorded in
 [`docs/baseline.md`](docs/baseline.md).

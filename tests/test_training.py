@@ -7,7 +7,14 @@ import numpy as np
 import pytest
 import torch
 
-from autodancer.constants import ACTION_COUNT, GRID_CHANNELS, GRID_SIZE, INVENTORY_FEATURES
+from autodancer.constants import (
+    ACTION_COUNT,
+    GRID_CHANNELS,
+    GRID_SIZE,
+    INVENTORY_FEATURES,
+    MAP_CHANNELS,
+    MAP_SIZE,
+)
 from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.ppo import (
     PPOConfig,
@@ -24,6 +31,9 @@ def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:
     return {
         "grid": torch.zeros(
             time_steps, workers, GRID_SIZE, GRID_SIZE, GRID_CHANNELS, dtype=torch.int16
+        ),
+        "map_memory": torch.zeros(
+            time_steps, workers, MAP_SIZE, MAP_SIZE, MAP_CHANNELS, dtype=torch.int16
         ),
         "player": torch.zeros(time_steps, workers, 16, dtype=torch.int32),
         "inventory": torch.zeros(time_steps, workers, 8, INVENTORY_FEATURES, dtype=torch.int16),
@@ -69,6 +79,17 @@ def test_policy_uses_exact_types_and_recurrent_context() -> None:
         changed_encoding = model.encode(changed)
     assert not torch.allclose(base_encoding, changed_encoding)
     assert model.initial_state(1).shape == (1, 2, 32)
+
+
+def test_policy_encoding_uses_persistent_map_memory() -> None:
+    torch.manual_seed(8)
+    model = small_model().eval()
+    base = {key: value[0] for key, value in observations(1, 1).items()}
+    changed = {key: value.clone() for key, value in base.items()}
+    changed["map_memory"][0, 32, 40, 0] = 1
+    changed["map_memory"][0, 32, 40, 1] = 1
+    with torch.inference_mode():
+        assert not torch.allclose(model.encode(base), model.encode(changed))
 
 
 def test_legacy_checkpoint_is_rejected(tmp_path: Path) -> None:
@@ -124,6 +145,49 @@ def test_checkpoint_warm_start_transfers_policy_but_resets_critic(tmp_path: Path
     assert target.updates == 0
     assert not target.optimizer.state
     assert provenance["global_step"] == 0
+
+
+def test_architecture_two_checkpoint_can_partially_initialize_map_policy(
+    tmp_path: Path,
+) -> None:
+    source = small_model()
+    source_state = {
+        name: value.clone()
+        for name, value in source.state_dict().items()
+        if not name.startswith("map_")
+    }
+    source_state["fusion.0.weight"] = source_state["fusion.0.weight"][
+        :, : -source.config.map_size
+    ]
+    source_spec = source.architecture_spec()
+    source_spec["version"] = 2
+    source_spec["config"].pop("map_size")
+    with torch.no_grad():
+        source.actor[-1].weight.fill_(0.125)
+    source_state["actor.2.weight"] = source.actor[-1].weight.clone()
+    path = tmp_path / "architecture-2.pt"
+    torch.save(
+        {
+            "model": source_state,
+            "architecture": source_spec,
+            "global_step": 250_000,
+            "updates": 244,
+            "checkpoint_metadata": {"reward": {"version": 2}},
+        },
+        path,
+    )
+
+    target = small_model()
+    map_before = target.map_terrain.weight.detach().clone()
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_from(path)
+    assert torch.equal(target.actor[-1].weight, source.actor[-1].weight)
+    assert torch.equal(target.map_terrain.weight, map_before)
+    assert provenance["architecture_upgrade"] == "v2_to_v3_map_memory"
 
 
 def test_warm_started_checkpoint_resumes_with_provenance_and_rejects_other_arm(

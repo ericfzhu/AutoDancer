@@ -26,6 +26,7 @@ from autodancer.live.protocol import (
     decode_observation,
     validate_record,
 )
+from autodancer.memory import FloorMapMemory
 from autodancer.observation import observation_space
 from autodancer.rewards import RewardConfig, RewardTracker
 
@@ -69,6 +70,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._episode_steps = 0
         self._episode_done = False
         self.reward_tracker = RewardTracker(reward_config)
+        self.map_memory = FloorMapMemory()
 
     def _dependencies(self) -> tuple[TurnSource, ActionBridge]:
         if self._source is None:
@@ -86,6 +88,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         super().reset(seed=seed)
         del options
         source, bridge = self._dependencies()
+        self.map_memory.reset()
         source.reset_sequence()
         if self.attach_existing:
             record = source.read_latest(self.reset_timeout)
@@ -209,6 +212,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         status = str(record["episode_status"])
         player[PlayerFeature.WON] = int(status == "won")
         player[PlayerFeature.DEAD] = int(status == "dead")
+        observation["map_memory"] = self.map_memory.update(
+            observation, record["observation"].get("revealed_map")
+        )
         return observation
 
     def _accept_record(

@@ -6,7 +6,14 @@ import time
 import numpy as np
 import torch
 
-from autodancer.constants import ACTION_COUNT, GRID_CHANNELS, GRID_SIZE, INVENTORY_FEATURES
+from autodancer.constants import (
+    ACTION_COUNT,
+    GRID_CHANNELS,
+    GRID_SIZE,
+    INVENTORY_FEATURES,
+    MAP_CHANNELS,
+    MAP_SIZE,
+)
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
 
@@ -22,6 +29,7 @@ def observation(slot: int) -> dict[str, np.ndarray]:
     player[8] = slot
     return {
         "grid": np.zeros((GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16),
+        "map_memory": np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16),
         "player": player,
         "inventory": np.zeros((8, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": mask,

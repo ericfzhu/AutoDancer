@@ -1,8 +1,8 @@
 # Training architecture
 
-AutoDancer trains directly against live Bard workers. Schema 5 and policy
-architecture 2 are a deliberate compatibility boundary: schema-4 observations
-and older checkpoints are rejected rather than silently reinterpreted.
+AutoDancer trains directly against live Bard workers. Schema 6 and policy
+architecture 3 are a deliberate compatibility boundary. Architecture-2
+checkpoints can only be used through the explicit partial warm-start path.
 
 ## Observation encoding
 
@@ -15,6 +15,8 @@ such as enemy variants and equipment types.
 The policy processes that representation in parallel:
 
 - a residual CNN preserves local geometry and produces a global spatial view;
+- a separate CNN reads a persistent 65×65 floor map anchored at the spawn,
+  including revealed terrain, Bard's position, visit counts, and visit recency;
 - a two-layer attention encoder reads up to 64 salient actor, item, trap, stair,
   and player tokens with explicit row and column positions;
 - a slot-aware attention encoder reads the eight inventory slots;
@@ -24,7 +26,8 @@ The policy processes that representation in parallel:
 These streams fuse to 512 features. A 512-unit LSTM maintains separate hidden
 and cell state across partial observations. Independent two-layer actor and
 critic heads produce masked logits for 11 actions and the state value. The
-default model has 5,953,167 trainable parameters.
+persistent map contains no unseen terrain or stale off-screen entities. The
+default architecture has 6,398,494 trainable parameters.
 
 ## Recurrent PPO contract
 
@@ -35,5 +38,7 @@ from the stored initial state and keeps the existing clipped objective, GAE,
 entropy bonus, gradient clipping, and synchronous fixed-capacity workers.
 
 Checkpoints include the architecture version and complete model configuration.
-Resume requires an exact architecture and PPO configuration match, preventing
-accidental loading of weights against different observation semantics.
+Resume requires an exact architecture and PPO configuration match. A deliberate
+architecture-2 warm start transfers compatible local perception, recurrent,
+and actor weights while initializing the map path, expanded fusion layer, and
+critic afresh.

@@ -15,11 +15,12 @@ local Native = require "system.game.AutoDancerNative"
 
 local GRID_SIZE = 21
 local GRID_CHANNELS = 11
+local MAP_SIZE = 65
 local PLAYER_FEATURES = 16
 local INVENTORY_SLOTS = 8
 local INVENTORY_FEATURES = 4
 local ACTION_COUNT = 11
-local SCHEMA_VERSION = 5
+local SCHEMA_VERSION = 6
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -34,6 +35,9 @@ local playerDead = false
 local terminalEmitted = false
 local lastObservation = nil
 local lastContext = nil
+local mapOriginX = nil
+local mapOriginY = nil
+local mapLevelIdentity = ""
 
 local function isLocalPlayer(entity)
     local player = Player.getPlayerEntity(1)
@@ -150,6 +154,62 @@ end
 
 local function hasComponent(entity, component)
     return entity ~= nil and Entities.typeHasComponent(entity.name, component) == true
+end
+
+local function currentLevelIdentity()
+    return tostring(CurrentLevel.getSeed())
+        .. ":" .. tostring(CurrentLevel.getUniqueID())
+        .. ":" .. tostring(CurrentLevel.getSequentialNumber())
+end
+
+local function ensureMapOrigin(player)
+    local identity = currentLevelIdentity()
+    if identity ~= mapLevelIdentity then
+        mapLevelIdentity = identity
+        mapOriginX = player.position.x
+        mapOriginY = player.position.y
+    end
+end
+
+local function playerHasMap(player)
+    local slots = player.inventory and player.inventory.itemSlots or {}
+    for _, slot in pairs(slots) do
+        if type(slot) == "table" then
+            for _, entityID in ipairs(slot) do
+                local item = Entities.getEntityByID(entityID)
+                if item and string.find(string.lower(item.name or ""), "map", 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function buildRevealedMap(player)
+    -- A periodic snapshot recovers map reveals that occur outside the local grid.
+    -- Map-item reveals are emitted immediately. The cadence keeps normal turns cheap.
+    if sequence % 32 ~= 0 and not playerHasMap(player) then
+        return nil
+    end
+    ensureMapOrigin(player)
+    local result = zeroMatrix(MAP_SIZE, MAP_SIZE)
+    local half = math.floor(MAP_SIZE / 2)
+    for row = 1, MAP_SIZE do
+        for column = 1, MAP_SIZE do
+            local x = mapOriginX + column - half - 1
+            local y = mapOriginY + row - half - 1
+            if Vision.isRevealed(x, y) and Tile.exists(x, y) then
+                local tileInfo = Tile.getInfo(x, y) or {}
+                if tileInfo.name == "Stairs" or (tileInfo.descent or 0) > 0 then
+                    result[row][column] = 3
+                else
+                    result[row][column] = Tile.isSolid(x, y) and 2 or 1
+                end
+            end
+        end
+    end
+    return result
 end
 
 -- Deterministic across Lua processes and runs. Zero means "no type".
@@ -289,6 +349,7 @@ local function buildObservation()
     end
 
     if player and player.position then
+        ensureMapOrigin(player)
         local health = 0
         local maxHealth = 0
         if player.health then
@@ -357,6 +418,7 @@ local function buildObservation()
         mask[9] = inventory[1][1] ~= 0 and 1 or 0
         mask[10] = inventory[5][1] ~= 0 and 1 or 0
         mask[11] = inventory[6][1] ~= 0 and 1 or 0
+        result.revealed_map = buildRevealedMap(player)
     end
 
     return result
@@ -406,9 +468,7 @@ local function currentContext()
 end
 
 local function beginRunIfNeeded()
-    local levelIdentity = tostring(CurrentLevel.getSeed())
-        .. ":" .. tostring(CurrentLevel.getUniqueID())
-        .. ":" .. tostring(CurrentLevel.getSequentialNumber())
+    local levelIdentity = currentLevelIdentity()
     local newRun = activeRunID == ""
         or (CurrentLevel.getSequentialNumber() == 1 and levelIdentity ~= lastLevelIdentity)
     if newRun then

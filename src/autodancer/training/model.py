@@ -1,4 +1,4 @@
-"""Schema-5 recurrent actor-critic for symbolic AutoDancer observations."""
+"""Schema-6 recurrent actor-critic with local and persistent-map perception."""
 
 from __future__ import annotations
 
@@ -15,11 +15,12 @@ from autodancer.constants import (
     ActorKind,
     GridChannel,
     ItemKind,
+    MapChannel,
     Terrain,
     TrapKind,
 )
 
-ARCHITECTURE_VERSION = 2
+ARCHITECTURE_VERSION = 3
 START_ACTION = ACTION_COUNT
 
 
@@ -31,6 +32,7 @@ class ModelConfig:
     entity_limit: int = 64
     attention_layers: int = 2
     attention_heads: int = 4
+    map_size: int = 128
 
 
 class ResidualBlock(nn.Module):
@@ -70,6 +72,8 @@ class RecurrentActorCritic(nn.Module):
     def __init__(self, config: ModelConfig | None = None, *, initialize: bool = True) -> None:
         super().__init__()
         self.config = config or ModelConfig()
+        if self.config.map_size < 0:
+            raise ValueError("map_size cannot be negative")
         width = self.config.cell_size
         self.terrain_class = nn.Embedding(len(Terrain), 4)
         self.terrain_type = nn.Embedding(TYPE_VOCAB_SIZE, 8)
@@ -100,6 +104,30 @@ class RecurrentActorCritic(nn.Module):
             nn.LayerNorm(self.config.spatial_size),
             nn.SiLU(),
         )
+        if self.config.map_size:
+            self.map_terrain = nn.Embedding(len(Terrain), 4)
+            self.map_reveal = nn.Embedding(3, 3)
+            self.map_visits = nn.Embedding(16, 6)
+            self.map_recency = nn.Embedding(4, 4)
+            self.map_player = nn.Embedding(2, 3)
+            self.map_encoder = nn.Sequential(
+                nn.Conv2d(20, 32, 5, stride=2, padding=2, bias=False),
+                nn.GroupNorm(8, 32),
+                nn.SiLU(),
+                ResidualBlock(32),
+                nn.Conv2d(32, 64, 3, stride=2, padding=1, bias=False),
+                nn.GroupNorm(8, 64),
+                nn.SiLU(),
+                ResidualBlock(64),
+                nn.Conv2d(64, 96, 3, stride=2, padding=1, bias=False),
+                nn.GroupNorm(8, 96),
+                nn.SiLU(),
+                nn.AdaptiveAvgPool2d((4, 4)),
+                nn.Flatten(),
+                nn.Linear(96 * 4 * 4, self.config.map_size),
+                nn.LayerNorm(self.config.map_size),
+                nn.SiLU(),
+            )
         self.row_embedding = nn.Embedding(21, width)
         self.column_embedding = nn.Embedding(21, width)
         self.entity_attention = _transformer(
@@ -119,7 +147,7 @@ class RecurrentActorCritic(nn.Module):
         )
         self.previous_action = nn.Embedding(ACTION_COUNT + 1, 32)
         self.context_encoder = nn.Sequential(nn.Linear(34, 64), nn.LayerNorm(64), nn.SiLU())
-        fused_size = self.config.spatial_size + width + 128 + width + 64
+        fused_size = self.config.spatial_size + self.config.map_size + width + 128 + width + 64
         self.fusion = nn.Sequential(
             nn.Linear(fused_size, self.config.hidden_size),
             nn.LayerNorm(self.config.hidden_size),
@@ -140,7 +168,11 @@ class RecurrentActorCritic(nn.Module):
         return self.config.hidden_size
 
     def architecture_spec(self) -> dict[str, Any]:
-        return {"version": ARCHITECTURE_VERSION, "config": asdict(self.config)}
+        config = asdict(self.config)
+        if not self.config.map_size:
+            config.pop("map_size")
+            return {"version": 2, "config": config}
+        return {"version": ARCHITECTURE_VERSION, "config": config}
 
     def _initialize(self) -> None:
         for module in self.modules():
@@ -242,10 +274,28 @@ class RecurrentActorCritic(nn.Module):
         )
         return self.inventory_attention(tokens).mean(dim=1)
 
+    def _map_features(self, memory: Tensor) -> Tensor:
+        if not self.config.map_size:
+            raise RuntimeError("Architecture 2 has no persistent map encoder")
+        features = torch.cat(
+            (
+                self.map_terrain(memory[..., int(MapChannel.TERRAIN_CLASS)].long().clamp(0, 3)),
+                self.map_reveal(memory[..., int(MapChannel.REVEAL_STATE)].long().clamp(0, 2)),
+                self.map_visits(memory[..., int(MapChannel.VISIT_COUNT)].long().clamp(0, 15)),
+                self.map_recency(memory[..., int(MapChannel.VISIT_RECENCY)].long().clamp(0, 3)),
+                self.map_player(memory[..., int(MapChannel.PLAYER)].long().clamp(0, 1)),
+            ),
+            dim=-1,
+        )
+        return self.map_encoder(features.permute(0, 3, 1, 2))
+
     def encode(self, observation: dict[str, Tensor]) -> Tensor:
         grid = observation["grid"]
         cells = self._cell_features(grid)
         spatial = self.spatial_encoder(cells.permute(0, 3, 1, 2))
+        map_memory = (
+            self._map_features(observation["map_memory"]) if self.config.map_size else None
+        )
         entities = self._entity_features(grid, cells)
         player = self.player_encoder(self._scale(observation["player"]))
         inventory = self._inventory_features(observation["inventory"])
@@ -267,7 +317,11 @@ class RecurrentActorCritic(nn.Module):
                 dim=-1,
             )
         )
-        return self.fusion(torch.cat((spatial, entities, player, inventory, context), dim=-1))
+        features = [spatial]
+        if map_memory is not None:
+            features.append(map_memory)
+        features.extend((entities, player, inventory, context))
+        return self.fusion(torch.cat(features, dim=-1))
 
     def step(self, observation: dict[str, Tensor], state: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         hidden, cell = self.lstm(self.encode(observation), (state[:, 0], state[:, 1]))

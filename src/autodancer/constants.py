@@ -4,6 +4,8 @@ from enum import IntEnum
 
 GRID_SIZE = 21
 GRID_CHANNELS = 11
+MAP_SIZE = 65
+MAP_CHANNELS = 5
 PLAYER_FEATURES = 16
 INVENTORY_SLOTS = 8
 INVENTORY_FEATURES = 4
@@ -40,6 +42,14 @@ class GridChannel(IntEnum):
     TRAP = 8
     VISIBILITY = 9
     STATUS = 10
+
+
+class MapChannel(IntEnum):
+    TERRAIN_CLASS = 0
+    REVEAL_STATE = 1
+    VISIT_COUNT = 2
+    VISIT_RECENCY = 3
+    PLAYER = 4
 
 
 class PlayerFeature(IntEnum):

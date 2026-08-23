@@ -12,7 +12,7 @@ from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig, S
 def test_ready_log_discovery_preserves_worker_identity(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer-worker.log"
     marker = {
-        "schema_version": 5,
+        "schema_version": 6,
         "instance_id": "worker-0007",
         "role": "worker",
         "game_version": "v4.2.1-b5713",

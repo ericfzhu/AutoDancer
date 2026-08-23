@@ -198,7 +198,7 @@ class RecurrentPPO:
         payload = torch.load(Path(path), map_location=self.device, weights_only=False)
         if payload.get("architecture") != self.model.architecture_spec():
             raise ValueError(
-                "Checkpoint model architecture is incompatible with the schema-5 policy"
+                "Checkpoint model architecture is incompatible with the schema-6 policy"
             )
         saved_metadata = dict(payload.get("checkpoint_metadata", {}))
         if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
@@ -221,24 +221,45 @@ class RecurrentPPO:
         """Load representation and actor weights without old reward-value state."""
         path = Path(path)
         payload = torch.load(path, map_location=self.device, weights_only=False)
-        if payload.get("architecture") != self.model.architecture_spec():
+        source_spec = payload.get("architecture")
+        target_spec = self.model.architecture_spec()
+        exact_architecture = source_spec == target_spec
+        map_upgrade = (
+            isinstance(source_spec, dict)
+            and source_spec.get("version") == 2
+            and target_spec.get("version") == 3
+            and source_spec.get("config")
+            == {key: value for key, value in target_spec["config"].items() if key != "map_size"}
+        )
+        if not exact_architecture and not map_upgrade:
             raise ValueError(
-                "Initialization checkpoint architecture is incompatible with the schema-5 policy"
+                "Initialization checkpoint architecture is incompatible with the schema-6 policy"
             )
         source = dict(payload["model"])
+        target = self.model.state_dict()
         transferred = {
-            name: value for name, value in source.items() if not name.startswith("critic.")
+            name: value
+            for name, value in source.items()
+            if not name.startswith("critic.")
+            and name in target
+            and target[name].shape == value.shape
         }
         missing, unexpected = self.model.load_state_dict(transferred, strict=False)
-        if unexpected or set(missing) != {
-            name for name in self.model.state_dict() if name.startswith("critic.")
-        }:
+        allowed_missing = {
+            name
+            for name in target
+            if name.startswith(("critic.", "map_")) or name == "fusion.0.weight"
+        }
+        if unexpected or (exact_architecture and set(missing) != {
+            name for name in target if name.startswith("critic.")
+        }) or (map_upgrade and not set(missing).issubset(allowed_missing)):
             raise ValueError("Initialization checkpoint did not match policy parameters")
         provenance = {
             "path": str(path.resolve()),
             "global_step": int(payload.get("global_step", 0)),
             "updates": int(payload.get("updates", 0)),
             "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+            "architecture_upgrade": "v2_to_v3_map_memory" if map_upgrade else None,
         }
         self.checkpoint_metadata["initialization"] = provenance
         return provenance

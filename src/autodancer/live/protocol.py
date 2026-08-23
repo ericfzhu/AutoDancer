@@ -17,6 +17,7 @@ from autodancer.constants import (
     GRID_SIZE,
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
+    MAP_SIZE,
     PLAYER_FEATURES,
     ActorKind,
     GridChannel,
@@ -28,7 +29,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
@@ -171,6 +172,21 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
     return {name: value.copy() for name, value in observation.items()}
 
 
+def decode_revealed_map(payload: Any) -> np.ndarray | None:
+    """Decode an optional spawn-anchored minimap snapshot from Lua."""
+    if payload is None:
+        return None
+    result = _integer_array(
+        payload,
+        "revealed_map",
+        (MAP_SIZE, MAP_SIZE),
+        np.dtype(np.int8),
+    )
+    if np.any(result < 0) or np.any(result > len(Terrain) - 1):
+        raise ProtocolError("revealed_map contains an unknown terrain class")
+    return result.copy()
+
+
 def _validate_events(events: Any) -> None:
     if not isinstance(events, Sequence) or isinstance(events, (str, bytes)):
         raise ProtocolError("Record events must be an array")
@@ -256,6 +272,7 @@ def validate_record(record: Mapping[str, Any]) -> None:
     if status == "running" and (zone < 1 or floor < 1):
         raise ProtocolError("Running records must have positive zone and floor")
     observation = decode_observation(record.get("observation", {}))
+    decode_revealed_map(record.get("observation", {}).get("revealed_map"))
     if status == "running" and not np.any(observation["action_mask"]):
         raise ProtocolError("A running record cannot mask every action")
     _validate_events(record.get("events", []))
@@ -415,7 +432,7 @@ class JsonlTurnSource(_SequenceTracker):
 
 
 class NativePipeTurnSource(_SequenceTracker):
-    """Read schema-5 JSON messages directly from a worker's duplex pipe."""
+    """Read schema-6 JSON messages directly from a worker's duplex pipe."""
 
     def __init__(self, receiver: MessageReceiver) -> None:
         super().__init__()

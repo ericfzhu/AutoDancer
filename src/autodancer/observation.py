@@ -11,6 +11,8 @@ from autodancer.constants import (
     GRID_SIZE,
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
+    MAP_CHANNELS,
+    MAP_SIZE,
     PLAYER_FEATURES,
 )
 
@@ -22,6 +24,12 @@ def observation_space() -> spaces.Dict:
                 low=0,
                 high=32767,
                 shape=(GRID_SIZE, GRID_SIZE, GRID_CHANNELS),
+                dtype=np.int16,
+            ),
+            "map_memory": spaces.Box(
+                low=0,
+                high=15,
+                shape=(MAP_SIZE, MAP_SIZE, MAP_CHANNELS),
                 dtype=np.int16,
             ),
             "player": spaces.Box(

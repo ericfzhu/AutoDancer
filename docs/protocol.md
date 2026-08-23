@@ -1,6 +1,6 @@
 # Python/Lua live protocol
 
-Schema 5 identifies every message with `instance_id` and `role`. Python owns a
+Schema 6 identifies every message with `instance_id` and `role`. Python owns a
 current-user-only Windows named pipe for each process. Pipe names include the
 supervisor session and worker identity, so commands cannot cross worker slots.
 Lua retains a received command until the engine accepts it in a safe state.
@@ -10,7 +10,7 @@ Lua retains a received command until the engine accepts it in a safe state.
 Every process prints one structured marker in its own engine log:
 
 ```text
-AUTODANCER_READY:{"schema_version":5,"instance_id":"worker-0000","role":"worker",...}
+AUTODANCER_READY:{"schema_version":6,"instance_id":"worker-0000","role":"worker",...}
 ```
 
 Python discovers logs by marker identity, validates schema and pinned game
@@ -37,7 +37,7 @@ An action-driven transition echoes:
 
 ```json
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "instance_id": "worker-0000",
   "role": "worker",
   "bridge": {
@@ -71,3 +71,10 @@ can generalize across related enemies and items.
 Inventory is `8 × 4`: coarse item class, exact type, quantity, and weapon
 damage. Player features and the legal-action mask retain their existing shapes.
 All values are range-checked before entering the policy.
+
+Schema 6 may additionally carry `observation.revealed_map`, a `65 × 65`
+terrain snapshot anchored at the floor's spawn position. Lua emits it
+periodically and immediately while the Map item is held. Zero is unknown;
+non-zero cells are terrain the game has actually marked revealed. Python
+combines these snapshots with the local visibility grid and Bard's own path
+into the derived `map_memory` policy input.
