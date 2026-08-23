@@ -219,6 +219,12 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, float]:
     return {
         "episodes": float(len(episodes)),
         "mean_return": float(np.mean([episode["return"] for episode in episodes])),
+        "mean_extrinsic_return": float(
+            np.mean([episode.get("extrinsic_return", 0.0) for episode in episodes])
+        ),
+        "mean_shaping_return": float(
+            np.mean([episode.get("shaping_return", 0.0) for episode in episodes])
+        ),
         "deaths": float(sum(episode["status"] == "dead" for episode in episodes)),
         "completions": float(sum(episode["status"] == "won" for episode in episodes)),
         "enemy_kills": float(sum(event.get("kind") == "enemy_kill" for event in events)),
@@ -288,6 +294,8 @@ def train(arguments: argparse.Namespace) -> None:
         sequence_length=arguments.sequence_length,
     )
     reward_config = load_reward_config(arguments.reward_config)
+    if reward_config.discount != ppo_config.gamma:
+        raise ValueError("Reward potential discount must match PPO gamma")
     supervisor_config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -318,24 +326,30 @@ def train(arguments: argparse.Namespace) -> None:
                 dashboard_state.set_status("training")
 
             def publish_telemetry(
+                index: int,
                 observation: dict[str, np.ndarray],
-                infos: list[dict[str, Any]],
-                actions: np.ndarray | None,
-                rewards: np.ndarray | None,
+                info: dict[str, Any],
+                action: int | None,
+                reward: float | None,
             ) -> None:
                 assert dashboard_state is not None
-                dashboard_state.update_workers(
-                    environment.worker_ids,
+                dashboard_state.update_worker(
+                    index,
+                    environment.worker_ids[index],
                     observation,
-                    infos,
-                    actions=actions,
-                    rewards=rewards,
-                    health=supervisor.health(),
+                    info,
+                    action=action,
+                    reward=reward,
                 )
 
             telemetry_callback = publish_telemetry if dashboard_state is not None else None
             try:
-                model = RecurrentActorCritic(ModelConfig())
+                loading_weights = (
+                    arguments.resume is not None or arguments.initialize_from is not None
+                )
+                model = RecurrentActorCritic(ModelConfig(), initialize=not loading_weights)
+                if arguments.initialize_from is not None:
+                    model.initialize_critic()
                 algorithm = RecurrentPPO(
                     model,
                     ppo_config,
@@ -344,6 +358,8 @@ def train(arguments: argparse.Namespace) -> None:
                 )
                 if arguments.resume:
                     algorithm.load(arguments.resume)
+                elif arguments.initialize_from:
+                    algorithm.initialize_from(arguments.initialize_from)
                 collector = VersionedAsyncRolloutCollector(
                     environment,
                     algorithm.model,
@@ -407,6 +423,7 @@ def train(arguments: argparse.Namespace) -> None:
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
                     if dashboard_state is not None:
+                        dashboard_state.update_health(supervisor.health())
                         dashboard_state.update_training(metrics)
                     with metrics_path.open("a", encoding="utf-8") as handle:
                         handle.write(json.dumps(metrics, sort_keys=True) + "\n")
@@ -425,6 +442,11 @@ def train(arguments: argparse.Namespace) -> None:
                             "ppo": asdict(ppo_config),
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
+                            "initialized_from": (
+                                str(arguments.initialize_from.resolve())
+                                if arguments.initialize_from is not None
+                                else None
+                            ),
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),
@@ -458,6 +480,11 @@ def main() -> int:
     parser.add_argument("--total-steps", type=int, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument(
+        "--initialize-from",
+        type=Path,
+        help="warm-start policy/representation weights while keeping a fresh critic and optimizer",
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollout-length", type=int, default=128)
@@ -493,6 +520,8 @@ def main() -> int:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.total_steps <= 0 or arguments.num_instances <= 0:
         parser.error("--total-steps and --num-instances must be positive")
+    if arguments.resume is not None and arguments.initialize_from is not None:
+        parser.error("--resume and --initialize-from are mutually exclusive")
     if arguments.dashboard is not None and not 0 <= arguments.dashboard <= 65535:
         parser.error("--dashboard port must be in [0, 65535]")
     if arguments.inference_batch_delay_ms < 0:

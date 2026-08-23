@@ -162,6 +162,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             truncated=truncated,
         )
         info["reward_components"] = components
+        extrinsic, shaping = self.reward_tracker.split_components(components)
+        info["extrinsic_reward"] = extrinsic
+        info["shaping_reward"] = shaping
         return observation, reward, terminated, truncated, info
 
     @staticmethod

@@ -87,6 +87,9 @@ class AsyncEnvironment:
 
 def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:
     environment = AsyncEnvironment()
+    # Leave enough separation for this scheduling assertion on a machine that is
+    # simultaneously running CPU-heavy live game workers.
+    environment.environments["worker-0001"].delays[0] = 0.5
     model = RecurrentActorCritic(
         ModelConfig(
             cell_size=16,
@@ -114,6 +117,38 @@ def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:
     )
     assert start_worker0_turn1 < end_worker1_turn0
     assert collector.last_runtime_metrics["policy_version"] == 0
+
+
+def test_async_collector_publishes_each_worker_turn_live() -> None:
+    environment = AsyncEnvironment()
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    updates: list[tuple[int, int | None, float | None]] = []
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=3,
+        batch_delay=0.001,
+        telemetry_callback=lambda index, _observation, _info, action, reward: updates.append(
+            (index, action, reward)
+        ),
+    )
+    try:
+        collector.collect(3)
+    finally:
+        collector.close()
+    assert len(updates) == 2 + (2 * 3)
+    assert updates[:2] == [(0, None, None), (1, None, None)]
+    assert all(action is not None and reward is not None for _, action, reward in updates[2:])
 
 
 def test_async_collector_discards_only_failed_slot_fragment() -> None:

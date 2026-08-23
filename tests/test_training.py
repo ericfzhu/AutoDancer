@@ -99,6 +99,61 @@ def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
         incompatible.load(path)
 
 
+def test_checkpoint_warm_start_transfers_policy_but_resets_critic(tmp_path: Path) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    source = RecurrentPPO(small_model(), config, device=torch.device("cpu"))
+    with torch.no_grad():
+        for parameter in source.model.parameters():
+            parameter.fill_(0.25)
+    path = tmp_path / "source.pt"
+    source.save(path)
+
+    target = RecurrentPPO(small_model(), config, device=torch.device("cpu"))
+    critic_before = {
+        name: value.clone()
+        for name, value in target.model.state_dict().items()
+        if name.startswith("critic.")
+    }
+    provenance = target.initialize_from(path)
+    for name, value in target.model.state_dict().items():
+        if name.startswith("critic."):
+            assert torch.equal(value, critic_before[name])
+        else:
+            assert torch.equal(value, source.model.state_dict()[name])
+    assert target.global_step == 0
+    assert target.updates == 0
+    assert not target.optimizer.state
+    assert provenance["global_step"] == 0
+
+
+def test_warm_started_checkpoint_resumes_with_provenance_and_rejects_other_arm(
+    tmp_path: Path,
+) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    source_path = tmp_path / "source.pt"
+    RecurrentPPO(small_model(), config, device=torch.device("cpu")).save(source_path)
+    arm_a = {"reward": {"version": 4, "weights": {"stair_potential_max": 0.5}}}
+    trained = RecurrentPPO(
+        small_model(), config, device=torch.device("cpu"), checkpoint_metadata=arm_a
+    )
+    trained.initialize_from(source_path)
+    checkpoint = tmp_path / "warm.pt"
+    trained.save(checkpoint)
+
+    resumed = RecurrentPPO(
+        small_model(), config, device=torch.device("cpu"), checkpoint_metadata=arm_a
+    )
+    resumed.load(checkpoint)
+    assert "initialization" in resumed.checkpoint_metadata
+
+    arm_b = {"reward": {"version": 4, "weights": {"stair_potential_max": 1.0}}}
+    incompatible = RecurrentPPO(
+        small_model(), config, device=torch.device("cpu"), checkpoint_metadata=arm_b
+    )
+    with pytest.raises(ValueError, match="training metadata"):
+        incompatible.load(checkpoint)
+
+
 def test_rollout_collects_reward_components_without_overwriting_values() -> None:
     class FakeModel:
         def eval(self) -> None:

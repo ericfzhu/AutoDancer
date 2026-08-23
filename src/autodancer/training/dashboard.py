@@ -250,6 +250,45 @@ class DashboardState:
             self._workers = workers
             self._revision += 1
 
+    def update_worker(
+        self,
+        index: int,
+        worker_id: str,
+        observation: dict[str, np.ndarray],
+        info: dict[str, Any],
+        *,
+        action: int | None = None,
+        reward: float | None = None,
+    ) -> None:
+        """Publish one actor's latest turn without waiting for its peers."""
+        worker = {
+            "instance_id": worker_id,
+            "grid": observation["grid"].tolist(),
+            "player": observation["player"].tolist(),
+            "inventory": observation["inventory"].tolist(),
+            "action_mask": observation["action_mask"].tolist(),
+            "action": None if action is None else int(action),
+            "reward": None if reward is None else float(reward),
+            "info": dict(info),
+            "health": {},
+        }
+        with self._lock:
+            while len(self._workers) <= index:
+                self._workers.append({})
+            previous = self._workers[index]
+            worker["health"] = dict(previous.get("health", {}))
+            self._workers[index] = worker
+            self._revision += 1
+
+    def update_health(self, health: dict[str, dict[str, Any]]) -> None:
+        """Refresh process statistics without replacing live observations."""
+        with self._lock:
+            for worker in self._workers:
+                worker_id = worker.get("instance_id")
+                if worker_id in health:
+                    worker["health"] = dict(health[worker_id])
+            self._revision += 1
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {

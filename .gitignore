@@ -6,6 +6,7 @@ __pycache__/
 .hypothesis/
 .ruff_cache/
 .runtime/
+.audit-tmp/
 build/
 dist/
 *.egg-info/

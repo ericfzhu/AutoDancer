@@ -98,7 +98,9 @@ and an 11-value legal-action mask.
 The default versioned reward profile prioritizes floor progress over bounded
 exploration and combat shaping. Pass `--reward-config weights.json` to override
 individual weights; the exact profile is stored in checkpoints and must match
-on resume. See [`docs/rewards.md`](docs/rewards.md) for the design and defaults.
+on resume. See [`docs/rewards.md`](docs/rewards.md) for the current defaults and
+[`docs/reward-history.md`](docs/reward-history.md) for the experiment history,
+observations, and next reward hypothesis.
 
 See [`docs/protocol.md`](docs/protocol.md) for the schema-5 wire contract.
 The first measured live-training reference is recorded in

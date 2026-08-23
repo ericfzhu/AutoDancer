@@ -45,8 +45,8 @@ def test_exploration_reward_is_novelty_bounded_and_not_repeatable() -> None:
         terminated=False,
         truncated=False,
     )
-    assert parts == {"turn": -0.005, "new_position": 0.015, "new_tile": 0.002}
-    assert reward == pytest.approx(0.012)
+    assert parts == {"new_position": 0.005, "new_tile": 0.002}
+    assert reward == pytest.approx(0.007)
 
     repeated, parts = tracker.score(
         moved,
@@ -55,12 +55,12 @@ def test_exploration_reward_is_novelty_bounded_and_not_repeatable() -> None:
         terminated=False,
         truncated=False,
     )
-    assert repeated == pytest.approx(-0.015)
-    assert parts == {"turn": -0.005, "revisit": -0.01}
+    assert repeated == pytest.approx(0)
+    assert parts == {}
 
 
-def test_combat_credit_is_deduplicated_and_damage_is_capped() -> None:
-    tracker = RewardTracker(RewardConfig(max_rewarded_damage_per_enemy=3))
+def test_combat_credit_is_deduplicated_and_floor_bounded() -> None:
+    tracker = RewardTracker(RewardConfig(max_combat_reward_per_floor=0.05))
     value = observation()
     tracker.reset(value, {"zone": 1, "floor": 1})
     events = [
@@ -76,10 +76,10 @@ def test_combat_credit_is_deduplicated_and_damage_is_capped() -> None:
         terminated=False,
         truncated=False,
     )
-    assert parts["enemy_damage"] == pytest.approx(0.075)
-    assert parts["enemy_kill"] == pytest.approx(0.25)
+    assert parts["enemy_damage"] == pytest.approx(0.05)
+    assert "enemy_kill" not in parts
     assert parts["player_damage"] == pytest.approx(-0.3)
-    assert reward == pytest.approx(0.01)
+    assert reward == pytest.approx(-0.25)
 
 
 def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
@@ -97,9 +97,9 @@ def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
         truncated=False,
     )
     assert parts["floor_complete"] == 5.0
-    assert parts["new_item_type"] == 0.15
-    assert parts["new_position"] == 0.015
-    assert floor_reward == pytest.approx(5.161)
+    assert parts["new_item_type"] == 0.10
+    assert parts["new_position"] == 0.005
+    assert floor_reward == pytest.approx(5.106)
 
     victory_reward, parts = tracker.score(
         progressed,
@@ -109,7 +109,7 @@ def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
         truncated=False,
     )
     assert parts["victory"] == 50.0
-    assert victory_reward == pytest.approx(49.985)
+    assert victory_reward == pytest.approx(50.0)
 
 
 def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
@@ -122,14 +122,24 @@ def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
     assert load_reward_config(path).turn == -0.01
 
 
+def test_v4_arm_configs_differ_only_in_stair_potential() -> None:
+    arm_a = load_reward_config("configs/reward-v4a.json")
+    arm_b = load_reward_config("configs/reward-v4b.json")
+    assert arm_a.stair_potential_max == 0.5
+    assert arm_b.stair_potential_max == 1.0
+    a_weights = arm_a.specification()["weights"]
+    b_weights = arm_b.specification()["weights"]
+    assert {key for key in a_weights if a_weights[key] != b_weights[key]} == {
+        "stair_potential_max"
+    }
+
+
 def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> None:
     config = RewardConfig(
         turn=0,
         new_position=0,
         revisit=0,
         new_tile=0,
-        stairs_discovered=0.5,
-        stair_progress=0.05,
     )
     tracker = RewardTracker(config)
     initial = observation(x=0)
@@ -147,9 +157,8 @@ def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> 
         terminated=False,
         truncated=False,
     )
-    assert reward == pytest.approx(0.5)
-    assert parts["stairs_discovered"] == pytest.approx(0.5)
-    assert "stair_progress" not in parts
+    assert reward == pytest.approx(0.99 * 0.45)
+    assert parts["stair_potential"] == pytest.approx(0.99 * 0.45)
 
     closer = observation(x=1)
     closer["grid"][
@@ -170,9 +179,11 @@ def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> 
         terminated=False,
         truncated=False,
     )
-    assert toward_parts["stair_progress"] == pytest.approx(0.05)
-    assert away_parts["stair_progress"] == pytest.approx(-0.05)
-    assert toward + away == pytest.approx(0)
+    assert toward_parts["stair_potential"] == pytest.approx(0.99 * 0.475 - 0.45)
+    assert away_parts["stair_potential"] == pytest.approx(0.99 * 0.45 - 0.475)
+    assert toward + config.discount * away == pytest.approx(
+        -0.45 + config.discount**2 * 0.45
+    )
 
 
 def test_floor_transition_resets_stair_potential_without_cross_floor_credit() -> None:
@@ -188,6 +199,58 @@ def test_floor_transition_resets_stair_potential_without_cross_floor_credit() ->
         terminated=False,
         truncated=False,
     )
-    assert reward == pytest.approx(5.0)
-    assert "stair_progress" not in parts
-    assert "stairs_discovered" not in parts
+    assert reward == pytest.approx(5.0 - 0.475)
+    assert parts["stair_potential"] == pytest.approx(-0.475)
+
+
+def test_shaping_budgets_reset_on_floor_transition() -> None:
+    config = RewardConfig(
+        new_position=0.1,
+        new_tile=0,
+        max_exploration_reward_per_floor=0.1,
+        enemy_kill=0.1,
+        max_combat_reward_per_floor=0.1,
+        new_item_type=0.1,
+        max_item_reward_per_floor=0.1,
+    )
+    tracker = RewardTracker(config)
+    tracker.reset(observation(), {"zone": 1, "floor": 1})
+    value = observation(x=1)
+    value["inventory"][0, 1] = 11
+    _, first = tracker.score(
+        value,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [{"kind": "enemy_kill", "entity_id": 1}],
+        terminated=False,
+        truncated=False,
+    )
+    value2 = observation(x=2)
+    value2["inventory"][0, 1] = 11
+    value2["inventory"][1, 1] = 12
+    _, capped = tracker.score(
+        value2,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [{"kind": "enemy_kill", "entity_id": 2}],
+        terminated=False,
+        truncated=False,
+    )
+    _, reset = tracker.score(
+        observation(x=3),
+        {"zone": 1, "floor": 2, "episode_status": "running"},
+        [{"kind": "enemy_kill", "entity_id": 3}],
+        terminated=False,
+        truncated=False,
+    )
+    assert first["new_position"] == first["enemy_kill"] == first["new_item_type"] == 0.1
+    assert "new_position" not in capped
+    assert "enemy_kill" not in capped
+    assert "new_item_type" not in capped
+    assert reset["new_position"] == reset["enemy_kill"] == 0.1
+
+
+def test_reward_components_split_task_and_shaping_returns() -> None:
+    extrinsic, shaping = RewardTracker.split_components(
+        {"floor_complete": 5.0, "death": -1.0, "new_position": 0.005}
+    )
+    assert extrinsic == pytest.approx(4.0)
+    assert shaping == pytest.approx(0.005)

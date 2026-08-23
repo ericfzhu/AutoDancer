@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,10 +14,12 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from autodancer.constants import PlayerFeature
+from autodancer.constants import ACTION_COUNT, Action, GridChannel, PlayerFeature, Terrain
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.rewards import load_reward_config
+from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
@@ -37,14 +39,66 @@ class EpisodeAccumulator:
     item_value: int = 0
     enemy_damage: int = 0
     player_damage: int = 0
+    extrinsic_return: float = 0.0
+    shaping_return: float = 0.0
+    action_counts: list[int] = field(default_factory=lambda: [0] * ACTION_COUNT)
+    unchanged_position_turns: int = 0
+    max_unchanged_position_streak: int = 0
+    idle_turns: int = 0
+    staircase_discoveries: int = 0
+    staircase_exits: int = 0
+    stair_discovery_to_exit_turns: list[int] = field(default_factory=list)
+    _visited_positions: set[tuple[int, int, int, int]] = field(default_factory=set)
+    _last_position: tuple[int, int, int, int] | None = None
+    _unchanged_position_streak: int = 0
+    _floor: tuple[int, int] = (0, 0)
+    _stairs_seen_on_floor: bool = False
+    _pending_stair_turn: int | None = None
+
+    @staticmethod
+    def _position(
+        observation: dict[str, np.ndarray], info: dict[str, Any]
+    ) -> tuple[int, int, int, int]:
+        player = observation["player"]
+        return (
+            int(info.get("zone") or player[PlayerFeature.ZONE]),
+            int(info.get("floor") or player[PlayerFeature.FLOOR]),
+            int(player[PlayerFeature.X]),
+            int(player[PlayerFeature.Y]),
+        )
+
+    @staticmethod
+    def _has_visible_stairs(observation: dict[str, np.ndarray]) -> bool:
+        grid = observation.get("grid")
+        if grid is None:
+            return False
+        return bool(
+            np.any(
+                (grid[..., GridChannel.TERRAIN_CLASS] == int(Terrain.STAIRS))
+                & (grid[..., GridChannel.VISIBILITY] > 0)
+            )
+        )
+
+    def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
+        position = self._position(observation, info)
+        self._last_position = position
+        self._floor = position[:2]
+        self._visited_positions.add(position)
+        if self._has_visible_stairs(observation):
+            self._stairs_seen_on_floor = True
+            self.staircase_discoveries = 1
+            self._pending_stair_turn = 0
 
     def observe(
         self,
         observation: dict[str, np.ndarray],
         reward: float,
         info: dict[str, Any],
+        action: int,
     ) -> None:
         self.episode_return += float(reward)
+        self.extrinsic_return += float(info.get("extrinsic_reward", 0.0))
+        self.shaping_return += float(info.get("shaping_reward", 0.0))
         self.turns += 1
         self.furthest_zone = max(self.furthest_zone, int(info.get("zone") or 0))
         self.furthest_floor = max(self.furthest_floor, int(info.get("floor") or 0))
@@ -52,7 +106,38 @@ class EpisodeAccumulator:
             self.max_gold,
             int(observation["player"][PlayerFeature.GOLD]),
         )
-        for event in info.get("raw_events", []):
+        if 0 <= action < ACTION_COUNT:
+            self.action_counts[action] += 1
+        position = self._position(observation, info)
+        current_floor = position[:2]
+        if current_floor != self._floor:
+            if self._pending_stair_turn is not None:
+                self.staircase_exits += 1
+                self.stair_discovery_to_exit_turns.append(
+                    self.turns - self._pending_stair_turn
+                )
+            self._floor = current_floor
+            self._stairs_seen_on_floor = False
+            self._pending_stair_turn = None
+        if position == self._last_position:
+            self.unchanged_position_turns += 1
+            self._unchanged_position_streak += 1
+            self.max_unchanged_position_streak = max(
+                self.max_unchanged_position_streak,
+                self._unchanged_position_streak,
+            )
+        else:
+            self._unchanged_position_streak = 0
+        events = list(info.get("raw_events", []))
+        if action == int(Action.WAIT) and position == self._last_position and not events:
+            self.idle_turns += 1
+        self._last_position = position
+        self._visited_positions.add(position)
+        if self._has_visible_stairs(observation) and not self._stairs_seen_on_floor:
+            self._stairs_seen_on_floor = True
+            self.staircase_discoveries += 1
+            self._pending_stair_turn = self.turns
+        for event in events:
             kind = str(event.get("kind", ""))
             amount = int(event.get("amount", 0) or 0)
             if kind == "enemy_kill":
@@ -66,7 +151,33 @@ class EpisodeAccumulator:
                 self.player_damage += amount
 
     def finish(self, status: str) -> dict[str, Any]:
-        return {**asdict(self), "status": status}
+        return {
+            "seed": self.seed,
+            "worker_id": self.worker_id,
+            "run_id": self.run_id,
+            "episode_return": self.episode_return,
+            "extrinsic_return": self.extrinsic_return,
+            "shaping_return": self.shaping_return,
+            "turns": self.turns,
+            "furthest_zone": self.furthest_zone,
+            "furthest_floor": self.furthest_floor,
+            "max_gold": self.max_gold,
+            "enemy_kills": self.enemy_kills,
+            "item_pickups": self.item_pickups,
+            "item_value": self.item_value,
+            "enemy_damage": self.enemy_damage,
+            "player_damage": self.player_damage,
+            "action_counts": self.action_counts,
+            "wait_actions": self.action_counts[int(Action.WAIT)],
+            "unchanged_position_turns": self.unchanged_position_turns,
+            "max_unchanged_position_streak": self.max_unchanged_position_streak,
+            "idle_turns": self.idle_turns,
+            "unique_positions": len(self._visited_positions),
+            "staircase_discoveries": self.staircase_discoveries,
+            "staircase_exits": self.staircase_exits,
+            "stair_discovery_to_exit_turns": self.stair_discovery_to_exit_turns,
+            "status": status,
+        }
 
 
 def masked_random_actions(action_mask: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -87,6 +198,20 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         max(int(episode["furthest_zone"]) - 1, 0) * 4 + int(episode["furthest_floor"])
         for episode in episodes
     ]
+    total_turns = sum(int(episode["turns"]) for episode in episodes)
+    action_counts = [
+        sum(int(episode.get("action_counts", [0] * ACTION_COUNT)[index]) for episode in episodes)
+        for index in range(ACTION_COUNT)
+    ]
+    stair_delays = [
+        int(delay)
+        for episode in episodes
+        for delay in episode.get("stair_discovery_to_exit_turns", [])
+    ]
+    staircase_discoveries = sum(
+        int(episode.get("staircase_discoveries", 0)) for episode in episodes
+    )
+    staircase_exits = sum(int(episode.get("staircase_exits", 0)) for episode in episodes)
     return {
         "policy": policy,
         "episodes": count,
@@ -95,6 +220,12 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "abort_rate": sum(episode["status"] == "aborted" for episode in episodes) / count,
         "step_limit_rate": sum(episode["status"] == "step_limit" for episode in episodes) / count,
         "mean_return": float(np.mean([episode["episode_return"] for episode in episodes])),
+        "mean_extrinsic_return": float(
+            np.mean([episode.get("extrinsic_return", 0.0) for episode in episodes])
+        ),
+        "mean_shaping_return": float(
+            np.mean([episode.get("shaping_return", 0.0) for episode in episodes])
+        ),
         "mean_turns": float(np.mean([episode["turns"] for episode in episodes])),
         "mean_progress": float(np.mean(progress)),
         "furthest_zone": max(int(episode["furthest_zone"]) for episode in episodes),
@@ -104,6 +235,31 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
         "enemy_damage": sum(int(episode["enemy_damage"]) for episode in episodes),
         "player_damage": sum(int(episode["player_damage"]) for episode in episodes),
+        "action_counts": action_counts,
+        "wait_rate": sum(int(episode.get("wait_actions", 0)) for episode in episodes)
+        / max(total_turns, 1),
+        "unchanged_position_rate": sum(
+            int(episode.get("unchanged_position_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "idle_rate": sum(int(episode.get("idle_turns", 0)) for episode in episodes)
+        / max(total_turns, 1),
+        "mean_max_unchanged_position_streak": float(
+            np.mean([episode.get("max_unchanged_position_streak", 0) for episode in episodes])
+        ),
+        "unique_positions_per_100_turns": 100.0
+        * sum(int(episode.get("unique_positions", 0)) for episode in episodes)
+        / max(total_turns, 1),
+        "staircase_discovery_rate": sum(
+            int(episode.get("staircase_discoveries", 0)) > 0 for episode in episodes
+        )
+        / count,
+        "staircase_discoveries": staircase_discoveries,
+        "staircase_exits": staircase_exits,
+        "staircase_conversion_rate": staircase_exits / max(staircase_discoveries, 1),
+        "mean_stair_discovery_to_exit_turns": (
+            float(np.mean(stair_delays)) if stair_delays else None
+        ),
         "results": episodes,
     }
 
@@ -155,9 +311,10 @@ def evaluate_live_policy(
     policy_seed: int,
     device: torch.device,
     model: RecurrentActorCritic | None = None,
+    dashboard_state: DashboardState | None = None,
 ) -> list[dict[str, Any]]:
-    if len(seeds) % environment.num_envs:
-        raise ValueError("The evaluation seed count must be divisible by num_instances")
+    if not seeds:
+        raise ValueError("At least one evaluation seed is required")
     if max_steps <= 0:
         raise ValueError("max_steps must be positive")
     rng = np.random.default_rng(policy_seed)
@@ -166,18 +323,40 @@ def evaluate_live_policy(
 
     for start in range(0, len(seeds), environment.num_envs):
         wave_seeds = seeds[start : start + environment.num_envs]
-        observation, infos = environment.reset(wave_seeds)
+        active_count = len(wave_seeds)
+        reset_seeds = [*wave_seeds]
+        if active_count < environment.num_envs:
+            padding_count = environment.num_envs - active_count
+            reset_seeds.extend(range(parking_seed, parking_seed + padding_count))
+            parking_seed += padding_count
+        observation, infos = environment.reset(reset_seeds)
+        if dashboard_state is not None:
+            dashboard_state.update_workers(environment.worker_ids, observation, infos)
         accumulators: list[EpisodeAccumulator | None] = [
-            EpisodeAccumulator(
-                seed=int(info.get("seed") if info.get("seed") is not None else seed),
-                worker_id=environment.worker_ids[index],
-                run_id=str(info.get("run_id", "")),
-                furthest_zone=int(info.get("zone") or 0),
-                furthest_floor=int(info.get("floor") or 0),
-                max_gold=int(observation["player"][index, PlayerFeature.GOLD]),
+            (
+                EpisodeAccumulator(
+                    seed=int(
+                        infos[index].get("seed")
+                        if infos[index].get("seed") is not None
+                        else wave_seeds[index]
+                    ),
+                    worker_id=environment.worker_ids[index],
+                    run_id=str(infos[index].get("run_id", "")),
+                    furthest_zone=int(infos[index].get("zone") or 0),
+                    furthest_floor=int(infos[index].get("floor") or 0),
+                    max_gold=int(observation["player"][index, PlayerFeature.GOLD]),
+                )
+                if index < active_count
+                else None
             )
-            for index, (seed, info) in enumerate(zip(wave_seeds, infos, strict=True))
+            for index in range(environment.num_envs)
         ]
+        for index, accumulator in enumerate(accumulators):
+            if accumulator is not None:
+                accumulator.initialize(
+                    {key: value[index] for key, value in observation.items()},
+                    infos[index],
+                )
         hidden = (
             model.initial_state(environment.num_envs, device=device) if model is not None else None
         )
@@ -194,6 +373,14 @@ def evaluate_live_policy(
                     model, observation, hidden, device, previous_actions, previous_rewards
                 )
             next_observation, rewards, terminated, truncated, step_infos = environment.step(actions)
+            if dashboard_state is not None:
+                dashboard_state.update_workers(
+                    environment.worker_ids,
+                    next_observation,
+                    step_infos,
+                    actions=actions,
+                    rewards=rewards,
+                )
             reset_indices: list[int] = []
             for index, accumulator in enumerate(accumulators):
                 done = bool(terminated[index] or truncated[index])
@@ -202,6 +389,7 @@ def evaluate_live_policy(
                         {key: value[index] for key, value in next_observation.items()},
                         float(rewards[index]),
                         step_infos[index],
+                        int(actions[index]),
                     )
                     reached_limit = accumulator.turns >= max_steps and not done
                     if done or reached_limit:
@@ -249,12 +437,13 @@ def _checkpoint_hash(path: Path) -> str:
 def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
-    expected = RecurrentActorCritic(ModelConfig())
+    expected = RecurrentActorCritic(ModelConfig(), initialize=False)
     if payload.get("architecture") != expected.architecture_spec():
         raise ValueError("Checkpoint model architecture is incompatible with the schema-5 policy")
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
+    reward_config = load_reward_config(arguments.reward_config)
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -263,33 +452,66 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         turn_timeout=arguments.turn_timeout,
         reset_timeout=arguments.reset_timeout,
         max_turns=max(arguments.max_steps + 1, 2),
+        reward_config=reward_config,
     )
-    with AutoDancerSupervisor(config) as supervisor:
-        environment = AutoDancerVectorEnv(supervisor)
-        try:
-            random_results = evaluate_live_policy(
-                environment,
-                seeds=arguments.seeds,
-                max_steps=arguments.max_steps,
-                policy_seed=arguments.policy_seed,
-                device=device,
-            )
-            trained_results = evaluate_live_policy(
-                environment,
-                seeds=arguments.seeds,
-                max_steps=arguments.max_steps,
-                policy_seed=arguments.policy_seed,
-                device=device,
-                model=model,
-            )
-            restarts = sum(handle.restart_count for handle in supervisor.workers.values())
-        finally:
-            environment.close()
+    dashboard_state = DashboardState() if arguments.dashboard is not None else None
+    dashboard_server = (
+        DashboardServer(dashboard_state, host=arguments.dashboard_host, port=arguments.dashboard)
+        if dashboard_state is not None
+        else None
+    )
+    if dashboard_server is not None:
+        dashboard_server.start()
+        print(json.dumps({"dashboard_url": dashboard_server.url}, sort_keys=True), flush=True)
+    try:
+        with AutoDancerSupervisor(config) as supervisor:
+            environment = AutoDancerVectorEnv(supervisor)
+            if dashboard_state is not None:
+                dashboard_state.set_status("evaluating")
+                dashboard_state.update_training(
+                    {
+                        "checkpoint": arguments.checkpoint.name,
+                        "episodes_target": len(arguments.seeds),
+                        "max_steps_per_episode": arguments.max_steps,
+                    }
+                )
+            try:
+                random_results = (
+                    []
+                    if arguments.trained_only
+                    else evaluate_live_policy(
+                        environment,
+                        seeds=arguments.seeds,
+                        max_steps=arguments.max_steps,
+                        policy_seed=arguments.policy_seed,
+                        device=device,
+                        dashboard_state=dashboard_state,
+                    )
+                )
+                trained_results = evaluate_live_policy(
+                    environment,
+                    seeds=arguments.seeds,
+                    max_steps=arguments.max_steps,
+                    policy_seed=arguments.policy_seed,
+                    device=device,
+                    model=model,
+                    dashboard_state=dashboard_state,
+                )
+                restarts = sum(handle.restart_count for handle in supervisor.workers.values())
+            finally:
+                environment.close()
+    finally:
+        if dashboard_state is not None:
+            dashboard_state.set_status("complete")
+        if dashboard_server is not None:
+            dashboard_server.stop()
 
-    reference = summarize_episodes(random_results, "masked_random")
+    reference = (
+        None if arguments.trained_only else summarize_episodes(random_results, "masked_random")
+    )
     trained = summarize_episodes(trained_results, "checkpoint_deterministic")
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": datetime.now(UTC).isoformat(),
         "game_version": SUPPORTED_GAME_VERSION,
         "steam_build": SUPPORTED_STEAM_BUILD,
@@ -300,6 +522,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_global_step": int(payload.get("global_step", 0)),
         "checkpoint_updates": int(payload.get("updates", 0)),
         "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+        "evaluation_reward": reward_config.specification(),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
@@ -307,7 +530,9 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "worker_restarts": restarts,
         "reference": reference,
         "trained": trained,
-        "trained_minus_reference": compare_summaries(reference, trained),
+        "trained_minus_reference": (
+            None if reference is None else compare_summaries(reference, trained)
+        ),
     }
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = arguments.output.with_name(f".{arguments.output.name}.tmp")
@@ -340,7 +565,15 @@ def main() -> int:
     parser.add_argument("--seeds", type=_parse_seeds, required=True)
     parser.add_argument("--max-steps", type=int, default=256)
     parser.add_argument("--policy-seed", type=int, default=8675309)
+    parser.add_argument("--reward-config", type=Path)
+    parser.add_argument(
+        "--trained-only",
+        action="store_true",
+        help="Evaluate only the deterministic checkpoint policy, without a random baseline",
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--dashboard", type=int, nargs="?", const=8765)
+    parser.add_argument("--dashboard-host", default="127.0.0.1")
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--reset-timeout", type=float, default=30.0)
@@ -349,12 +582,18 @@ def main() -> int:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.num_instances <= 0 or arguments.max_steps <= 0:
         parser.error("--num-instances and --max-steps must be positive")
-    if len(arguments.seeds) % arguments.num_instances:
-        parser.error("--seeds count must be divisible by --num-instances")
     report = run_baseline(arguments)
     summary = {
         "checkpoint_global_step": report["checkpoint_global_step"],
-        "reference": {key: value for key, value in report["reference"].items() if key != "results"},
+        "reference": (
+            None
+            if report["reference"] is None
+            else {
+                key: value
+                for key, value in report["reference"].items()
+                if key != "results"
+            }
+        ),
         "trained": {key: value for key, value in report["trained"].items() if key != "results"},
         "trained_minus_reference": report["trained_minus_reference"],
         "output": str(arguments.output),

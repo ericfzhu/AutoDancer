@@ -3,12 +3,51 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
 from autodancer.training.baseline import (
+    EpisodeAccumulator,
     compare_summaries,
+    evaluate_live_policy,
     masked_random_actions,
     summarize_episodes,
     zero_hidden_rows,
 )
+
+
+class OneStepEnvironment:
+    num_envs = 4
+    worker_ids = [f"worker-{index:04d}" for index in range(num_envs)]
+
+    def __init__(self) -> None:
+        self.reset_seeds: list[int] = []
+
+    def _observation(self) -> dict[str, np.ndarray]:
+        return {
+            "player": np.zeros((self.num_envs, 16), dtype=np.int32),
+            "action_mask": np.ones((self.num_envs, 11), dtype=np.int8),
+        }
+
+    def reset(self, seeds: list[int]):
+        self.reset_seeds = seeds
+        infos = [
+            {"seed": seed, "run_id": str(seed), "zone": 1, "floor": 1}
+            for seed in seeds
+        ]
+        return self._observation(), infos
+
+    def step(self, actions: np.ndarray):
+        del actions
+        infos = [
+            {"episode_status": "dead", "zone": 1, "floor": 1, "raw_events": []}
+            for _ in range(self.num_envs)
+        ]
+        return (
+            self._observation(),
+            np.zeros(self.num_envs, dtype=np.float32),
+            np.ones(self.num_envs, dtype=np.bool_),
+            np.zeros(self.num_envs, dtype=np.bool_),
+            infos,
+        )
 
 
 def episode(seed: int, *, status: str, turns: int, kills: int = 0) -> dict[str, object]:
@@ -62,3 +101,63 @@ def test_hidden_reset_does_not_mutate_inference_tensor() -> None:
     reset = zero_hidden_rows(hidden, [1])
     assert torch.equal(reset, torch.tensor([[1.0, 1.0], [0.0, 0.0], [1.0, 1.0]]))
     assert torch.equal(hidden, torch.ones(3, 2))
+
+
+def test_live_evaluation_uses_partial_final_wave_without_counting_padding() -> None:
+    environment = OneStepEnvironment()
+    results = evaluate_live_policy(
+        environment,  # type: ignore[arg-type]
+        seeds=[41_001, 41_002, 41_003],
+        max_steps=10,
+        policy_seed=7,
+        device=torch.device("cpu"),
+    )
+    assert [result["seed"] for result in results] == [41_001, 41_002, 41_003]
+    assert len(environment.reset_seeds) == environment.num_envs
+
+
+def test_episode_diagnostics_measure_idle_exploration_and_stair_conversion() -> None:
+    grid = np.zeros((21, 21, 11), dtype=np.int16)
+    player = np.zeros(16, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 1
+    value = {"grid": grid, "player": player}
+    accumulator = EpisodeAccumulator(1, "worker-0000", "run-1")
+    accumulator.initialize(value, {"zone": 1, "floor": 1})
+
+    accumulator.observe(
+        value,
+        0.0,
+        {"zone": 1, "floor": 1, "raw_events": []},
+        int(Action.WAIT),
+    )
+    stairs = grid.copy()
+    stairs[10, 11, GridChannel.TERRAIN_CLASS] = int(Terrain.STAIRS)
+    stairs[10, 11, GridChannel.VISIBILITY] = 1
+    accumulator.observe(
+        {"grid": stairs, "player": player},
+        0.0,
+        {"zone": 1, "floor": 1, "raw_events": []},
+        int(Action.RIGHT),
+    )
+    player_next = player.copy()
+    player_next[PlayerFeature.FLOOR] = 2
+    accumulator.observe(
+        {"grid": grid, "player": player_next},
+        5.0,
+        {
+            "zone": 1,
+            "floor": 2,
+            "raw_events": [],
+            "extrinsic_reward": 5.0,
+            "shaping_reward": 0.0,
+        },
+        int(Action.DOWN),
+    )
+    result = accumulator.finish("running")
+    assert result["wait_actions"] == 1
+    assert result["idle_turns"] == 1
+    assert result["staircase_discoveries"] == 1
+    assert result["staircase_exits"] == 1
+    assert result["stair_discovery_to_exit_turns"] == [1]
+    assert result["extrinsic_return"] == 5.0

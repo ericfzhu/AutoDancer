@@ -67,7 +67,7 @@ def _transformer(width: int, heads: int, layers: int) -> nn.TransformerEncoder:
 class RecurrentActorCritic(nn.Module):
     """Hybrid spatial/entity policy with an LSTM memory state ``[h, c]``."""
 
-    def __init__(self, config: ModelConfig | None = None) -> None:
+    def __init__(self, config: ModelConfig | None = None, *, initialize: bool = True) -> None:
         super().__init__()
         self.config = config or ModelConfig()
         width = self.config.cell_size
@@ -132,7 +132,8 @@ class RecurrentActorCritic(nn.Module):
         self.critic = nn.Sequential(
             nn.Linear(self.config.hidden_size, 256), nn.SiLU(), nn.Linear(256, 1)
         )
-        self._initialize()
+        if initialize:
+            self._initialize()
 
     @property
     def hidden_size(self) -> int:
@@ -152,6 +153,14 @@ class RecurrentActorCritic(nn.Module):
         with torch.no_grad():
             size = self.config.hidden_size
             self.lstm.bias_ih[size : 2 * size].fill_(1.0)
+
+    def initialize_critic(self) -> None:
+        """Initialize only the value head when all policy weights will be transferred."""
+        for module in self.critic.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=1.0)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
 
     def initial_state(self, batch_size: int, *, device: torch.device | None = None) -> Tensor:
         return torch.zeros(batch_size, 2, self.config.hidden_size, device=device)

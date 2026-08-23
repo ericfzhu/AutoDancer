@@ -33,9 +33,18 @@ autodancer-live-smoke = "autodancer.live.smoke:main"
 autodancer-train = "autodancer.training.train:main"
 autodancer-baseline = "autodancer.training.baseline:main"
 autodancer-benchmark = "autodancer.training.benchmark:main"
+autodancer-reward-compare = "autodancer.training.reward_compare:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
 
 [tool.pytest.ini_options]
 addopts = "-q"

@@ -28,6 +28,8 @@ class ActorState:
     previous_reward: float = 0.0
     episode_start: bool = True
     episode_return: float = 0.0
+    episode_extrinsic_return: float = 0.0
+    episode_shaping_return: float = 0.0
     episode_events: list[dict[str, Any]] = field(default_factory=list)
     furthest_zone: int = 0
     furthest_floor: int = 0
@@ -190,6 +192,19 @@ class VersionedAsyncRolloutCollector:
         self.last_runtime_metrics: dict[str, float] = {}
         self.policy_version = 0
         self._executor = ThreadPoolExecutor(max_workers=environment.num_envs)
+        for index, state in enumerate(self.states):
+            self._publish_telemetry(index, state.observation, state.info, None, None)
+
+    def _publish_telemetry(
+        self,
+        index: int,
+        observation: dict[str, np.ndarray],
+        info: dict[str, Any],
+        action: int | None,
+        reward: float | None,
+    ) -> None:
+        if self.telemetry_callback is not None:
+            self.telemetry_callback(index, observation, info, action, reward)
 
     def _seed(self, index: int) -> int:
         return int(self.rngs[index].integers(0, 2**31))
@@ -232,12 +247,6 @@ class VersionedAsyncRolloutCollector:
                 np.mean([fragment.metrics["environment_wait_seconds"] for fragment in fragments])
             ),
         }
-        if self.telemetry_callback is not None:
-            snapshot = {
-                key: np.stack([state.observation[key] for state in self.states])
-                for key in self.states[0].observation
-            }
-            self.telemetry_callback(snapshot, [state.info for state in self.states], None, None)
         self.policy_version += 1
         next_value = self._bootstrap_values()
         fields = (
@@ -276,6 +285,7 @@ class VersionedAsyncRolloutCollector:
                     info,
                     self.model.initial_state(1, device=self.device),
                 )
+                self._publish_telemetry(index, observation, info, None, None)
 
     def _collect_slot_once(
         self, index: int, length: int, scheduler: InferenceScheduler
@@ -330,7 +340,10 @@ class VersionedAsyncRolloutCollector:
                 )
             done = bool(terminated or truncated)
             reward = float(reward)
+            self._publish_telemetry(index, next_observation, info, action, reward)
             state.episode_return += reward
+            state.episode_extrinsic_return += float(info.get("extrinsic_reward", 0.0))
+            state.episode_shaping_return += float(info.get("shaping_reward", 0.0))
             state.episode_events.extend(info.get("raw_events", []))
             state.furthest_zone = max(state.furthest_zone, int(info.get("zone") or 0))
             state.furthest_floor = max(state.furthest_floor, int(info.get("floor") or 0))
@@ -346,6 +359,8 @@ class VersionedAsyncRolloutCollector:
                     {
                         "worker_id": worker_id,
                         "return": state.episode_return,
+                        "extrinsic_return": state.episode_extrinsic_return,
+                        "shaping_return": state.episode_shaping_return,
                         "status": info.get("episode_status"),
                         "zone": state.furthest_zone,
                         "floor": state.furthest_floor,

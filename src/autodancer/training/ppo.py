@@ -200,11 +200,13 @@ class RecurrentPPO:
             raise ValueError(
                 "Checkpoint model architecture is incompatible with the schema-5 policy"
             )
-        if payload.get("checkpoint_metadata", {}) != self.checkpoint_metadata:
+        saved_metadata = dict(payload.get("checkpoint_metadata", {}))
+        if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
             raise ValueError("Checkpoint training metadata does not match the current run")
         if payload.get("config") != asdict(self.config):
             raise ValueError("Checkpoint PPO configuration does not match the current run")
         self.model.load_state_dict(payload["model"])
+        self.checkpoint_metadata = saved_metadata
         self.optimizer.load_state_dict(payload["optimizer"])
         self.global_step = int(payload["global_step"])
         self.updates = int(payload["updates"])
@@ -214,3 +216,29 @@ class RecurrentPPO:
         if torch.cuda.is_available() and payload.get("cuda_rng") is not None:
             torch.cuda.set_rng_state_all(payload["cuda_rng"])
         return dict(payload.get("metrics", {}))
+
+    def initialize_from(self, path: str | Path) -> dict[str, Any]:
+        """Load representation and actor weights without old reward-value state."""
+        path = Path(path)
+        payload = torch.load(path, map_location=self.device, weights_only=False)
+        if payload.get("architecture") != self.model.architecture_spec():
+            raise ValueError(
+                "Initialization checkpoint architecture is incompatible with the schema-5 policy"
+            )
+        source = dict(payload["model"])
+        transferred = {
+            name: value for name, value in source.items() if not name.startswith("critic.")
+        }
+        missing, unexpected = self.model.load_state_dict(transferred, strict=False)
+        if unexpected or set(missing) != {
+            name for name in self.model.state_dict() if name.startswith("critic.")
+        }:
+            raise ValueError("Initialization checkpoint did not match policy parameters")
+        provenance = {
+            "path": str(path.resolve()),
+            "global_step": int(payload.get("global_step", 0)),
+            "updates": int(payload.get("updates", 0)),
+            "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+        }
+        self.checkpoint_metadata["initialization"] = provenance
+        return provenance
