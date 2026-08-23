@@ -132,6 +132,75 @@ def test_v4_arm_configs_differ_only_in_stair_potential() -> None:
     assert {key for key in a_weights if a_weights[key] != b_weights[key]} == {"stair_potential_max"}
 
 
+def test_v2_config_restores_exact_legacy_metadata_and_stair_delta() -> None:
+    config = load_reward_config("configs/reward-v2.json")
+    assert config.specification() == {
+        "version": 2,
+        "weights": {
+            "turn": -0.005,
+            "new_position": 0.015,
+            "revisit": -0.01,
+            "new_tile": 0.001,
+            "max_new_tiles_per_turn": 25,
+            "enemy_damage": 0.025,
+            "max_rewarded_damage_per_enemy": 16,
+            "enemy_kill": 0.25,
+            "player_damage": -0.15,
+            "new_item_type": 0.15,
+            "currency": 0.002,
+            "max_currency_per_turn": 25,
+            "container_opened": 0.05,
+            "stairs_discovered": 0.5,
+            "stair_progress": 0.05,
+            "max_stair_distance_delta": 4,
+            "floor_complete": 5.0,
+            "zone_complete": 10.0,
+            "victory": 50.0,
+            "death": -2.0,
+            "aborted": -1.0,
+        },
+    }
+    tracker = RewardTracker(config)
+    tracker.reset(observation(), {"zone": 1, "floor": 1})
+    discovered = observation()
+    discovered["grid"][10, 12, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    discovered["grid"][10, 12, GridChannel.VISIBILITY] = 1
+    _, discovery = tracker.score(
+        discovered,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    closer = observation(x=1)
+    closer["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    closer["grid"][10, 11, GridChannel.VISIBILITY] = 1
+    _, progress = tracker.score(
+        closer,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert discovery["stairs_discovered"] == 0.5
+    assert "stair_potential" not in discovery
+    assert progress["stair_progress"] == 0.05
+
+
+def test_v2_zone_transition_does_not_add_floor_completion() -> None:
+    tracker = RewardTracker(load_reward_config("configs/reward-v2.json"))
+    tracker.reset(observation(), {"zone": 1, "floor": 3})
+    _, parts = tracker.score(
+        observation(),
+        {"zone": 2, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert parts["zone_complete"] == 10.0
+    assert "floor_complete" not in parts
+
+
 def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> None:
     config = RewardConfig(
         turn=0,

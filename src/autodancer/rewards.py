@@ -21,6 +21,7 @@ EXTRINSIC_COMPONENTS = frozenset({"floor_complete", "zone_complete", "victory", 
 class RewardConfig:
     """Weights for the default progress-first reward profile."""
 
+    profile_version: int = REWARD_PROFILE_VERSION
     turn: float = 0.0
     new_position: float = 0.005
     revisit: float = 0.0
@@ -37,6 +38,9 @@ class RewardConfig:
     currency: float = 0.0
     max_currency_per_turn: int = 25
     container_opened: float = 0.0
+    stairs_discovered: float = 0.0
+    stair_progress: float = 0.0
+    max_stair_distance_delta: int = 0
     stair_potential_max: float = 0.5
     stair_potential_distance: int = 20
     discount: float = 0.99
@@ -51,6 +55,7 @@ class RewardConfig:
             "max_new_tiles_per_turn",
             "max_rewarded_damage_per_enemy",
             "max_currency_per_turn",
+            "max_stair_distance_delta",
             "stair_potential_distance",
         ):
             if getattr(self, name) < 0:
@@ -65,9 +70,28 @@ class RewardConfig:
                 raise ValueError(f"{name} cannot be negative")
         if not 0 <= self.discount <= 1:
             raise ValueError("discount must be in [0, 1]")
+        if self.profile_version not in (2, 4):
+            raise ValueError("profile_version must be 2 or 4")
+        if self.profile_version == 2 and self.stair_potential_max:
+            raise ValueError("Reward V2 cannot enable stair potential shaping")
 
     def specification(self) -> dict[str, Any]:
-        return {"version": REWARD_PROFILE_VERSION, "weights": asdict(self)}
+        weights = asdict(self)
+        weights.pop("profile_version")
+        if self.profile_version == 2:
+            for name in (
+                "max_exploration_reward_per_floor",
+                "max_combat_reward_per_floor",
+                "max_item_reward_per_floor",
+                "stair_potential_max",
+                "stair_potential_distance",
+                "discount",
+            ):
+                weights.pop(name)
+        else:
+            for name in ("stairs_discovered", "stair_progress", "max_stair_distance_delta"):
+                weights.pop(name)
+        return {"version": self.profile_version, "weights": weights}
 
 
 class RewardTracker:
@@ -81,6 +105,7 @@ class RewardTracker:
         self.rewarded_kills: set[int] = set()
         self.rewarded_damage: dict[int, int] = {}
         self.known_stairs: set[tuple[int, int, int, int]] = set()
+        self.stair_distance: int | None = None
         self.stair_potential = 0.0
         self.exploration_reward = 0.0
         self.combat_reward = 0.0
@@ -168,9 +193,10 @@ class RewardTracker:
         self.visited_positions = {(self.zone, self.floor, x, y)}
         self.seen_item_types = self._inventory_types(observation)
         self.known_stairs = self._stairs(observation, self.zone, self.floor)
-        self.stair_potential = self._stair_potential(
-            self._nearest_stair_distance((x, y), self.known_stairs, self.zone, self.floor)
+        self.stair_distance = self._nearest_stair_distance(
+            (x, y), self.known_stairs, self.zone, self.floor
         )
+        self.stair_potential = self._stair_potential(self.stair_distance)
         self.exploration_reward = 0.0
         self.combat_reward = 0.0
         self.item_reward = 0.0
@@ -201,11 +227,13 @@ class RewardTracker:
             self.combat_reward = 0.0
             self.item_reward = 0.0
         if position not in self.visited_positions:
-            credit = self._bounded_credit(
-                config.new_position,
-                self.exploration_reward,
-                config.max_exploration_reward_per_floor,
-            )
+            credit = config.new_position
+            if config.profile_version != 2:
+                credit = self._bounded_credit(
+                    credit,
+                    self.exploration_reward,
+                    config.max_exploration_reward_per_floor,
+                )
             if credit:
                 components["new_position"] = credit
                 self.exploration_reward += credit
@@ -217,11 +245,13 @@ class RewardTracker:
         new_tiles = len(revealed - self.seen_tiles)
         if new_tiles:
             requested = config.new_tile * min(new_tiles, config.max_new_tiles_per_turn)
-            credit = self._bounded_credit(
-                requested,
-                self.exploration_reward,
-                config.max_exploration_reward_per_floor,
-            )
+            credit = requested
+            if config.profile_version != 2:
+                credit = self._bounded_credit(
+                    credit,
+                    self.exploration_reward,
+                    config.max_exploration_reward_per_floor,
+                )
             if credit:
                 components["new_tile"] = credit
                 self.exploration_reward += credit
@@ -230,30 +260,59 @@ class RewardTracker:
         item_types = self._inventory_types(observation)
         new_items = item_types - self.seen_item_types
         if new_items:
-            credit = self._bounded_credit(
-                config.new_item_type * len(new_items),
-                self.item_reward,
-                config.max_item_reward_per_floor,
-            )
+            credit = config.new_item_type * len(new_items)
+            if config.profile_version != 2:
+                credit = self._bounded_credit(
+                    credit,
+                    self.item_reward,
+                    config.max_item_reward_per_floor,
+                )
             if credit:
                 components["new_item_type"] = credit
                 self.item_reward += credit
             self.seen_item_types.update(item_types)
 
         observed_stairs = self._stairs(observation, zone, floor)
-        if not same_floor:
-            self.known_stairs = observed_stairs
+        if config.profile_version == 2:
+            if not same_floor:
+                self.known_stairs = observed_stairs
+                self.stair_distance = self._nearest_stair_distance(
+                    (x, y), self.known_stairs, zone, floor
+                )
+            else:
+                new_stairs = observed_stairs - self.known_stairs
+                if new_stairs:
+                    components["stairs_discovered"] = (
+                        config.stairs_discovered * len(new_stairs)
+                    )
+                    self.known_stairs.update(new_stairs)
+                distance = self._nearest_stair_distance(
+                    (x, y), self.known_stairs, zone, floor
+                )
+                if not new_stairs and distance is not None and self.stair_distance is not None:
+                    delta = self.stair_distance - distance
+                    credited = max(
+                        -config.max_stair_distance_delta,
+                        min(delta, config.max_stair_distance_delta),
+                    )
+                    if credited:
+                        components["stair_progress"] = config.stair_progress * credited
+                self.stair_distance = distance
         else:
-            self.known_stairs.update(observed_stairs)
-        distance = self._nearest_stair_distance((x, y), self.known_stairs, zone, floor)
-        next_potential = 0.0 if terminated or truncated else self._stair_potential(distance)
-        potential_reward = config.discount * next_potential - self.stair_potential
-        if potential_reward:
-            components["stair_potential"] = potential_reward
-        self.stair_potential = next_potential
+            if not same_floor:
+                self.known_stairs = observed_stairs
+            else:
+                self.known_stairs.update(observed_stairs)
+            distance = self._nearest_stair_distance((x, y), self.known_stairs, zone, floor)
+            next_potential = 0.0 if terminated or truncated else self._stair_potential(distance)
+            potential_reward = config.discount * next_potential - self.stair_potential
+            if potential_reward:
+                components["stair_potential"] = potential_reward
+            self.stair_potential = next_potential
 
         if zone > self.zone:
-            components["floor_complete"] = config.floor_complete * (zone - self.zone)
+            if config.profile_version != 2:
+                components["floor_complete"] = config.floor_complete * (zone - self.zone)
             components["zone_complete"] = config.zone_complete * (zone - self.zone)
         elif zone == self.zone and floor > self.floor:
             components["floor_complete"] = config.floor_complete * (floor - self.floor)
@@ -281,22 +340,26 @@ class RewardTracker:
             previously = self.rewarded_damage.get(entity_id, 0) if entity_id else 0
             credited = min(amount, max(config.max_rewarded_damage_per_enemy - previously, 0))
             if credited:
-                credit = self._bounded_credit(
-                    config.enemy_damage * credited,
-                    self.combat_reward,
-                    config.max_combat_reward_per_floor,
-                )
+                credit = config.enemy_damage * credited
+                if config.profile_version != 2:
+                    credit = self._bounded_credit(
+                        credit,
+                        self.combat_reward,
+                        config.max_combat_reward_per_floor,
+                    )
                 if credit:
                     components["enemy_damage"] = components.get("enemy_damage", 0.0) + credit
                     self.combat_reward += credit
                 if entity_id:
                     self.rewarded_damage[entity_id] = previously + credited
         elif kind == "enemy_kill" and (entity_id == 0 or entity_id not in self.rewarded_kills):
-            credit = self._bounded_credit(
-                config.enemy_kill,
-                self.combat_reward,
-                config.max_combat_reward_per_floor,
-            )
+            credit = config.enemy_kill
+            if config.profile_version != 2:
+                credit = self._bounded_credit(
+                    credit,
+                    self.combat_reward,
+                    config.max_combat_reward_per_floor,
+                )
             if credit:
                 components["enemy_kill"] = components.get("enemy_kill", 0.0) + credit
                 self.combat_reward += credit

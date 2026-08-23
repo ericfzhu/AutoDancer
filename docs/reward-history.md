@@ -285,7 +285,7 @@ not be reused as unseen evaluation seeds.
 
 ## Reward V4: bounded competence restoration
 
-**Status: implemented; two-arm directional pilot pending.**
+**Status: rejected after the two-arm directional pilot on 2026-08-23.**
 
 ### Intended question
 
@@ -322,6 +322,46 @@ most 50%, kills and items each retain at least 80% of V2 per episode, idle or
 step-limit behavior decreases, and at least two checkpoints improve progress.
 If both pass, choose by progress, death rate, idle rate, kills, then items. If
 neither passes, retain V2. Shaped return is never a selection metric.
+
+### Two-arm pilot result
+
+All six V4 runs completed 51,200 transitions and 50 finite PPO updates. Neither
+arm passed the predeclared gameplay gates on seeds `42001` through `42030`:
+
+| Held-out metric | V2 | V4A aggregate | V4B aggregate |
+| --- | ---: | ---: | ---: |
+| Mean floor progress | 1.00 | 1.00 | 1.00 |
+| Death rate | 23.3% | 3.3% | 1.1% |
+| Step-limit rate | 76.7% | 96.7% | 98.9% |
+| Enemy kills / episode | 1.37 | 0.24 | 0.18 |
+| Item pickups / episode | 1.00 | 0.16 | 0.14 |
+
+V4 made the policy safer but overwhelmingly passive. Neither arm discovered a
+staircase or improved floor progress, and both lost most of V2's combat and item
+competence. The decision was `retain_v2_reject_v4`; no V4 250k continuation was
+started.
+
+These checkpoints used architecture 2. Subsequent observation work added the
+65x65 player-visible map memory, tactical state, hazards, interaction context,
+and shopkeeper audio cue in architecture 6. V4 therefore does not answer
+whether those missing inputs caused the navigation failure.
+
+## Architecture 6 with Reward V2: representation-isolation experiment
+
+**Status: overnight experiment configured for 2026-08-24.**
+
+This experiment changes the observation/model architecture while restoring the
+exact Reward V2 calculation. Three architecture-6 policies warm-start from
+`runs/reward-v2-250k/final.pt`, with fresh critics and optimizers, and train for
+51,200 transitions on seeds `33001`, `33002`, and `33003`. V2 and the three
+pilots are evaluated deterministically on new seeds `43001` through `43030`.
+
+The architecture passes only if aggregate mean floor progress improves, at
+least two pilots improve progress independently, all training artifacts are
+finite and valid, and evaluation has no worker restarts. A passing experiment
+continues the strongest gameplay-ranked checkpoint to 250,880 total
+transitions. Reward V5 remains deferred until this representation question is
+answered.
 
 ## Rules for future entries
 
