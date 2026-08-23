@@ -187,8 +187,12 @@ class VersionedAsyncRolloutCollector:
         ]
         self.completed_episodes: list[dict[str, Any]] = []
         self.last_reward_components: dict[str, float] = {}
-        self.last_runtime_metrics: dict[str, float] = {}
+        self.last_runtime_metrics: dict[str, Any] = {}
         self.policy_version = 0
+        self._recovery_lock = threading.Lock()
+        self._recovery_counts: dict[str, int] = {}
+        self._recovery_total = 0
+        self._last_recovery_error = ""
         self._executor = ThreadPoolExecutor(max_workers=environment.num_envs)
         for index, state in enumerate(self.states):
             self._publish_telemetry(index, state.observation, state.info, None, None)
@@ -208,6 +212,9 @@ class VersionedAsyncRolloutCollector:
         return int(self.rngs[index].integers(0, 2**31))
 
     def collect(self, length: int) -> RolloutBatch:
+        with self._recovery_lock:
+            recoveries_before = self._recovery_total
+            counts_before = self._recovery_counts.copy()
         scheduler = InferenceScheduler(
             self.model,
             device=self.device,
@@ -233,6 +240,10 @@ class VersionedAsyncRolloutCollector:
                 components[name] = components.get(name, 0.0) + value
         self.last_reward_components = components
         completion_times = [fragment.metrics["fragment_seconds"] for fragment in fragments]
+        with self._recovery_lock:
+            recovery_total = self._recovery_total
+            recovery_counts = self._recovery_counts.copy()
+            last_recovery_error = self._last_recovery_error
         self.last_runtime_metrics = {
             "policy_version": float(self.policy_version),
             "collector_seconds": elapsed,
@@ -244,6 +255,13 @@ class VersionedAsyncRolloutCollector:
             "mean_environment_wait_seconds": float(
                 np.mean([fragment.metrics["environment_wait_seconds"] for fragment in fragments])
             ),
+            "collector_recoveries": float(recovery_total - recoveries_before),
+            "collector_recoveries_total": float(recovery_total),
+            "last_recovery_error": last_recovery_error,
+            **{
+                f"collector_recovery_{name}": float(count - counts_before.get(name, 0))
+                for name, count in recovery_counts.items()
+            },
         }
         self.policy_version += 1
         next_value = self._bootstrap_values()
@@ -276,7 +294,12 @@ class VersionedAsyncRolloutCollector:
         while True:
             try:
                 return self._collect_slot_once(index, length, scheduler)
-            except (TimeoutError, NativePipeError, ProtocolError):
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                reason = type(error).__name__.lower()
+                with self._recovery_lock:
+                    self._recovery_total += 1
+                    self._recovery_counts[reason] = self._recovery_counts.get(reason, 0) + 1
+                    self._last_recovery_error = f"{type(error).__name__}: {error}"
                 observation, info = self.environment.recover(index, self._seed(index))
                 self.states[index] = ActorState(
                     observation,

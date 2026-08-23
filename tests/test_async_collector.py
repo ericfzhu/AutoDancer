@@ -198,3 +198,6 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     assert rollout.actions.shape == (2, 2)
     assert recoveries == [1]
     assert collector.states[1].previous_action != -1
+    assert collector.last_runtime_metrics["collector_recoveries"] == 1
+    assert collector.last_runtime_metrics["collector_recovery_timeouterror"] == 1
+    assert "worker disconnected" in collector.last_runtime_metrics["last_recovery_error"]

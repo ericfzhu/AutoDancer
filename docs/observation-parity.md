@@ -7,9 +7,11 @@ outcomes matter.
 
 ## Current parity
 
-Schema 9 provides a persistent 65×65 current-floor memory anchored at Bard's spawn.
-It combines the game's revealed terrain with Bard's position, visit count, and
-visit recency. Dynamic enemies and items disappear when they leave sight, so
+Schema 9 provides persistent current-floor memory through a 65×65 viewport
+centred on Bard. Absolute-coordinate terrain and traversal history are retained
+for the whole floor, so remembered areas leave and re-enter the viewport as Bard
+moves. It combines the game's revealed terrain with Bard's position, visit count,
+and visit recency. Dynamic enemies and items disappear when they leave sight, so
 the map cannot become a hidden-state oracle. A periodic Lua snapshot also
 captures distant terrain revealed by the Map item. The local 21×21 observation
 remains the authoritative combat view.
@@ -30,9 +32,10 @@ with its visible health and gold. Hidden container and shrine contents remain
 excluded.
 
 Every record now carries the engine's absolute level bounds. Python verifies
-that the full floor and every observed coordinate fit the spawn-centred map and
-stops with a non-recoverable capacity error if they do not. Training can no
-longer continue with silently clipped map memory.
+that the full floor dimensions fit the fixed viewport capacity and stops with a
+non-recoverable capacity error if they do not. Distance from the initial spawn
+does not count as extra map size. Training can no longer continue with silently
+clipped map memory.
 
 The audio audit found one material non-visual cue: shopkeeper singing can be
 heard before the shopkeeper is visible. The policy receives the engine-computed
@@ -47,9 +50,10 @@ player did not actually hear.
 1. **Multiple objects on one cell.** The fixed grid keeps one actor, one item,
    and one prioritized object summary per cell. Overlapping visible objects can
    therefore be lost.
-2. **Unsupported custom map extent.** Standard Bard All Zones is represented on
-   a spawn-centred 65×65 canvas. Larger custom levels fail clearly and require
-   an architecture change rather than receiving a clipped observation.
+2. **Unsupported custom map extent.** Standard Bard All Zones is represented by
+   a player-centred 65×65 viewport over persistent coordinate history. Larger
+   custom levels fail clearly and require an architecture change rather than
+   receiving a clipped observation.
 3. **Transient positional audio.** Enemy and effect sounds are omitted unless a
    future post-attenuation hook can prove that the local player heard them.
 

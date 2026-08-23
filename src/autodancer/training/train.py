@@ -302,6 +302,7 @@ def train(arguments: argparse.Namespace) -> None:
         num_instances=arguments.num_instances,
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
+        reset_timeout=arguments.reset_timeout,
         max_turns=arguments.max_turns,
         reward_config=reward_config,
         telemetry_transport=arguments.telemetry_transport,
@@ -451,6 +452,9 @@ def train(arguments: argparse.Namespace) -> None:
                                 "telemetry_transport": arguments.telemetry_transport,
                                 "worker_profile": arguments.worker_profile,
                                 "affinity": arguments.affinity,
+                                "startup_timeout": arguments.startup_timeout,
+                                "turn_timeout": arguments.turn_timeout,
+                                "reset_timeout": arguments.reset_timeout,
                                 "collector": "versioned-async",
                                 "inference_batch_delay_ms": arguments.inference_batch_delay_ms,
                             },
@@ -491,6 +495,7 @@ def main() -> int:
     parser.add_argument("--evaluation-steps", type=int, default=512)
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
+    parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--max-turns", type=int, default=10000)
     parser.add_argument("--telemetry-transport", choices=("native-pipe",), default="native-pipe")
     parser.add_argument("--worker-profile", choices=("symbolic",), default="symbolic")

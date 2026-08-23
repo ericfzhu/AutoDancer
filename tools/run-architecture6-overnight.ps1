@@ -46,6 +46,10 @@ foreach ($a6Seed in $a6Seeds) {
         "--seed", "$a6Seed",
         "--reward-config", $a6Reward,
         "--evaluation-interval", "0",
+        "--startup-timeout", "60",
+        "--turn-timeout", "30",
+        "--reset-timeout", "60",
+        "--affinity", "none",
         "--dashboard", "8765"
     )
     $a6Latest = Join-Path $a6Run "latest.pt"
@@ -83,6 +87,10 @@ foreach ($a6Checkpoint in $a6Checkpoints.GetEnumerator()) {
         --max-steps 3000 `
         --reward-config $a6Reward `
         --device cuda `
+        --startup-timeout 60 `
+        --turn-timeout 30 `
+        --reset-timeout 60 `
+        --affinity none `
         --dashboard 8765 `
         --trained-only *>> $a6Log
     if ($LASTEXITCODE -ne 0) {
@@ -119,6 +127,10 @@ if ($null -ne $a6Comparison.selected_seed) {
             --seed 34001 `
             --reward-config $a6Reward `
             --evaluation-interval 0 `
+            --startup-timeout 60 `
+            --turn-timeout 30 `
+            --reset-timeout 60 `
+            --affinity none `
             --dashboard 8765 `
             --resume $a6LongResume *>> $a6LongLog
         if ($LASTEXITCODE -ne 0) {

@@ -23,9 +23,10 @@ class MapCapacityError(RuntimeError):
 class FloorMapMemory:
     """Accumulate one floor's revealed terrain and Bard's traversal history.
 
-    The fixed canvas is anchored at the floor's spawn position. It contains only
-    terrain marked revealed by the game, plus information Bard necessarily knows
-    from its own actions. Dynamic off-screen entities are deliberately excluded.
+    Absolute-coordinate history is retained for the whole floor. The policy sees
+    a player-centred viewport containing only terrain marked revealed by the game,
+    plus information Bard necessarily knows from its own actions. Dynamic
+    off-screen entities are deliberately excluded.
     """
 
     def __init__(self) -> None:
@@ -63,32 +64,15 @@ class FloorMapMemory:
         self._last_visit.clear()
         self._turn = 0
 
-    def _required_size(self, positions: Sequence[tuple[int, int]]) -> int:
-        assert self._origin is not None
-        origin_x, origin_y = self._origin
-        radius = max(max(abs(x - origin_x), abs(y - origin_y)) for x, y in positions)
-        return radius * 2 + 1
-
     def _validate_capacity(self, map_bounds: Mapping[str, int] | None) -> None:
-        if map_bounds is None or self._origin is None:
+        if map_bounds is None:
             return
-        minimum = (int(map_bounds["x"]), int(map_bounds["y"]))
-        maximum = (
-            minimum[0] + int(map_bounds["width"]) - 1,
-            minimum[1] + int(map_bounds["height"]) - 1,
-        )
-        required = self._required_size((minimum, maximum))
-        if required > MAP_SIZE:
+        width = int(map_bounds["width"])
+        height = int(map_bounds["height"])
+        if width > MAP_SIZE or height > MAP_SIZE:
             raise MapCapacityError(
-                f"Level bounds require a spawn-centred map of at least {required}x{required}; "
-                f"the policy supports {MAP_SIZE}x{MAP_SIZE}"
-            )
-
-    def _validate_position(self, position: tuple[int, int]) -> None:
-        if self._required_size((position,)) > MAP_SIZE:
-            raise MapCapacityError(
-                f"Observed position {position} falls outside the {MAP_SIZE}x{MAP_SIZE} "
-                "spawn-centred policy map"
+                f"Level bounds are {width}x{height}; the policy's player-centred "
+                f"map viewport supports levels up to {MAP_SIZE}x{MAP_SIZE}"
             )
 
     def update(
@@ -109,7 +93,6 @@ class FloorMapMemory:
         centre = GRID_SIZE // 2
         for row, column in np.argwhere(grid[..., GridChannel.VISIBILITY] > 0):
             position = (x + int(column) - centre, y + int(row) - centre)
-            self._validate_position(position)
             self._terrain[position] = int(grid[row, column, GridChannel.TERRAIN_CLASS])
             self._last_seen[position] = self._turn
 
@@ -127,7 +110,6 @@ class FloorMapMemory:
                 self._last_seen[position] = self._turn
 
         position = (x, y)
-        self._validate_position(position)
         self._visits[position] = self._visits.get(position, 0) + 1
         self._last_visit[position] = self._turn
         return self.observation(position)
@@ -136,7 +118,7 @@ class FloorMapMemory:
         result = np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16)
         if self._origin is None:
             return result
-        origin_x, origin_y = self._origin
+        origin_x, origin_y = player_position
         half = MAP_SIZE // 2
         for x, y in self._terrain.keys() | self._visits.keys():
             column, row = x - origin_x + half, y - origin_y + half
@@ -153,8 +135,5 @@ class FloorMapMemory:
                 result[row, column, MapChannel.VISIT_RECENCY] = self._recency(
                     self._turn - self._last_visit[(x, y)]
                 )
-        player_x, player_y = player_position
-        column, row = player_x - origin_x + half, player_y - origin_y + half
-        if 0 <= row < MAP_SIZE and 0 <= column < MAP_SIZE:
-            result[row, column, MapChannel.PLAYER] = 1
+        result[half, half, MapChannel.PLAYER] = 1
         return result

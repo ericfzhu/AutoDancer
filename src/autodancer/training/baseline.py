@@ -455,6 +455,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         reset_timeout=arguments.reset_timeout,
         max_turns=max(arguments.max_steps + 1, 2),
         reward_config=reward_config,
+        affinity_policy=arguments.affinity,
     )
     dashboard_state = DashboardState() if arguments.dashboard is not None else None
     dashboard_server = (
@@ -579,6 +580,7 @@ def main() -> int:
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--reset-timeout", type=float, default=30.0)
+    parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
