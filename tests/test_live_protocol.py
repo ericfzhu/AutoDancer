@@ -79,7 +79,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "instance_id": "worker-0000",
         "role": "worker",
         "run_id": run_id,
@@ -95,6 +95,7 @@ def record(
             "player": player.tolist(),
             "inventory": np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=int).tolist(),
             "action_mask": mask.tolist(),
+            "map_bounds": {"x": -16, "y": -16, "width": 32, "height": 32},
         },
         "events": events or [],
         "episode_status": status,
@@ -121,7 +122,7 @@ def record(
     }
 
 
-def test_native_pipe_source_accepts_large_schema8_records_without_log_markers() -> None:
+def test_native_pipe_source_accepts_large_schema9_records_without_log_markers() -> None:
     reset = record(0, "reset")
     turn = record(1, "turn", requested_action=Action.UP)
     encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
@@ -259,6 +260,11 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
     with pytest.raises(ProtocolError, match="revealed_map.*shape"):
         validate_record(payload)
 
+    payload = record(0, "reset")
+    payload["observation"]["map_bounds"]["width"] = 0
+    with pytest.raises(ProtocolError, match="width and height"):
+        validate_record(payload)
+
 
 def test_full_revealed_map_fits_pipe_frame_and_validates() -> None:
     payload = record(0, "reset")
@@ -294,7 +300,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 8
+    assert info["protocol_schema_version"] == 9
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.01)

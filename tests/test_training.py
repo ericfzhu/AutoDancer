@@ -17,6 +17,7 @@ from autodancer.constants import (
     MAP_SIZE,
     PLAYER_FEATURES,
     GridChannel,
+    PlayerFeature,
 )
 from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
 from autodancer.training.ppo import (
@@ -110,6 +111,7 @@ def test_policy_encoding_uses_visible_tactical_and_hud_state() -> None:
     changed["inventory"][0, 8, 0] = 1
     changed["inventory"][0, 8, 6] = 1
     changed["player"][0, 18] = 300
+    changed["player"][0, PlayerFeature.SHOP_MUSIC_VOLUME_BP] = 5000
     with torch.inference_mode():
         assert not torch.allclose(model.encode(base), model.encode(changed))
 
@@ -213,7 +215,7 @@ def test_architecture_two_checkpoint_can_partially_initialize_map_policy(
     assert torch.equal(target.map_terrain.weight, map_before)
     assert torch.equal(target.facing.weight, facing_before)
     assert torch.equal(target.cell_projection[0].weight[:, :68], source.cell_projection[0].weight)
-    assert provenance["architecture_upgrade"] == "v2_to_v5_player_parity"
+    assert provenance["architecture_upgrade"] == "v2_to_v6_player_parity"
 
 
 def test_architecture_four_checkpoint_can_initialize_interaction_policy(
@@ -228,6 +230,7 @@ def test_architecture_four_checkpoint_can_initialize_interaction_policy(
         )
     }
     source_state["cell_projection.0.weight"] = source_state["cell_projection.0.weight"][:, :86]
+    source_state["player_encoder.0.weight"] = source_state["player_encoder.0.weight"][:, :20]
     source_spec = source.architecture_spec()
     source_spec["version"] = 4
     path = tmp_path / "architecture-4.pt"
@@ -253,7 +256,31 @@ def test_architecture_four_checkpoint_can_initialize_interaction_policy(
     assert torch.equal(
         target.cell_projection[0].weight[:, :86], source_state["cell_projection.0.weight"]
     )
-    assert provenance["architecture_upgrade"] == "v4_to_v5_interactions"
+    assert provenance["architecture_upgrade"] == "v4_to_v6_interactions_audio"
+
+
+def test_architecture_five_checkpoint_can_initialize_audio_policy(tmp_path: Path) -> None:
+    source = small_model()
+    source_state = {name: value.clone() for name, value in source.state_dict().items()}
+    source_state["player_encoder.0.weight"] = source_state["player_encoder.0.weight"][:, :20]
+    source_spec = source.architecture_spec()
+    source_spec["version"] = 5
+    path = tmp_path / "architecture-5.pt"
+    torch.save({"model": source_state, "architecture": source_spec}, path)
+
+    target = small_model()
+    audio_before = target.player_encoder[0].weight[:, 20].detach().clone()
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_from(path)
+    assert torch.equal(
+        target.player_encoder[0].weight[:, :20], source_state["player_encoder.0.weight"]
+    )
+    assert torch.equal(target.player_encoder[0].weight[:, 20], audio_before)
+    assert provenance["architecture_upgrade"] == "v5_to_v6_audio"
 
 
 def test_warm_started_checkpoint_resumes_with_provenance_and_rejects_other_arm(

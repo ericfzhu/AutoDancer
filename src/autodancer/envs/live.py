@@ -213,7 +213,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         player[PlayerFeature.WON] = int(status == "won")
         player[PlayerFeature.DEAD] = int(status == "dead")
         observation["map_memory"] = self.map_memory.update(
-            observation, record["observation"].get("revealed_map")
+            observation,
+            record["observation"].get("revealed_map"),
+            record["observation"].get("map_bounds"),
         )
         return observation
 

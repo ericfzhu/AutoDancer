@@ -30,7 +30,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
@@ -187,6 +187,7 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         PlayerFeature.MUSIC_LENGTH_DS,
         PlayerFeature.MUSIC_REMAINING_DS,
         PlayerFeature.SONG_END_REACHED,
+        PlayerFeature.SHOP_MUSIC_VOLUME_BP,
     ):
         if player[feature] < 0:
             raise ProtocolError(f"Player feature {feature.name} cannot be negative")
@@ -212,6 +213,21 @@ def decode_revealed_map(payload: Any) -> np.ndarray | None:
     if np.any(result < 0) or np.any(result > len(Terrain) - 1):
         raise ProtocolError("revealed_map contains an unknown terrain class")
     return result.copy()
+
+
+def decode_map_bounds(payload: Any) -> dict[str, int] | None:
+    """Decode optional absolute level bounds used to detect map-memory clipping."""
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping):
+        raise ProtocolError("map_bounds must be an object")
+    result = {
+        name: _integer(payload.get(name), f"map_bounds.{name}")
+        for name in ("x", "y", "width", "height")
+    }
+    if result["width"] <= 0 or result["height"] <= 0:
+        raise ProtocolError("map_bounds width and height must be positive")
+    return result
 
 
 def _validate_events(events: Any) -> None:
@@ -300,6 +316,7 @@ def validate_record(record: Mapping[str, Any]) -> None:
         raise ProtocolError("Running records must have positive zone and floor")
     observation = decode_observation(record.get("observation", {}))
     decode_revealed_map(record.get("observation", {}).get("revealed_map"))
+    decode_map_bounds(record.get("observation", {}).get("map_bounds"))
     if status == "running" and not np.any(observation["action_mask"]):
         raise ProtocolError("A running record cannot mask every action")
     _validate_events(record.get("events", []))
@@ -459,7 +476,7 @@ class JsonlTurnSource(_SequenceTracker):
 
 
 class NativePipeTurnSource(_SequenceTracker):
-    """Read schema-8 JSON messages directly from a worker's duplex pipe."""
+    """Read schema-9 JSON messages directly from a worker's duplex pipe."""
 
     def __init__(self, receiver: MessageReceiver) -> None:
         super().__init__()

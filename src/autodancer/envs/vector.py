@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from autodancer.live.supervisor import AutoDancerSupervisor
+from autodancer.memory import MapCapacityError
 
 
 class AutoDancerVectorEnv:
@@ -45,6 +46,8 @@ class AutoDancerVectorEnv:
         for index, future in enumerate(futures):
             try:
                 results.append(future.result())
+            except MapCapacityError:
+                raise
             except Exception:
                 results.append(self.recover(index, secrets.randbelow(2**31)))
         return self._stack([result[0] for result in results]), [result[1] for result in results]
@@ -69,6 +72,8 @@ class AutoDancerVectorEnv:
         for index, future in enumerate(futures):
             try:
                 results.append(future.result())
+            except MapCapacityError:
+                raise
             except Exception as error:
                 observation, reset_info = self.recover(index, secrets.randbelow(2**31))
                 results.append(
@@ -118,6 +123,8 @@ class AutoDancerVectorEnv:
         for index, seed, future in zip(indices, seeds, futures, strict=True):
             try:
                 results.append(future.result())
+            except MapCapacityError:
+                raise
             except Exception:
                 results.append(self.recover(index, int(seed)))
         return results

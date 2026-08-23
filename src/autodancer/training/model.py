@@ -1,4 +1,4 @@
-"""Schema-8 recurrent actor-critic with player-visible tactical state."""
+"""Schema-9 recurrent actor-critic with player-visible tactical and audio state."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from autodancer.constants import (
     TrapKind,
 )
 
-ARCHITECTURE_VERSION = 5
+ARCHITECTURE_VERSION = 6
 START_ACTION = ACTION_COUNT
 
 

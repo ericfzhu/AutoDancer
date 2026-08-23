@@ -19,11 +19,11 @@ local Native = require "system.game.AutoDancerNative"
 local GRID_SIZE = 21
 local GRID_CHANNELS = 29
 local MAP_SIZE = 65
-local PLAYER_FEATURES = 20
+local PLAYER_FEATURES = 21
 local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
-local SCHEMA_VERSION = 8
+local SCHEMA_VERSION = 9
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -213,6 +213,47 @@ local function buildRevealedMap(player)
         end
     end
     return result
+end
+
+local function currentMapBounds()
+    local x, y, width, height = Tile.getLevelBounds()
+    return {
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+    }
+end
+
+local function shopMusicVolumeBasisPoints()
+    local player = Player.getPlayerEntity(1)
+    if not player or not player.position then
+        return 0
+    end
+    local volume = 0
+    for entity in Entities.entitiesWithComponents({ "shopkeeper", "musicLayerAddVolume" }) do
+        local layer = entity.musicLayerAddVolume
+        if layer.active and layer.effective and entity.position then
+            local dx = entity.position.x - player.position.x
+            local dy = entity.position.y - player.position.y
+            local distance = math.sqrt(dx * dx + dy * dy)
+            local innerRadius = layer.innerRadius or 0
+            local outerRadius = math.max(innerRadius, layer.outerRadius or innerRadius)
+            local innerVolume = layer.innerVolume or 0
+            local outerVolume = layer.outerVolume or 0
+            local layerVolume
+            if distance <= innerRadius or outerRadius == innerRadius then
+                layerVolume = innerVolume
+            elseif distance >= outerRadius then
+                layerVolume = outerVolume
+            else
+                local factor = (distance - innerRadius) / (outerRadius - innerRadius)
+                layerVolume = innerVolume + (outerVolume - innerVolume) * factor
+            end
+            volume = math.max(volume, layerVolume)
+        end
+    end
+    return math.max(0, math.min(32767, math.floor(volume * 10000 + 0.5)))
 end
 
 -- Deterministic across Lua processes and runs. Zero means "no type".
@@ -556,6 +597,8 @@ local function buildObservation()
         playerValues[18] = math.floor(musicLength * 10 + 0.5)
         playerValues[19] = math.floor(math.max(musicLength - musicTime, 0) * 10 + 0.5)
         playerValues[20] = Music.isSongEndReached() and 1 or 0
+        playerValues[21] = shopMusicVolumeBasisPoints()
+        result.map_bounds = currentMapBounds()
         result.revealed_map = buildRevealedMap(player)
     end
 

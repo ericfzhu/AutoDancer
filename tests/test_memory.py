@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from autodancer.constants import (
     ACTION_COUNT,
@@ -9,17 +10,18 @@ from autodancer.constants import (
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
     MAP_SIZE,
+    PLAYER_FEATURES,
     GridChannel,
     MapChannel,
     PlayerFeature,
     Terrain,
 )
-from autodancer.memory import FloorMapMemory
+from autodancer.memory import FloorMapMemory, MapCapacityError
 
 
 def observation(x: int = 10, y: int = 20, *, zone: int = 1, floor: int = 1):
     grid = np.zeros((GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16)
-    player = np.zeros(16, dtype=np.int32)
+    player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
     player[PlayerFeature.X] = x
     player[PlayerFeature.Y] = y
     player[PlayerFeature.ZONE] = zone
@@ -75,3 +77,11 @@ def test_floor_transition_clears_previous_map() -> None:
     map_centre = MAP_SIZE // 2
     assert next_floor[map_centre, map_centre + 1, MapChannel.TERRAIN_CLASS] == Terrain.UNKNOWN
     assert next_floor[map_centre, map_centre, MapChannel.VISIT_COUNT] == 1
+
+
+def test_floor_memory_rejects_level_bounds_that_would_clip() -> None:
+    memory = FloorMapMemory()
+    memory.update(observation(), map_bounds={"x": -22, "y": -12, "width": 65, "height": 65})
+    memory.reset()
+    with pytest.raises(MapCapacityError, match="at least 67x67"):
+        memory.update(observation(), map_bounds={"x": -23, "y": -12, "width": 66, "height": 65})

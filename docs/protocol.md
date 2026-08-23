@@ -1,6 +1,6 @@
 # Python/Lua live protocol
 
-Schema 8 identifies every message with `instance_id` and `role`. Python owns a
+Schema 9 identifies every message with `instance_id` and `role`. Python owns a
 current-user-only Windows named pipe for each process. Pipe names include the
 supervisor session and worker identity, so commands cannot cross worker slots.
 Lua retains a received command until the engine accepts it in a safe state.
@@ -10,7 +10,7 @@ Lua retains a received command until the engine accepts it in a safe state.
 Every process prints one structured marker in its own engine log:
 
 ```text
-AUTODANCER_READY:{"schema_version":8,"instance_id":"worker-0000","role":"worker",...}
+AUTODANCER_READY:{"schema_version":9,"instance_id":"worker-0000","role":"worker",...}
 ```
 
 Python discovers logs by marker identity, validates schema and pinned game
@@ -37,7 +37,7 @@ An action-driven transition echoes:
 
 ```json
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "instance_id": "worker-0000",
   "role": "worker",
   "bridge": {
@@ -79,13 +79,18 @@ never serialized.
 Inventory is `13 × 8` and covers weapon, two action slots, shovel, two spells,
 bombs, misc, body, head, feet, torch, and ring. Each row carries coarse and
 exact type, quantity, weapon damage, turn and kill cooldowns, readiness, and
-toggle state. The 20 player fields include song elapsed, total, and remaining
-time in deciseconds plus the visible song-end state. All values are
-range-checked before entering the policy.
+toggle state. The 21 player fields include song elapsed, total, and remaining
+time in deciseconds, the visible song-end state, and effective shopkeeper-song
+volume in basis points. This is the music-layer contribution a player hears,
+not a hidden shop location. All values are range-checked before entering the
+policy.
 
-Schema 8 may additionally carry `observation.revealed_map`, a `65 × 65`
+Schema 9 carries absolute `observation.map_bounds` and may additionally carry
+`observation.revealed_map`, a `65 × 65`
 terrain snapshot anchored at the floor's spawn position. Lua emits it
 periodically and immediately while the Map item is held. Zero is unknown;
 non-zero cells are terrain the game has actually marked revealed. Python
 combines these snapshots with the local visibility grid and Bard's own path
-into the derived `map_memory` policy input.
+into the derived `map_memory` policy input. If the level bounds or an observed
+position cannot fit in that canvas, collection fails with a map-capacity error
+instead of silently clipping state or restarting workers.

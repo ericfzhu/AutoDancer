@@ -16,6 +16,10 @@ from autodancer.constants import (
 )
 
 
+class MapCapacityError(RuntimeError):
+    """The fixed policy map cannot represent the current level without clipping."""
+
+
 class FloorMapMemory:
     """Accumulate one floor's revealed terrain and Bard's traversal history.
 
@@ -59,22 +63,53 @@ class FloorMapMemory:
         self._last_visit.clear()
         self._turn = 0
 
+    def _required_size(self, positions: Sequence[tuple[int, int]]) -> int:
+        assert self._origin is not None
+        origin_x, origin_y = self._origin
+        radius = max(max(abs(x - origin_x), abs(y - origin_y)) for x, y in positions)
+        return radius * 2 + 1
+
+    def _validate_capacity(self, map_bounds: Mapping[str, int] | None) -> None:
+        if map_bounds is None or self._origin is None:
+            return
+        minimum = (int(map_bounds["x"]), int(map_bounds["y"]))
+        maximum = (
+            minimum[0] + int(map_bounds["width"]) - 1,
+            minimum[1] + int(map_bounds["height"]) - 1,
+        )
+        required = self._required_size((minimum, maximum))
+        if required > MAP_SIZE:
+            raise MapCapacityError(
+                f"Level bounds require a spawn-centred map of at least {required}x{required}; "
+                f"the policy supports {MAP_SIZE}x{MAP_SIZE}"
+            )
+
+    def _validate_position(self, position: tuple[int, int]) -> None:
+        if self._required_size((position,)) > MAP_SIZE:
+            raise MapCapacityError(
+                f"Observed position {position} falls outside the {MAP_SIZE}x{MAP_SIZE} "
+                "spawn-centred policy map"
+            )
+
     def update(
         self,
         observation: Mapping[str, np.ndarray],
         revealed_map: Sequence[Sequence[int]] | None = None,
+        map_bounds: Mapping[str, int] | None = None,
     ) -> np.ndarray:
         player = observation["player"]
         x, y = int(player[PlayerFeature.X]), int(player[PlayerFeature.Y])
         zone, floor = int(player[PlayerFeature.ZONE]), int(player[PlayerFeature.FLOOR])
         if self._zone_floor != (zone, floor) or self._origin is None:
             self._start_floor(zone, floor, x, y)
+        self._validate_capacity(map_bounds)
         self._turn += 1
 
         grid = observation["grid"]
         centre = GRID_SIZE // 2
         for row, column in np.argwhere(grid[..., GridChannel.VISIBILITY] > 0):
             position = (x + int(column) - centre, y + int(row) - centre)
+            self._validate_position(position)
             self._terrain[position] = int(grid[row, column, GridChannel.TERRAIN_CLASS])
             self._last_seen[position] = self._turn
 
@@ -92,6 +127,7 @@ class FloorMapMemory:
                 self._last_seen[position] = self._turn
 
         position = (x, y)
+        self._validate_position(position)
         self._visits[position] = self._visits.get(position, 0) + 1
         self._last_visit[position] = self._turn
         return self.observation(position)

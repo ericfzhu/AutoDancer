@@ -441,7 +441,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         model_config["map_size"] = 0
     expected = RecurrentActorCritic(ModelConfig(**model_config), initialize=False)
     if payload.get("architecture") != expected.architecture_spec():
-        raise ValueError("Checkpoint model architecture is incompatible with the schema-8 policy")
+        raise ValueError("Checkpoint model architecture is incompatible with the schema-9 policy")
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
