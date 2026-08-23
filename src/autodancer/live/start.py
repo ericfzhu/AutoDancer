@@ -24,13 +24,17 @@ def main() -> int:
     validate_record(record)
     if record["kind"] != "reset" or record["character"] != "Bard":
         raise RuntimeError("START did not produce a Bard reset record")
-    print(json.dumps({
-        "run_id": record["run_id"],
-        "seed": record.get("seed"),
-        "zone": record.get("zone"),
-        "floor": record.get("floor"),
-        "character": record["character"],
-    }))
+    print(
+        json.dumps(
+            {
+                "run_id": record["run_id"],
+                "seed": record.get("seed"),
+                "zone": record.get("zone"),
+                "floor": record.get("floor"),
+                "character": record["character"],
+            }
+        )
+    )
     return 0
 
 

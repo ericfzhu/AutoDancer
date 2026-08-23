@@ -346,9 +346,7 @@ def train(arguments: argparse.Namespace) -> None:
             try:
                 # Resume replaces every tensor, but a warm start can intentionally
                 # leave new architecture modules and the critic at fresh values.
-                model = RecurrentActorCritic(
-                    ModelConfig(), initialize=arguments.resume is None
-                )
+                model = RecurrentActorCritic(ModelConfig(), initialize=arguments.resume is None)
                 algorithm = RecurrentPPO(
                     model,
                     ppo_config,
@@ -494,9 +492,7 @@ def main() -> int:
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--max-turns", type=int, default=10000)
-    parser.add_argument(
-        "--telemetry-transport", choices=("native-pipe",), default="native-pipe"
-    )
+    parser.add_argument("--telemetry-transport", choices=("native-pipe",), default="native-pipe")
     parser.add_argument("--worker-profile", choices=("symbolic",), default="symbolic")
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--inference-batch-delay-ms", type=float, default=2.0)

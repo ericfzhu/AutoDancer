@@ -108,9 +108,7 @@ class NativePipeServer:
             "D:P(A;;GA;;;SY)(A;;GA;;;OW)", 1, ctypes.byref(descriptor), None
         ):
             raise NativePipeError(f"security descriptor failed: {ctypes.get_last_error()}")
-        attributes = _SecurityAttributes(
-            ctypes.sizeof(_SecurityAttributes), descriptor, False
-        )
+        attributes = _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, False)
         try:
             self._handle = _kernel32.CreateNamedPipeW(
                 name,
@@ -146,9 +144,7 @@ class NativePipeServer:
         sent = wintypes.DWORD()
         buffer = ctypes.create_string_buffer(payload)
         with self._write_lock:
-            ok = _kernel32.WriteFile(
-                self._handle, buffer, len(payload), ctypes.byref(sent), None
-            )
+            ok = _kernel32.WriteFile(self._handle, buffer, len(payload), ctypes.byref(sent), None)
         if not ok or sent.value != len(payload):
             raise NativePipeError(f"WriteFile failed: {ctypes.get_last_error()}")
 

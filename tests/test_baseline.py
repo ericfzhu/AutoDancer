@@ -29,10 +29,7 @@ class OneStepEnvironment:
 
     def reset(self, seeds: list[int]):
         self.reset_seeds = seeds
-        infos = [
-            {"seed": seed, "run_id": str(seed), "zone": 1, "floor": 1}
-            for seed in seeds
-        ]
+        infos = [{"seed": seed, "run_id": str(seed), "zone": 1, "floor": 1} for seed in seeds]
         return self._observation(), infos
 
     def step(self, actions: np.ndarray):

@@ -136,9 +136,7 @@ class InferenceScheduler:
                 )
                 hidden = torch.cat([request.hidden for request in batch]).to(self.device)
                 with torch.inference_mode():
-                    actions, log_probs, _, values, next_hidden = self.model.act(
-                        observation, hidden
-                    )
+                    actions, log_probs, _, values, next_hidden = self.model.act(observation, hidden)
                 for index, request in enumerate(batch):
                     request.future.set_result(
                         (

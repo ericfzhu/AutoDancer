@@ -88,9 +88,7 @@ class AutoDancerSupervisor:
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     workers: dict[str, InstanceHandle] = field(default_factory=dict, init=False)
     _pipe_servers: dict[str, NativePipeServer] = field(default_factory=dict, init=False)
-    _worker_processes: dict[str, subprocess.Popen[bytes]] = field(
-        default_factory=dict, init=False
-    )
+    _worker_processes: dict[str, subprocess.Popen[bytes]] = field(default_factory=dict, init=False)
     _owned_pids: set[int] = field(default_factory=set, init=False)
 
     @property
@@ -138,9 +136,7 @@ class AutoDancerSupervisor:
             name = pipe_name(self.session_id, instance_id)
             self._pipe_servers[instance_id] = NativePipeServer(name)
 
-    def _launch_process(
-        self, instance_id: str, arguments: list[str]
-    ) -> subprocess.Popen[bytes]:
+    def _launch_process(self, instance_id: str, arguments: list[str]) -> subprocess.Popen[bytes]:
         startupinfo = None
         creationflags = 0
         if os.name == "nt":
@@ -197,10 +193,7 @@ class AutoDancerSupervisor:
         return sorted(self.config.game_dir.glob("NecroDancer*.log"))
 
     def _log_offsets(self) -> dict[Path, tuple[int, int]]:
-        return {
-            path: (path.stat().st_size, path.stat().st_mtime_ns)
-            for path in self._log_paths()
-        }
+        return {path: (path.stat().st_size, path.stat().st_mtime_ns) for path in self._log_paths()}
 
     @staticmethod
     def _ready_records(path: Path, offset: int) -> list[dict[str, Any]]:
@@ -237,9 +230,7 @@ class AutoDancerSupervisor:
                 previous = baseline.get(path)
                 stat = path.stat()
                 offset = (
-                    previous[0]
-                    if previous is not None and previous[1] == stat.st_mtime_ns
-                    else 0
+                    previous[0] if previous is not None and previous[1] == stat.st_mtime_ns else 0
                 )
                 for record in self._ready_records(path, offset):
                     if (

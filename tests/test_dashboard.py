@@ -21,9 +21,7 @@ def test_dashboard_state_serializes_symbolic_worker_telemetry() -> None:
     observation = {
         "grid": np.zeros((1, GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16),
         "player": np.zeros((1, PLAYER_FEATURES), dtype=np.int32),
-        "inventory": np.zeros(
-            (1, INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16
-        ),
+        "inventory": np.zeros((1, INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": np.ones((1, ACTION_COUNT), dtype=np.int8),
     }
     observation["grid"][0, 10, 10, 1] = 1
@@ -70,9 +68,7 @@ def test_dashboard_updates_one_worker_without_replacing_others() -> None:
     observations = {
         "grid": np.zeros((2, GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16),
         "player": np.zeros((2, PLAYER_FEATURES), dtype=np.int32),
-        "inventory": np.zeros(
-            (2, INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16
-        ),
+        "inventory": np.zeros((2, INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": np.ones((2, ACTION_COUNT), dtype=np.int8),
     }
     for index in range(2):

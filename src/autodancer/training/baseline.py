@@ -113,9 +113,7 @@ class EpisodeAccumulator:
         if current_floor != self._floor:
             if self._pending_stair_turn is not None:
                 self.staircase_exits += 1
-                self.stair_discovery_to_exit_turns.append(
-                    self.turns - self._pending_stair_turn
-                )
+                self.stair_discovery_to_exit_turns.append(self.turns - self._pending_stair_turn)
             self._floor = current_floor
             self._stairs_seen_on_floor = False
             self._pending_stair_turn = None
@@ -443,9 +441,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         model_config["map_size"] = 0
     expected = RecurrentActorCritic(ModelConfig(**model_config), initialize=False)
     if payload.get("architecture") != expected.architecture_spec():
-        raise ValueError(
-            "Checkpoint model architecture is incompatible with the schema-6 policy"
-        )
+        raise ValueError("Checkpoint model architecture is incompatible with the schema-7 policy")
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
@@ -594,11 +590,7 @@ def main() -> int:
         "reference": (
             None
             if report["reference"] is None
-            else {
-                key: value
-                for key, value in report["reference"].items()
-                if key != "results"
-            }
+            else {key: value for key, value in report["reference"].items() if key != "results"}
         ),
         "trained": {key: value for key, value in report["trained"].items() if key != "results"},
         "trained_minus_reference": report["trained_minus_reference"],

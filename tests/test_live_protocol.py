@@ -6,7 +6,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
+from autodancer.constants import (
+    GRID_CHANNELS,
+    INVENTORY_FEATURES,
+    INVENTORY_SLOTS,
+    PLAYER_FEATURES,
+    Action,
+    GridChannel,
+    PlayerFeature,
+    Terrain,
+)
 from autodancer.envs.live import AutoDancerLiveEnv
 from autodancer.live.bridge import BridgeCommand
 from autodancer.live.protocol import (
@@ -62,7 +71,7 @@ def record(
     mask = np.zeros(11, dtype=int)
     if status == "running":
         mask[:4] = 1
-    player = np.zeros(16, dtype=int)
+    player = np.zeros(PLAYER_FEATURES, dtype=int)
     player[PlayerFeature.HEALTH] = 6
     player[PlayerFeature.MAX_HEALTH] = 6
     player[PlayerFeature.ZONE] = 1
@@ -70,7 +79,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "instance_id": "worker-0000",
         "role": "worker",
         "run_id": run_id,
@@ -82,9 +91,9 @@ def record(
         "zone": 1,
         "floor": 1,
         "observation": {
-            "grid": np.zeros((21, 21, 11), dtype=int).tolist(),
+            "grid": np.zeros((21, 21, GRID_CHANNELS), dtype=int).tolist(),
             "player": player.tolist(),
-            "inventory": np.zeros((8, 4), dtype=int).tolist(),
+            "inventory": np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=int).tolist(),
             "action_mask": mask.tolist(),
         },
         "events": events or [],
@@ -112,7 +121,7 @@ def record(
     }
 
 
-def test_native_pipe_source_accepts_large_schema6_records_without_log_markers() -> None:
+def test_native_pipe_source_accepts_large_schema7_records_without_log_markers() -> None:
     reset = record(0, "reset")
     turn = record(1, "turn", requested_action=Action.UP)
     encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
@@ -221,6 +230,21 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
         validate_record(payload)
 
     payload = record(0, "reset")
+    payload["observation"]["grid"][10][10][GridChannel.FACING] = 5
+    with pytest.raises(ProtocolError, match="facing"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
+    payload["observation"]["inventory"][0][6] = 2
+    with pytest.raises(ProtocolError, match="ready/active"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
+    payload["observation"]["player"][PlayerFeature.SONG_END_REACHED] = 2
+    with pytest.raises(ProtocolError, match="song-end"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
     payload["events"] = [{"kind": "enemy_damage", "amount": -1}]
     with pytest.raises(ProtocolError, match="at least 0"):
         validate_record(payload)
@@ -265,7 +289,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 6
+    assert info["protocol_schema_version"] == 7
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.01)
@@ -360,7 +384,7 @@ def test_placeholder_build_is_rejected() -> None:
         validate_record(payload)
 
 
-def test_schema_five_rejects_cross_worker_and_mismatched_seed() -> None:
+def test_protocol_rejects_cross_worker_and_mismatched_seed() -> None:
     payload = record(0, "reset")
     payload["instance_id"] = "worker-0001"
     environment = AutoDancerLiveEnv(turn_source=QueueTurnSource([payload]), bridge=FakeBridge())

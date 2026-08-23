@@ -1,4 +1,4 @@
-"""Schema-6 recurrent actor-critic with local and persistent-map perception."""
+"""Schema-7 recurrent actor-critic with player-visible tactical state."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from torch.distributions import Categorical
 
 from autodancer.constants import (
     ACTION_COUNT,
+    INVENTORY_SLOTS,
+    PLAYER_FEATURES,
     TYPE_VOCAB_SIZE,
     ActorKind,
     GridChannel,
@@ -20,7 +22,7 @@ from autodancer.constants import (
     TrapKind,
 )
 
-ARCHITECTURE_VERSION = 3
+ARCHITECTURE_VERSION = 4
 START_ACTION = ACTION_COUNT
 
 
@@ -74,6 +76,7 @@ class RecurrentActorCritic(nn.Module):
         self.config = config or ModelConfig()
         if self.config.map_size < 0:
             raise ValueError("map_size cannot be negative")
+        self.legacy_v2 = self.config.map_size == 0
         width = self.config.cell_size
         self.terrain_class = nn.Embedding(len(Terrain), 4)
         self.terrain_type = nn.Embedding(TYPE_VOCAB_SIZE, 8)
@@ -84,7 +87,14 @@ class RecurrentActorCritic(nn.Module):
         self.trap = nn.Embedding(len(TrapKind), 4)
         self.visibility = nn.Embedding(3, 3)
         self.status = nn.Embedding(3, 4)
-        self.cell_projection = nn.Sequential(nn.Linear(68, width), nn.LayerNorm(width), nn.SiLU())
+        if not self.legacy_v2:
+            self.facing = nn.Embedding(5, 4)
+            self.charge_direction = nn.Embedding(5, 4)
+            self.shield_direction = nn.Embedding(5, 4)
+        cell_features = 68 if self.legacy_v2 else 86
+        self.cell_projection = nn.Sequential(
+            nn.Linear(cell_features, width), nn.LayerNorm(width), nn.SiLU()
+        )
         self.spatial_encoder = nn.Sequential(
             nn.Conv2d(width, 96, 3, padding=1, bias=False),
             nn.GroupNorm(8, 96),
@@ -134,13 +144,17 @@ class RecurrentActorCritic(nn.Module):
             width, self.config.attention_heads, self.config.attention_layers
         )
         self.player_encoder = nn.Sequential(
-            nn.Linear(16, 128), nn.LayerNorm(128), nn.SiLU(), nn.Linear(128, 128), nn.SiLU()
+            nn.Linear(16 if self.legacy_v2 else PLAYER_FEATURES, 128),
+            nn.LayerNorm(128),
+            nn.SiLU(),
+            nn.Linear(128, 128),
+            nn.SiLU(),
         )
         self.inventory_class = nn.Embedding(len(ItemKind), 8)
         self.inventory_type = nn.Embedding(TYPE_VOCAB_SIZE, 16)
-        self.inventory_slot = nn.Embedding(8, 16)
+        self.inventory_slot = nn.Embedding(8 if self.legacy_v2 else INVENTORY_SLOTS, 16)
         self.inventory_projection = nn.Sequential(
-            nn.Linear(42, width), nn.LayerNorm(width), nn.SiLU()
+            nn.Linear(42 if self.legacy_v2 else 46, width), nn.LayerNorm(width), nn.SiLU()
         )
         self.inventory_attention = _transformer(
             width, self.config.attention_heads, self.config.attention_layers
@@ -212,27 +226,41 @@ class RecurrentActorCritic(nn.Module):
         numeric = torch.stack(
             (self._scale(health), self._scale(maximum), health / maximum.clamp_min(1.0)), dim=-1
         )
-        return self.cell_projection(
-            torch.cat(
+        features = [
+            self.terrain_class(self._bounded(grid, GridChannel.TERRAIN_CLASS, len(Terrain))),
+            self.terrain_type(self._bounded(grid, GridChannel.TERRAIN_TYPE, TYPE_VOCAB_SIZE)),
+            self.actor_class(self._bounded(grid, GridChannel.ACTOR_CLASS, len(ActorKind))),
+            self.actor_type(self._bounded(grid, GridChannel.ACTOR_TYPE, TYPE_VOCAB_SIZE)),
+            self.item_class(self._bounded(grid, GridChannel.ITEM_CLASS, len(ItemKind))),
+            self.item_type(self._bounded(grid, GridChannel.ITEM_TYPE, TYPE_VOCAB_SIZE)),
+            self.trap(self._bounded(grid, GridChannel.TRAP, len(TrapKind))),
+            self.visibility(self._bounded(grid, GridChannel.VISIBILITY, 3)),
+            self.status(self._bounded(grid, GridChannel.STATUS, 3)),
+            numeric,
+        ]
+        if not self.legacy_v2:
+            delay = grid[..., int(GridChannel.BEAT_DELAY)].float()
+            interval = grid[..., int(GridChannel.BEAT_INTERVAL)].float()
+            tactical_numeric = torch.stack(
                 (
-                    self.terrain_class(
-                        self._bounded(grid, GridChannel.TERRAIN_CLASS, len(Terrain))
-                    ),
-                    self.terrain_type(
-                        self._bounded(grid, GridChannel.TERRAIN_TYPE, TYPE_VOCAB_SIZE)
-                    ),
-                    self.actor_class(self._bounded(grid, GridChannel.ACTOR_CLASS, len(ActorKind))),
-                    self.actor_type(self._bounded(grid, GridChannel.ACTOR_TYPE, TYPE_VOCAB_SIZE)),
-                    self.item_class(self._bounded(grid, GridChannel.ITEM_CLASS, len(ItemKind))),
-                    self.item_type(self._bounded(grid, GridChannel.ITEM_TYPE, TYPE_VOCAB_SIZE)),
-                    self.trap(self._bounded(grid, GridChannel.TRAP, len(TrapKind))),
-                    self.visibility(self._bounded(grid, GridChannel.VISIBILITY, 3)),
-                    self.status(self._bounded(grid, GridChannel.STATUS, 3)),
-                    numeric,
+                    self._scale(delay),
+                    self._scale(interval),
+                    delay / interval.clamp_min(1.0),
+                    self._scale(grid[..., int(GridChannel.FROZEN_TURNS)]),
+                    self._scale(grid[..., int(GridChannel.CONFUSED_TURNS)]),
+                    grid[..., int(GridChannel.CHARGE_STATE)].float(),
                 ),
                 dim=-1,
             )
-        )
+            features.extend(
+                (
+                    self.facing(self._bounded(grid, GridChannel.FACING, 5)),
+                    tactical_numeric,
+                    self.charge_direction(self._bounded(grid, GridChannel.CHARGE_DIRECTION, 5)),
+                    self.shield_direction(self._bounded(grid, GridChannel.SHIELD_DIRECTION, 5)),
+                )
+            )
+        return self.cell_projection(torch.cat(features, dim=-1))
 
     def _entity_features(self, grid: Tensor, cells: Tensor) -> Tensor:
         _, height, width, cell_width = cells.shape
@@ -258,16 +286,23 @@ class RecurrentActorCritic(nn.Module):
         return encoded.masked_fill(padding.unsqueeze(-1), -torch.inf).amax(dim=1).nan_to_num()
 
     def _inventory_features(self, inventory: Tensor) -> Tensor:
+        if self.legacy_v2:
+            inventory = inventory[:, :8, :4]
         classes = inventory[..., 0].long().clamp(0, len(ItemKind) - 1)
         types = inventory[..., 1].long().clamp(0, TYPE_VOCAB_SIZE - 1)
-        slots = torch.arange(8, device=inventory.device).unsqueeze(0).expand(inventory.shape[0], -1)
+        slots = (
+            torch.arange(inventory.shape[1], device=inventory.device)
+            .unsqueeze(0)
+            .expand(inventory.shape[0], -1)
+        )
+        numeric = inventory[..., 2:4] if self.legacy_v2 else inventory[..., 2:8]
         tokens = self.inventory_projection(
             torch.cat(
                 (
                     self.inventory_class(classes),
                     self.inventory_type(types),
                     self.inventory_slot(slots),
-                    self._scale(inventory[..., 2:4]),
+                    self._scale(numeric),
                 ),
                 dim=-1,
             )
@@ -293,11 +328,12 @@ class RecurrentActorCritic(nn.Module):
         grid = observation["grid"]
         cells = self._cell_features(grid)
         spatial = self.spatial_encoder(cells.permute(0, 3, 1, 2))
-        map_memory = (
-            self._map_features(observation["map_memory"]) if self.config.map_size else None
-        )
+        map_memory = self._map_features(observation["map_memory"]) if self.config.map_size else None
         entities = self._entity_features(grid, cells)
-        player = self.player_encoder(self._scale(observation["player"]))
+        player_values = observation["player"]
+        if self.legacy_v2:
+            player_values = player_values[..., :16]
+        player = self.player_encoder(self._scale(player_values))
         inventory = self._inventory_features(observation["inventory"])
         previous_action = observation.get("previous_action")
         if previous_action is None:

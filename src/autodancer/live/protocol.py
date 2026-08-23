@@ -29,7 +29,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
@@ -126,6 +126,14 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         GridChannel.TRAP: (0, len(TrapKind) - 1),
         GridChannel.VISIBILITY: (0, 2),
         GridChannel.STATUS: (0, len(StatusFlag) - 1),
+        GridChannel.FACING: (0, 4),
+        GridChannel.BEAT_DELAY: (0, 32767),
+        GridChannel.BEAT_INTERVAL: (0, 32767),
+        GridChannel.FROZEN_TURNS: (0, 32767),
+        GridChannel.CONFUSED_TURNS: (0, 32767),
+        GridChannel.CHARGE_STATE: (0, 1),
+        GridChannel.CHARGE_DIRECTION: (0, 4),
+        GridChannel.SHIELD_DIRECTION: (0, 4),
     }
     for channel, (low, high) in channel_ranges.items():
         values = grid[..., int(channel)]
@@ -141,6 +149,8 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         raise ProtocolError("Inventory contains an unknown item identifier")
     if np.any(inventory[:, 1] >= 4096):
         raise ProtocolError("Inventory contains an out-of-range exact type identifier")
+    if np.any((inventory[:, 6:8] != 0) & (inventory[:, 6:8] != 1)):
+        raise ProtocolError("Inventory ready/active features must be binary")
 
     mask = observation["action_mask"]
     if np.any((mask != 0) & (mask != 1)):
@@ -162,6 +172,10 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         PlayerFeature.TASK,
         PlayerFeature.WON,
         PlayerFeature.DEAD,
+        PlayerFeature.MUSIC_ELAPSED_DS,
+        PlayerFeature.MUSIC_LENGTH_DS,
+        PlayerFeature.MUSIC_REMAINING_DS,
+        PlayerFeature.SONG_END_REACHED,
     ):
         if player[feature] < 0:
             raise ProtocolError(f"Player feature {feature.name} cannot be negative")
@@ -169,6 +183,8 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         raise ProtocolError("Player on-stairs feature must be binary")
     if player[PlayerFeature.WON] not in {0, 1} or player[PlayerFeature.DEAD] not in {0, 1}:
         raise ProtocolError("Player won/dead features must be binary")
+    if player[PlayerFeature.SONG_END_REACHED] not in {0, 1}:
+        raise ProtocolError("Player song-end feature must be binary")
     return {name: value.copy() for name, value in observation.items()}
 
 
@@ -432,7 +448,7 @@ class JsonlTurnSource(_SequenceTracker):
 
 
 class NativePipeTurnSource(_SequenceTracker):
-    """Read schema-6 JSON messages directly from a worker's duplex pipe."""
+    """Read schema-7 JSON messages directly from a worker's duplex pipe."""
 
     def __init__(self, receiver: MessageReceiver) -> None:
         super().__init__()

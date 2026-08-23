@@ -15,11 +15,7 @@ from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 
 def default_mod_dir() -> Path | None:
     local_app_data = os.environ.get("LOCALAPPDATA")
-    return (
-        Path(local_app_data) / "NecroDancer" / "mods" / "AutoDancer"
-        if local_app_data
-        else None
-    )
+    return Path(local_app_data) / "NecroDancer" / "mods" / "AutoDancer" if local_app_data else None
 
 
 def main() -> int:

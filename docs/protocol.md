@@ -1,6 +1,6 @@
 # Python/Lua live protocol
 
-Schema 6 identifies every message with `instance_id` and `role`. Python owns a
+Schema 7 identifies every message with `instance_id` and `role`. Python owns a
 current-user-only Windows named pipe for each process. Pipe names include the
 supervisor session and worker identity, so commands cannot cross worker slots.
 Lua retains a received command until the engine accepts it in a safe state.
@@ -10,7 +10,7 @@ Lua retains a received command until the engine accepts it in a safe state.
 Every process prints one structured marker in its own engine log:
 
 ```text
-AUTODANCER_READY:{"schema_version":6,"instance_id":"worker-0000","role":"worker",...}
+AUTODANCER_READY:{"schema_version":7,"instance_id":"worker-0000","role":"worker",...}
 ```
 
 Python discovers logs by marker identity, validates schema and pinned game
@@ -37,7 +37,7 @@ An action-driven transition echoes:
 
 ```json
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "instance_id": "worker-0000",
   "role": "worker",
   "bridge": {
@@ -62,17 +62,23 @@ Transition records are UTF-8 JSON messages sent directly over the worker's
 duplex named pipe and are limited to 64 KiB. Debug logs carry readiness and
 fatal diagnostics only; Python does not tail them for live transitions.
 
-The worker emits a player-centred `21 × 21 × 11` grid. Its channels are terrain
+The worker emits a player-centred `21 × 21 × 19` grid. Its channels are terrain
 class/type, actor class/type/current HP/max HP, item class/type, trap class,
-visibility, and status flags. Exact types use a deterministic 12-bit hash with
-zero reserved for absence; the coarse classes remain available so the policy
-can generalize across related enemies and items.
+visibility, status flags, facing, beat-delay counter and interval, visible
+freeze/confusion duration, charge state and direction, and shield direction.
+These are raw visible cues rather than engine decisions or AI targets. Exact
+types use a deterministic 12-bit hash with zero reserved for absence; the
+coarse classes remain available so the policy can generalize across related
+enemies and items.
 
-Inventory is `8 × 4`: coarse item class, exact type, quantity, and weapon
-damage. Player features and the legal-action mask retain their existing shapes.
-All values are range-checked before entering the policy.
+Inventory is `13 × 8` and covers weapon, two action slots, shovel, two spells,
+bombs, misc, body, head, feet, torch, and ring. Each row carries coarse and
+exact type, quantity, weapon damage, turn and kill cooldowns, readiness, and
+toggle state. The 20 player fields include song elapsed, total, and remaining
+time in deciseconds plus the visible song-end state. All values are
+range-checked before entering the policy.
 
-Schema 6 may additionally carry `observation.revealed_map`, a `65 × 65`
+Schema 7 may additionally carry `observation.revealed_map`, a `65 × 65`
 terrain snapshot anchored at the floor's spawn position. Lua emits it
 periodically and immediately while the Map item is held. Zero is unknown;
 non-zero cells are terrain the game has actually marked revealed. Python

@@ -33,7 +33,7 @@ def observation_space() -> spaces.Dict:
                 dtype=np.int16,
             ),
             "player": spaces.Box(
-                low=-2**31,
+                low=-(2**31),
                 high=2**31 - 1,
                 shape=(PLAYER_FEATURES,),
                 dtype=np.int32,

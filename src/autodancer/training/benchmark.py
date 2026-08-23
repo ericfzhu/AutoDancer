@@ -88,9 +88,7 @@ def benchmark_capacity(arguments: argparse.Namespace, capacity: int) -> dict[str
                 "steps": int(latencies.size),
                 "elapsed_seconds": elapsed,
                 "transitions_per_second": float(latencies.size / max(elapsed, 1e-9)),
-                "per_worker_transitions_per_second": float(
-                    arguments.steps / max(elapsed, 1e-9)
-                ),
+                "per_worker_transitions_per_second": float(arguments.steps / max(elapsed, 1e-9)),
                 "latency_p50_ms": float(np.percentile(latencies, 50) * 1000),
                 "latency_p95_ms": float(np.percentile(latencies, 95) * 1000),
                 "latency_p99_ms": float(np.percentile(latencies, 99) * 1000),
@@ -128,7 +126,9 @@ def main() -> int:
     capacities = (
         [int(value) for value in arguments.sweep.split(",") if value.strip()]
         if arguments.sweep
-        else [arguments.num_instances] if arguments.num_instances else []
+        else [arguments.num_instances]
+        if arguments.num_instances
+        else []
     )
     if not capacities or any(value <= 0 for value in capacities) or arguments.steps <= 0:
         parser.error("provide positive --num-instances or --sweep values and --steps")
@@ -146,8 +146,7 @@ def main() -> int:
         "acceptance_baseline": 5.315918163931681,
         "acceptance_target": 10.631836327863362,
         "acceptance_passed": any(
-            result["num_instances"] == 8
-            and result["transitions_per_second"] >= 10.631836327863362
+            result["num_instances"] == 8 and result["transitions_per_second"] >= 10.631836327863362
             for result in results
         ),
     }

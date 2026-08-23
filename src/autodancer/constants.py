@@ -3,12 +3,12 @@
 from enum import IntEnum
 
 GRID_SIZE = 21
-GRID_CHANNELS = 11
+GRID_CHANNELS = 19
 MAP_SIZE = 65
 MAP_CHANNELS = 5
-PLAYER_FEATURES = 16
-INVENTORY_SLOTS = 8
-INVENTORY_FEATURES = 4
+PLAYER_FEATURES = 20
+INVENTORY_SLOTS = 13
+INVENTORY_FEATURES = 8
 TYPE_VOCAB_SIZE = 4096
 RGB_SIZE = 256
 
@@ -42,6 +42,14 @@ class GridChannel(IntEnum):
     TRAP = 8
     VISIBILITY = 9
     STATUS = 10
+    FACING = 11
+    BEAT_DELAY = 12
+    BEAT_INTERVAL = 13
+    FROZEN_TURNS = 14
+    CONFUSED_TURNS = 15
+    CHARGE_STATE = 16
+    CHARGE_DIRECTION = 17
+    SHIELD_DIRECTION = 18
 
 
 class MapChannel(IntEnum):
@@ -69,6 +77,21 @@ class PlayerFeature(IntEnum):
     TASK = 13
     WON = 14
     DEAD = 15
+    MUSIC_ELAPSED_DS = 16
+    MUSIC_LENGTH_DS = 17
+    MUSIC_REMAINING_DS = 18
+    SONG_END_REACHED = 19
+
+
+class InventoryFeature(IntEnum):
+    ITEM_CLASS = 0
+    ITEM_TYPE = 1
+    QUANTITY = 2
+    WEAPON_DAMAGE = 3
+    COOLDOWN_TURNS = 4
+    COOLDOWN_KILLS = 5
+    READY = 6
+    ACTIVE = 7
 
 
 class Terrain(IntEnum):

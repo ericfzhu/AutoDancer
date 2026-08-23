@@ -198,7 +198,7 @@ class RecurrentPPO:
         payload = torch.load(Path(path), map_location=self.device, weights_only=False)
         if payload.get("architecture") != self.model.architecture_spec():
             raise ValueError(
-                "Checkpoint model architecture is incompatible with the schema-6 policy"
+                "Checkpoint model architecture is incompatible with the schema-7 policy"
             )
         saved_metadata = dict(payload.get("checkpoint_metadata", {}))
         if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
@@ -224,16 +224,16 @@ class RecurrentPPO:
         source_spec = payload.get("architecture")
         target_spec = self.model.architecture_spec()
         exact_architecture = source_spec == target_spec
-        map_upgrade = (
+        sensory_upgrade = (
             isinstance(source_spec, dict)
             and source_spec.get("version") == 2
-            and target_spec.get("version") == 3
+            and target_spec.get("version") == 4
             and source_spec.get("config")
             == {key: value for key, value in target_spec["config"].items() if key != "map_size"}
         )
-        if not exact_architecture and not map_upgrade:
+        if not exact_architecture and not sensory_upgrade:
             raise ValueError(
-                "Initialization checkpoint architecture is incompatible with the schema-6 policy"
+                "Initialization checkpoint architecture is incompatible with the schema-7 policy"
             )
         source = dict(payload["model"])
         target = self.model.state_dict()
@@ -244,22 +244,47 @@ class RecurrentPPO:
             and name in target
             and target[name].shape == value.shape
         }
+        if sensory_upgrade:
+            # Retain every compatible portion of V2's input representation while
+            # leaving the newly added map, tactical cues, slots, and HUD fields at
+            # their Architecture-4 initialization.
+            for name in (
+                "cell_projection.0.weight",
+                "player_encoder.0.weight",
+                "inventory_slot.weight",
+                "inventory_projection.0.weight",
+            ):
+                source_value = source.get(name)
+                if source_value is None:
+                    continue
+                expanded = target[name].clone()
+                slices = tuple(slice(0, size) for size in source_value.shape)
+                expanded[slices] = source_value
+                transferred[name] = expanded
         missing, unexpected = self.model.load_state_dict(transferred, strict=False)
         allowed_missing = {
             name
             for name in target
-            if name.startswith(("critic.", "map_")) or name == "fusion.0.weight"
+            if name.startswith(
+                ("critic.", "map_", "facing.", "charge_direction.", "shield_direction.")
+            )
+            or name == "fusion.0.weight"
         }
-        if unexpected or (exact_architecture and set(missing) != {
-            name for name in target if name.startswith("critic.")
-        }) or (map_upgrade and not set(missing).issubset(allowed_missing)):
+        if (
+            unexpected
+            or (
+                exact_architecture
+                and set(missing) != {name for name in target if name.startswith("critic.")}
+            )
+            or (sensory_upgrade and not set(missing).issubset(allowed_missing))
+        ):
             raise ValueError("Initialization checkpoint did not match policy parameters")
         provenance = {
             "path": str(path.resolve()),
             "global_step": int(payload.get("global_step", 0)),
             "updates": int(payload.get("updates", 0)),
             "reward": payload.get("checkpoint_metadata", {}).get("reward"),
-            "architecture_upgrade": "v2_to_v3_map_memory" if map_upgrade else None,
+            "architecture_upgrade": "v2_to_v4_map_sensory" if sensory_upgrade else None,
         }
         self.checkpoint_metadata["initialization"] = provenance
         return provenance

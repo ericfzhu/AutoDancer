@@ -11,8 +11,10 @@ from autodancer.constants import (
     GRID_CHANNELS,
     GRID_SIZE,
     INVENTORY_FEATURES,
+    INVENTORY_SLOTS,
     MAP_CHANNELS,
     MAP_SIZE,
+    PLAYER_FEATURES,
 )
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
@@ -21,7 +23,7 @@ from autodancer.training.model import ModelConfig, RecurrentActorCritic
 def observation(slot: int) -> dict[str, np.ndarray]:
     mask = np.zeros(ACTION_COUNT, dtype=np.int8)
     mask[:4] = 1
-    player = np.zeros(16, dtype=np.int32)
+    player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
     player[0] = 6
     player[1] = 6
     player[6] = 1
@@ -31,7 +33,7 @@ def observation(slot: int) -> dict[str, np.ndarray]:
         "grid": np.zeros((GRID_SIZE, GRID_SIZE, GRID_CHANNELS), dtype=np.int16),
         "map_memory": np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16),
         "player": player,
-        "inventory": np.zeros((8, INVENTORY_FEATURES), dtype=np.int16),
+        "inventory": np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": mask,
     }
 
@@ -82,10 +84,7 @@ class AsyncEnvironment:
             for worker_id, seed in zip(self.worker_ids, seeds, strict=True)
         ]
         return (
-            {
-                key: np.stack([result[0][key] for result in results])
-                for key in results[0][0]
-            },
+            {key: np.stack([result[0][key] for result in results]) for key in results[0][0]},
             [result[1] for result in results],
         )
 
@@ -120,9 +119,7 @@ def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:
     start_worker0_turn1 = next(
         item[3] for item in environment.timeline if item[:3] == ("start", 0, 1)
     )
-    end_worker1_turn0 = next(
-        item[3] for item in environment.timeline if item[:3] == ("end", 1, 0)
-    )
+    end_worker1_turn0 = next(item[3] for item in environment.timeline if item[:3] == ("end", 1, 0))
     assert start_worker0_turn1 < end_worker1_turn0
     assert collector.last_runtime_metrics["policy_version"] == 0
 

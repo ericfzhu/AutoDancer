@@ -129,9 +129,7 @@ def test_v4_arm_configs_differ_only_in_stair_potential() -> None:
     assert arm_b.stair_potential_max == 1.0
     a_weights = arm_a.specification()["weights"]
     b_weights = arm_b.specification()["weights"]
-    assert {key for key in a_weights if a_weights[key] != b_weights[key]} == {
-        "stair_potential_max"
-    }
+    assert {key for key in a_weights if a_weights[key] != b_weights[key]} == {"stair_potential_max"}
 
 
 def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> None:
@@ -146,9 +144,9 @@ def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> 
     tracker.reset(initial, {"zone": 1, "floor": 1})
 
     discovered = observation(x=0)
-    discovered["grid"][
-        GRID_SIZE // 2, GRID_SIZE // 2 + 2, GridChannel.TERRAIN_CLASS
-    ] = Terrain.STAIRS
+    discovered["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 2, GridChannel.TERRAIN_CLASS] = (
+        Terrain.STAIRS
+    )
     discovered["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 2, GridChannel.VISIBILITY] = 1
     reward, parts = tracker.score(
         discovered,
@@ -161,9 +159,7 @@ def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> 
     assert parts["stair_potential"] == pytest.approx(0.99 * 0.45)
 
     closer = observation(x=1)
-    closer["grid"][
-        GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS
-    ] = Terrain.STAIRS
+    closer["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
     closer["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.VISIBILITY] = 1
     toward, toward_parts = tracker.score(
         closer,
@@ -181,9 +177,7 @@ def test_stair_potential_rewards_progress_and_charges_exactly_for_reversal() -> 
     )
     assert toward_parts["stair_potential"] == pytest.approx(0.99 * 0.475 - 0.45)
     assert away_parts["stair_potential"] == pytest.approx(0.99 * 0.45 - 0.475)
-    assert toward + config.discount * away == pytest.approx(
-        -0.45 + config.discount**2 * 0.45
-    )
+    assert toward + config.discount * away == pytest.approx(-0.45 + config.discount**2 * 0.45)
 
 
 def test_floor_transition_resets_stair_potential_without_cross_floor_credit() -> None:

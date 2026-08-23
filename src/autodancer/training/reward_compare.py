@@ -95,10 +95,7 @@ def validate_training_run(run_dir: Path, source_model: dict[str, torch.Tensor]) 
         if line.strip()
     ]
     loss_values = [
-        float(row[name])
-        for row in metrics
-        for name in ("policy_loss", "value_loss")
-        if name in row
+        float(row[name]) for row in metrics for name in ("policy_loss", "value_loss") if name in row
     ]
     result = {
         "global_step": int(payload.get("global_step", 0)),
@@ -129,9 +126,7 @@ def compare_experiment(root: Path) -> dict[str, Any]:
     arms = []
     for arm in ("v4a", "v4b"):
         reports = [
-            json.loads(
-                (evaluation / f"{arm}-seed-{seed}.json").read_text(encoding="utf-8")
-            )
+            json.loads((evaluation / f"{arm}-seed-{seed}.json").read_text(encoding="utf-8"))
             for seed in (32001, 32002, 32003)
         ]
         arm_result = evaluate_arm(reference, reports, arm)
@@ -147,9 +142,9 @@ def compare_experiment(root: Path) -> dict[str, Any]:
             for result in training
         )
         arm_result["training"] = training
-        arm_result["criteria"]["training_valid"] = all(
-            result["valid"] for result in training
-        ) and metadata_valid
+        arm_result["criteria"]["training_valid"] = (
+            all(result["valid"] for result in training) and metadata_valid
+        )
         arm_result["passed"] = all(arm_result["criteria"].values())
         arms.append(arm_result)
     selected = choose_arm(reference, arms)

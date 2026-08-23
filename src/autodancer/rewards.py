@@ -14,9 +14,7 @@ from autodancer.constants import GridChannel, PlayerFeature, Terrain
 
 REWARD_PROFILE_VERSION = 4
 
-EXTRINSIC_COMPONENTS = frozenset(
-    {"floor_complete", "zone_complete", "victory", "death", "aborted"}
-)
+EXTRINSIC_COMPONENTS = frozenset({"floor_complete", "zone_complete", "victory", "death", "aborted"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,9 +160,7 @@ class RewardTracker:
     def _bounded_credit(requested: float, used: float, limit: float) -> float:
         return max(min(requested, max(limit - used, 0.0)), 0.0)
 
-    def reset(
-        self, observation: Mapping[str, np.ndarray], info: Mapping[str, Any]
-    ) -> None:
+    def reset(self, observation: Mapping[str, np.ndarray], info: Mapping[str, Any]) -> None:
         self.zone = int(info.get("zone") or 0)
         self.floor = int(info.get("floor") or 0)
         self.seen_tiles = self._revealed_tiles(observation, self.zone, self.floor)
@@ -276,9 +272,7 @@ class RewardTracker:
 
         return float(sum(components.values())), components
 
-    def _score_event(
-        self, event: Mapping[str, Any], components: dict[str, float]
-    ) -> None:
+    def _score_event(self, event: Mapping[str, Any], components: dict[str, float]) -> None:
         config = self.config
         kind = str(event.get("kind", ""))
         amount = max(int(event.get("amount", 0) or 0), 0)

@@ -5,7 +5,9 @@
 
 local Bridge = require "AutoDancer.scripts.Bridge"
 
+local Music = require "necro.audio.Music"
 local CurrentLevel = require "necro.game.level.CurrentLevel"
+local Action = require "necro.game.system.Action"
 local Map = require "necro.game.object.Map"
 local Player = require "necro.game.character.Player"
 local Tile = require "necro.game.tile.Tile"
@@ -14,13 +16,13 @@ local Entities = require "system.game.Entities"
 local Native = require "system.game.AutoDancerNative"
 
 local GRID_SIZE = 21
-local GRID_CHANNELS = 11
+local GRID_CHANNELS = 19
 local MAP_SIZE = 65
-local PLAYER_FEATURES = 16
-local INVENTORY_SLOTS = 8
-local INVENTORY_FEATURES = 4
+local PLAYER_FEATURES = 20
+local INVENTORY_SLOTS = 13
+local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
-local SCHEMA_VERSION = 6
+local SCHEMA_VERSION = 7
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -222,6 +224,28 @@ local function typeID(name)
     return #name > 0 and hash + 1 or 0
 end
 
+local function logicalDirection(direction)
+    if direction == Action.Direction.UP then
+        return 1
+    elseif direction == Action.Direction.RIGHT then
+        return 2
+    elseif direction == Action.Direction.DOWN then
+        return 3
+    elseif direction == Action.Direction.LEFT then
+        return 4
+    end
+    return 0
+end
+
+local function remainingStatusTurns(component)
+    if not component then
+        return 0
+    elseif component.permanent then
+        return 32767
+    end
+    return math.max(0, math.min(32767, component.remainingTurns or 0))
+end
+
 local function actorKind(entity)
     if not entity
         or not (hasComponent(entity, "character") and hasComponent(entity, "health"))
@@ -290,6 +314,13 @@ local function encodeInventoryItem(inventory, row, entityID)
     inventory[row][2] = typeID(item.name)
     inventory[row][3] = hasComponent(item, "itemStack") and item.itemStack.quantity or 1
     inventory[row][4] = hasComponent(item, "weapon") and item.weapon.damage or 0
+    inventory[row][5] = hasComponent(item, "itemHUDCooldown")
+        and math.max(0, item.itemHUDCooldown.remainingTurns or 0) or 0
+    inventory[row][6] = hasComponent(item, "spellCooldownKills")
+        and math.max(0, item.spellCooldownKills.remainingKills or 0) or 0
+    inventory[row][7] = inventory[row][5] == 0 and inventory[row][6] == 0 and 1 or 0
+    inventory[row][8] = hasComponent(item, "itemToggleable")
+        and item.itemToggleable.active and 1 or 0
 end
 
 local function encodeVisibleEntities(x, y, cell)
@@ -331,6 +362,29 @@ local function encodeVisibleEntities(x, y, cell)
             end
             if string.find(name, "bomblit", 1, true) then
                 cell[11] = 1
+            end
+            if hasComponent(entity, "facingDirection") then
+                cell[12] = logicalDirection(entity.facingDirection.direction)
+            end
+            if hasComponent(entity, "beatDelay") then
+                cell[13] = math.max(0, entity.beatDelay.counter or 0)
+                cell[14] = math.max(0, entity.beatDelay.interval or 0)
+            end
+            if hasComponent(entity, "freezable") then
+                cell[15] = remainingStatusTurns(entity.freezable)
+            end
+            if hasComponent(entity, "confusable") then
+                cell[16] = remainingStatusTurns(entity.confusable)
+            end
+            if hasComponent(entity, "charge") and entity.charge.active then
+                cell[17] = 1
+                cell[18] = logicalDirection(entity.charge.direction)
+            end
+            if hasComponent(entity, "shieldDirection") then
+                cell[19] = logicalDirection(entity.shieldDirection.direction)
+            elseif hasComponent(entity, "shieldDirectionFollowFacingDirection")
+                and hasComponent(entity, "facingDirection") then
+                cell[19] = logicalDirection(entity.facingDirection.direction)
             end
         end
     end
@@ -392,6 +446,8 @@ local function buildObservation()
         playerValues[2] = maxHealth
         playerValues[3] = hasComponent(player, "goldCounter")
             and player.goldCounter.amount or 0
+        playerValues[4] = hasComponent(player, "grooveChain")
+            and player.grooveChain.multiplier or 0
         playerValues[5] = player.position.x
         playerValues[6] = player.position.y
         playerValues[7] = CurrentLevel.getZone()
@@ -409,15 +465,26 @@ local function buildObservation()
         encodeInventoryItem(inventory, 6, slots.spell and slots.spell[2])
         encodeInventoryItem(inventory, 7, slots.bomb and slots.bomb[1])
         encodeInventoryItem(inventory, 8, slots.misc and slots.misc[1])
+        encodeInventoryItem(inventory, 9, slots.body and slots.body[1])
+        encodeInventoryItem(inventory, 10, slots.head and slots.head[1])
+        encodeInventoryItem(inventory, 11, slots.feet and slots.feet[1])
+        encodeInventoryItem(inventory, 12, slots.torch and slots.torch[1])
+        encodeInventoryItem(inventory, 13, slots.ring and slots.ring[1])
 
         playerValues[10] = inventory[7][3]
         playerValues[11] = inventory[1][4]
         mask[6] = inventory[7][1] ~= 0 and 1 or 0
-        mask[7] = inventory[2][1] ~= 0 and 1 or 0
-        mask[8] = inventory[3][1] ~= 0 and 1 or 0
+        mask[7] = inventory[2][1] ~= 0 and inventory[2][7] or 0
+        mask[8] = inventory[3][1] ~= 0 and inventory[3][7] or 0
         mask[9] = inventory[1][1] ~= 0 and 1 or 0
-        mask[10] = inventory[5][1] ~= 0 and 1 or 0
-        mask[11] = inventory[6][1] ~= 0 and 1 or 0
+        mask[10] = inventory[5][1] ~= 0 and inventory[5][7] or 0
+        mask[11] = inventory[6][1] ~= 0 and inventory[6][7] or 0
+        local musicTime = math.max(Music.getMusicTime() or 0, 0)
+        local musicLength = math.max(Music.getMusicLength() or 0, 0)
+        playerValues[17] = math.floor(musicTime * 10 + 0.5)
+        playerValues[18] = math.floor(musicLength * 10 + 0.5)
+        playerValues[19] = math.floor(math.max(musicLength - musicTime, 0) * 10 + 0.5)
+        playerValues[20] = Music.isSongEndReached() and 1 or 0
         result.revealed_map = buildRevealedMap(player)
     end
 

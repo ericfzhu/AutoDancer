@@ -47,13 +47,9 @@ def run_episode(
         observation, _, terminated, truncated, info = environment.step(action)
         steps += 1
 
-    completed = (
-        info.get("episode_status") == "won"
-        or any(
-            event.get("kind") == "success"
-            and event.get("data", {}).get("task_complete", False)
-            for event in info.get("raw_events", [])
-        )
+    completed = info.get("episode_status") == "won" or any(
+        event.get("kind") == "success" and event.get("data", {}).get("task_complete", False)
+        for event in info.get("raw_events", [])
     )
     return EpisodeResult(
         seed=int(info.get("seed") if info.get("seed") is not None else seed),
