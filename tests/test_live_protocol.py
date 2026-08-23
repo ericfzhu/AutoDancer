@@ -79,7 +79,7 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 7,
+        "schema_version": 8,
         "instance_id": "worker-0000",
         "role": "worker",
         "run_id": run_id,
@@ -121,7 +121,7 @@ def record(
     }
 
 
-def test_native_pipe_source_accepts_large_schema7_records_without_log_markers() -> None:
+def test_native_pipe_source_accepts_large_schema8_records_without_log_markers() -> None:
     reset = record(0, "reset")
     turn = record(1, "turn", requested_action=Action.UP)
     encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
@@ -235,6 +235,11 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
         validate_record(payload)
 
     payload = record(0, "reset")
+    payload["observation"]["grid"][10][10][GridChannel.INTERACTION_FLAGS] = 32
+    with pytest.raises(ProtocolError, match="interaction_flags"):
+        validate_record(payload)
+
+    payload = record(0, "reset")
     payload["observation"]["inventory"][0][6] = 2
     with pytest.raises(ProtocolError, match="ready/active"):
         validate_record(payload)
@@ -289,7 +294,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 7
+    assert info["protocol_schema_version"] == 8
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.01)

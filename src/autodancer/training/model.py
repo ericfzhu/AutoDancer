@@ -1,4 +1,4 @@
-"""Schema-7 recurrent actor-critic with player-visible tactical state."""
+"""Schema-8 recurrent actor-critic with player-visible tactical state."""
 
 from __future__ import annotations
 
@@ -18,11 +18,12 @@ from autodancer.constants import (
     GridChannel,
     ItemKind,
     MapChannel,
+    ObjectKind,
     Terrain,
     TrapKind,
 )
 
-ARCHITECTURE_VERSION = 4
+ARCHITECTURE_VERSION = 5
 START_ACTION = ACTION_COUNT
 
 
@@ -91,7 +92,11 @@ class RecurrentActorCritic(nn.Module):
             self.facing = nn.Embedding(5, 4)
             self.charge_direction = nn.Embedding(5, 4)
             self.shield_direction = nn.Embedding(5, 4)
-        cell_features = 68 if self.legacy_v2 else 86
+            self.object_class = nn.Embedding(len(ObjectKind), 6)
+            self.object_type = nn.Embedding(TYPE_VOCAB_SIZE, 12)
+            self.interaction_flags = nn.Embedding(32, 6)
+            self.price_currency = nn.Embedding(TYPE_VOCAB_SIZE, 6)
+        cell_features = 68 if self.legacy_v2 else 122
         self.cell_projection = nn.Sequential(
             nn.Linear(cell_features, width), nn.LayerNorm(width), nn.SiLU()
         )
@@ -258,6 +263,25 @@ class RecurrentActorCritic(nn.Module):
                     tactical_numeric,
                     self.charge_direction(self._bounded(grid, GridChannel.CHARGE_DIRECTION, 5)),
                     self.shield_direction(self._bounded(grid, GridChannel.SHIELD_DIRECTION, 5)),
+                    self.object_class(
+                        self._bounded(grid, GridChannel.OBJECT_CLASS, len(ObjectKind))
+                    ),
+                    self.object_type(self._bounded(grid, GridChannel.OBJECT_TYPE, TYPE_VOCAB_SIZE)),
+                    self.interaction_flags(self._bounded(grid, GridChannel.INTERACTION_FLAGS, 32)),
+                    self.price_currency(
+                        self._bounded(grid, GridChannel.PRICE_CURRENCY, TYPE_VOCAB_SIZE)
+                    ),
+                    torch.stack(
+                        (
+                            self._scale(grid[..., int(GridChannel.PRICE_AMOUNT)]),
+                            self._scale(grid[..., int(GridChannel.PRICE_HEALTH_BP)]),
+                            self._scale(grid[..., int(GridChannel.TRAP_ACTIVATION_DS)]),
+                            self._scale(grid[..., int(GridChannel.TRAP_FAILURE_DS)]),
+                            self._scale(grid[..., int(GridChannel.TELL_ANIMATION_DS)]),
+                            grid[..., int(GridChannel.EXPLOSIVE)].float(),
+                        ),
+                        dim=-1,
+                    ),
                 )
             )
         return self.cell_projection(torch.cat(features, dim=-1))
@@ -269,7 +293,10 @@ class RecurrentActorCritic(nn.Module):
             | (grid[..., int(GridChannel.ITEM_CLASS)] != 0)
             | (grid[..., int(GridChannel.TRAP)] != 0)
             | (grid[..., int(GridChannel.TERRAIN_CLASS)] == int(Terrain.STAIRS))
-        ).flatten(1)
+        )
+        if not self.legacy_v2:
+            salient = salient | (grid[..., int(GridChannel.OBJECT_CLASS)] != 0)
+        salient = salient.flatten(1)
         # The player occupies the centre in live observations. Keeping that token also
         # makes empty synthetic observations well-defined instead of all-padding attention.
         salient = salient.clone()

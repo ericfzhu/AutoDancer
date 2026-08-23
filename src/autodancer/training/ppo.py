@@ -198,7 +198,7 @@ class RecurrentPPO:
         payload = torch.load(Path(path), map_location=self.device, weights_only=False)
         if payload.get("architecture") != self.model.architecture_spec():
             raise ValueError(
-                "Checkpoint model architecture is incompatible with the schema-7 policy"
+                "Checkpoint model architecture is incompatible with the schema-8 policy"
             )
         saved_metadata = dict(payload.get("checkpoint_metadata", {}))
         if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
@@ -224,16 +224,23 @@ class RecurrentPPO:
         source_spec = payload.get("architecture")
         target_spec = self.model.architecture_spec()
         exact_architecture = source_spec == target_spec
-        sensory_upgrade = (
+        v2_upgrade = (
             isinstance(source_spec, dict)
             and source_spec.get("version") == 2
-            and target_spec.get("version") == 4
+            and target_spec.get("version") == 5
             and source_spec.get("config")
             == {key: value for key, value in target_spec["config"].items() if key != "map_size"}
         )
+        v4_upgrade = (
+            isinstance(source_spec, dict)
+            and source_spec.get("version") == 4
+            and target_spec.get("version") == 5
+            and source_spec.get("config") == target_spec.get("config")
+        )
+        sensory_upgrade = v2_upgrade or v4_upgrade
         if not exact_architecture and not sensory_upgrade:
             raise ValueError(
-                "Initialization checkpoint architecture is incompatible with the schema-7 policy"
+                "Initialization checkpoint architecture is incompatible with the schema-8 policy"
             )
         source = dict(payload["model"])
         target = self.model.state_dict()
@@ -245,9 +252,8 @@ class RecurrentPPO:
             and target[name].shape == value.shape
         }
         if sensory_upgrade:
-            # Retain every compatible portion of V2's input representation while
-            # leaving the newly added map, tactical cues, slots, and HUD fields at
-            # their Architecture-4 initialization.
+            # Retain every compatible portion of the source representation while
+            # leaving newly added observations at their Architecture-5 initialization.
             for name in (
                 "cell_projection.0.weight",
                 "player_encoder.0.weight",
@@ -266,7 +272,17 @@ class RecurrentPPO:
             name
             for name in target
             if name.startswith(
-                ("critic.", "map_", "facing.", "charge_direction.", "shield_direction.")
+                (
+                    "critic.",
+                    "map_",
+                    "facing.",
+                    "charge_direction.",
+                    "shield_direction.",
+                    "object_class.",
+                    "object_type.",
+                    "interaction_flags.",
+                    "price_currency.",
+                )
             )
             or name == "fusion.0.weight"
         }
@@ -284,7 +300,13 @@ class RecurrentPPO:
             "global_step": int(payload.get("global_step", 0)),
             "updates": int(payload.get("updates", 0)),
             "reward": payload.get("checkpoint_metadata", {}).get("reward"),
-            "architecture_upgrade": "v2_to_v4_map_sensory" if sensory_upgrade else None,
+            "architecture_upgrade": (
+                "v2_to_v5_player_parity"
+                if v2_upgrade
+                else "v4_to_v5_interactions"
+                if v4_upgrade
+                else None
+            ),
         }
         self.checkpoint_metadata["initialization"] = provenance
         return provenance

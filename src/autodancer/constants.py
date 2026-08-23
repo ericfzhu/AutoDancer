@@ -3,7 +3,7 @@
 from enum import IntEnum
 
 GRID_SIZE = 21
-GRID_CHANNELS = 19
+GRID_CHANNELS = 29
 MAP_SIZE = 65
 MAP_CHANNELS = 5
 PLAYER_FEATURES = 20
@@ -50,6 +50,33 @@ class GridChannel(IntEnum):
     CHARGE_STATE = 16
     CHARGE_DIRECTION = 17
     SHIELD_DIRECTION = 18
+    OBJECT_CLASS = 19
+    OBJECT_TYPE = 20
+    INTERACTION_FLAGS = 21
+    PRICE_CURRENCY = 22
+    PRICE_AMOUNT = 23
+    PRICE_HEALTH_BP = 24
+    TRAP_ACTIVATION_DS = 25
+    TRAP_FAILURE_DS = 26
+    TELL_ANIMATION_DS = 27
+    EXPLOSIVE = 28
+
+
+class ObjectKind(IntEnum):
+    NONE = 0
+    CONTAINER = 1
+    SHRINE = 2
+    PRICE_TAG = 3
+    SHOPKEEPER = 4
+    INTERACTABLE = 5
+
+
+class InteractionFlag(IntEnum):
+    INTERACTABLE = 1
+    LOCKED = 2
+    SHRINE_ACTIVE = 4
+    SALE_ACTIVE = 8
+    SHOPLIFTABLE = 16
 
 
 class MapChannel(IntEnum):

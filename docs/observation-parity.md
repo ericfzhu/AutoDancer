@@ -7,7 +7,7 @@ outcomes matter.
 
 ## Current parity
 
-Schema 7 provides a persistent 65×65 current-floor memory anchored at Bard's spawn.
+Schema 8 provides a persistent 65×65 current-floor memory anchored at Bard's spawn.
 It combines the game's revealed terrain with Bard's position, visit count, and
 visit recency. Dynamic enemies and items disappear when they leave sight, so
 the map cannot become a hidden-state oracle. A periodic Lua snapshot also
@@ -18,24 +18,26 @@ This approximates what the HUD minimap and ordinary human spatial memory make
 available. The reward tracker still owns its independent exact novelty sets;
 those sets prevent reward farming but are not exposed directly.
 
-Schema 7 also closes the three highest-priority gaps from the previous audit:
+Schema 8 retains the three highest-priority additions from Schema 7:
 visible enemy facing/timing/status/attack cues; all thirteen HUD equipment
 slots with cooldown and readiness state; and the visible song deadline. It
 exports raw cues only, never hidden enemy targets or pathfinding state.
 
+It also encodes visible explosives and trap/tell animation timing, plus chest,
+shrine, shopkeeper, sale, lock, shoplifting, currency-price, and health-price
+state. Affordability is not precomputed: the policy can compare displayed cost
+with its visible health and gold. Hidden container and shrine contents remain
+excluded.
+
 ## Remaining disadvantages, in priority order
 
-1. **Bomb and trap timing.** Bomb fuse state and stateful trap phase are not
-   represented completely even when visible.
-2. **Economy and interaction context.** Shop prices, shrine identity/state,
-   chest locks, and other visible interaction costs are only partially encoded
-   through hashed types.
-3. **Multiple objects on one cell.** The fixed grid keeps one actor and one item
-   summary per cell. Overlapping visible objects can therefore be lost.
-4. **Map extent.** Standard Bard All Zones is represented on a spawn-centred
+1. **Multiple objects on one cell.** The fixed grid keeps one actor, one item,
+   and one prioritized object summary per cell. Overlapping visible objects can
+   therefore be lost.
+2. **Map extent.** Standard Bard All Zones is represented on a spawn-centred
    65×65 canvas. Live validation must detect clipping before supporting unusual
    level-generation mods or larger custom levels.
-5. **Audio-only cues.** Any gameplay-relevant cue that has no symbolic visual
+3. **Audio-only cues.** Any gameplay-relevant cue that has no symbolic visual
    equivalent must be identified and exported as state rather than raw audio.
 
 ## Design rule

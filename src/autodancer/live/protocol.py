@@ -22,6 +22,7 @@ from autodancer.constants import (
     ActorKind,
     GridChannel,
     ItemKind,
+    ObjectKind,
     PlayerFeature,
     StatusFlag,
     Terrain,
@@ -29,7 +30,7 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
@@ -134,6 +135,16 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         GridChannel.CHARGE_STATE: (0, 1),
         GridChannel.CHARGE_DIRECTION: (0, 4),
         GridChannel.SHIELD_DIRECTION: (0, 4),
+        GridChannel.OBJECT_CLASS: (0, len(ObjectKind) - 1),
+        GridChannel.OBJECT_TYPE: (0, 4095),
+        GridChannel.INTERACTION_FLAGS: (0, 31),
+        GridChannel.PRICE_CURRENCY: (0, 4095),
+        GridChannel.PRICE_AMOUNT: (0, 32767),
+        GridChannel.PRICE_HEALTH_BP: (0, 32767),
+        GridChannel.TRAP_ACTIVATION_DS: (0, 32767),
+        GridChannel.TRAP_FAILURE_DS: (0, 32767),
+        GridChannel.TELL_ANIMATION_DS: (0, 32767),
+        GridChannel.EXPLOSIVE: (0, 1),
     }
     for channel, (low, high) in channel_ranges.items():
         values = grid[..., int(channel)]
@@ -448,7 +459,7 @@ class JsonlTurnSource(_SequenceTracker):
 
 
 class NativePipeTurnSource(_SequenceTracker):
-    """Read schema-7 JSON messages directly from a worker's duplex pipe."""
+    """Read schema-8 JSON messages directly from a worker's duplex pipe."""
 
     def __init__(self, receiver: MessageReceiver) -> None:
         super().__init__()

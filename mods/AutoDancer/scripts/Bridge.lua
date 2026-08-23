@@ -17,7 +17,7 @@ local Native = require "system.game.AutoDancerNative"
 
 local Bridge = {}
 
-local SCHEMA_VERSION = 7
+local SCHEMA_VERSION = 8
 local GAME_VERSION = "v4.2.1-b5713"
 local STEAM_BUILD = "22938426"
 local MAX_COMMAND_BYTES = 512

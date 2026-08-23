@@ -6,6 +6,7 @@
 local Bridge = require "AutoDancer.scripts.Bridge"
 
 local Music = require "necro.audio.Music"
+local AnimationTimer = require "necro.render.AnimationTimer"
 local CurrentLevel = require "necro.game.level.CurrentLevel"
 local Action = require "necro.game.system.Action"
 local Map = require "necro.game.object.Map"
@@ -16,13 +17,13 @@ local Entities = require "system.game.Entities"
 local Native = require "system.game.AutoDancerNative"
 
 local GRID_SIZE = 21
-local GRID_CHANNELS = 19
+local GRID_CHANNELS = 29
 local MAP_SIZE = 65
 local PLAYER_FEATURES = 20
 local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
-local SCHEMA_VERSION = 7
+local SCHEMA_VERSION = 8
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -246,6 +247,32 @@ local function remainingStatusTurns(component)
     return math.max(0, math.min(32767, component.remainingTurns or 0))
 end
 
+local function addFlag(value, flag)
+    if math.floor(value / flag) % 2 == 0 then
+        return value + flag
+    end
+    return value
+end
+
+local objectPriority = { [1] = 5, [2] = 5, [3] = 1, [4] = 4, [5] = 2 }
+
+local function setVisibleObject(cell, kind, entity)
+    local current = cell[20]
+    if current == 0 or (objectPriority[kind] or 0) > (objectPriority[current] or 0) then
+        cell[20] = kind
+        cell[21] = typeID(entity.name)
+    end
+end
+
+local function animationDeciseconds(entity, component, animationName)
+    if not hasComponent(entity, component)
+        or not AnimationTimer.isPlayingInTurn(entity.id, animationName) then
+        return 0
+    end
+    local elapsed = AnimationTimer.getTime(entity.id, animationName) or 0
+    return math.max(0, math.min(32767, math.floor(elapsed * 10 + 0.5)))
+end
+
 local function actorKind(entity)
     if not entity
         or not (hasComponent(entity, "character") and hasComponent(entity, "health"))
@@ -385,6 +412,50 @@ local function encodeVisibleEntities(x, y, cell)
             elseif hasComponent(entity, "shieldDirectionFollowFacingDirection")
                 and hasComponent(entity, "facingDirection") then
                 cell[19] = logicalDirection(entity.facingDirection.direction)
+            end
+            if hasComponent(entity, "chestLike") then
+                setVisibleObject(cell, 1, entity)
+            elseif hasComponent(entity, "shrine") then
+                setVisibleObject(cell, 2, entity)
+            elseif hasComponent(entity, "shopkeeper") then
+                setVisibleObject(cell, 4, entity)
+            elseif hasComponent(entity, "interactable") then
+                setVisibleObject(cell, 5, entity)
+            elseif hasComponent(entity, "priceTag") then
+                setVisibleObject(cell, 3, entity)
+            end
+            if hasComponent(entity, "interactable") and entity.interactable.active ~= false then
+                cell[22] = addFlag(cell[22], 1)
+            end
+            if hasComponent(entity, "interactableConsumeKey") then
+                cell[22] = addFlag(cell[22], 2)
+            end
+            if hasComponent(entity, "shrine") and entity.shrine.active then
+                cell[22] = addFlag(cell[22], 4)
+            end
+            if hasComponent(entity, "sale") and entity.sale.active ~= false then
+                cell[22] = addFlag(cell[22], 8)
+            end
+            if hasComponent(entity, "priceTagShopliftable") then
+                cell[22] = addFlag(cell[22], 16)
+            end
+            if hasComponent(entity, "priceTagCostCurrency") then
+                cell[23] = typeID(tostring(entity.priceTagCostCurrency.currency or "gold"))
+                cell[24] = math.max(0, math.min(32767,
+                    math.floor((entity.priceTagCostCurrency.cost or 0) + 0.5)))
+            end
+            if hasComponent(entity, "priceTagCostHealth") then
+                cell[25] = math.max(0, math.min(32767,
+                    math.floor((entity.priceTagCostHealth.costMultiplier or 0) * 10000 + 0.5)))
+            end
+            cell[26] = math.max(cell[26],
+                animationDeciseconds(entity, "trapActivationAnimation", "trapActivationAnimation"))
+            cell[27] = math.max(cell[27],
+                animationDeciseconds(entity, "trapFailAnimation", "trapFailAnimation"))
+            cell[28] = math.max(cell[28],
+                animationDeciseconds(entity, "tellAnimation", "tellAnimation"))
+            if hasComponent(entity, "explosive") then
+                cell[29] = 1
             end
         end
     end

@@ -104,6 +104,9 @@ def test_policy_encoding_uses_visible_tactical_and_hud_state() -> None:
     changed = {key: value.clone() for key, value in base.items()}
     changed["grid"][0, 10, 11, int(GridChannel.FACING)] = 2
     changed["grid"][0, 10, 11, int(GridChannel.BEAT_INTERVAL)] = 3
+    changed["grid"][0, 10, 11, int(GridChannel.OBJECT_CLASS)] = 2
+    changed["grid"][0, 10, 11, int(GridChannel.INTERACTION_FLAGS)] = 5
+    changed["grid"][0, 10, 11, int(GridChannel.PRICE_AMOUNT)] = 50
     changed["inventory"][0, 8, 0] = 1
     changed["inventory"][0, 8, 6] = 1
     changed["player"][0, 18] = 300
@@ -210,7 +213,47 @@ def test_architecture_two_checkpoint_can_partially_initialize_map_policy(
     assert torch.equal(target.map_terrain.weight, map_before)
     assert torch.equal(target.facing.weight, facing_before)
     assert torch.equal(target.cell_projection[0].weight[:, :68], source.cell_projection[0].weight)
-    assert provenance["architecture_upgrade"] == "v2_to_v4_map_sensory"
+    assert provenance["architecture_upgrade"] == "v2_to_v5_player_parity"
+
+
+def test_architecture_four_checkpoint_can_initialize_interaction_policy(
+    tmp_path: Path,
+) -> None:
+    source = small_model()
+    source_state = {
+        name: value.clone()
+        for name, value in source.state_dict().items()
+        if not name.startswith(
+            ("object_class.", "object_type.", "interaction_flags.", "price_currency.")
+        )
+    }
+    source_state["cell_projection.0.weight"] = source_state["cell_projection.0.weight"][:, :86]
+    source_spec = source.architecture_spec()
+    source_spec["version"] = 4
+    path = tmp_path / "architecture-4.pt"
+    torch.save(
+        {
+            "model": source_state,
+            "architecture": source_spec,
+            "global_step": 1,
+            "updates": 1,
+        },
+        path,
+    )
+
+    target = small_model()
+    object_before = target.object_class.weight.detach().clone()
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_from(path)
+    assert torch.equal(target.object_class.weight, object_before)
+    assert torch.equal(
+        target.cell_projection[0].weight[:, :86], source_state["cell_projection.0.weight"]
+    )
+    assert provenance["architecture_upgrade"] == "v4_to_v5_interactions"
 
 
 def test_warm_started_checkpoint_resumes_with_provenance_and_rejects_other_arm(
