@@ -474,7 +474,9 @@ local function encodeVisibleEntities(x, y, cell)
             if hasComponent(entity, "shrine") and entity.shrine.active then
                 cell[22] = addFlag(cell[22], 4)
             end
-            if hasComponent(entity, "sale") and entity.sale.active ~= false then
+            -- `sale` is a marker component on the supported game build; unlike
+            -- `interactable`, it does not define an `active` field.
+            if hasComponent(entity, "sale") then
                 cell[22] = addFlag(cell[22], 8)
             end
             if hasComponent(entity, "priceTagShopliftable") then
