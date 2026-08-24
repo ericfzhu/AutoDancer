@@ -6,6 +6,7 @@ __pycache__/
 .hypothesis/
 .ruff_cache/
 .runtime/
+.agents/
 .audit-tmp/
 build/
 dist/
