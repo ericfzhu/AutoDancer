@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "system-atlas": {
+      "source": "inkboard/system-atlas",
+      "sourceType": "github",
+      "skillPath": "skills/system-atlas/SKILL.md",
+      "computedHash": "5e902e92f54002859913bc434f95f26c9791081eb288d41865f5fb381c7d9eb6"
+    }
+  }
+}
