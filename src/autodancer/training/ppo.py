@@ -222,9 +222,12 @@ class RecurrentPPO:
         self.updates = int(payload["updates"])
         random.setstate(payload["python_rng"])
         np.random.set_state(payload["numpy_rng"])
-        torch.set_rng_state(payload["torch_rng"])
+        # Checkpoints loaded directly onto CUDA also move ByteTensor RNG states.
+        # PyTorch's RNG restoration APIs require CPU byte tensors even when the
+        # model and optimizer live on the GPU.
+        torch.set_rng_state(payload["torch_rng"].cpu())
         if torch.cuda.is_available() and payload.get("cuda_rng") is not None:
-            torch.cuda.set_rng_state_all(payload["cuda_rng"])
+            torch.cuda.set_rng_state_all([state.cpu() for state in payload["cuda_rng"]])
         return dict(payload.get("metrics", {}))
 
     def initialize_from(self, path: str | Path) -> dict[str, Any]:

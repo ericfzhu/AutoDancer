@@ -611,3 +611,40 @@ def test_ppo_updates_parameters_and_checkpoint_resumes_exactly(tmp_path: Path) -
     assert actual_random == expected_random
     for name, value in algorithm.model.state_dict().items():
         assert torch.equal(value, restored.model.state_dict()[name])
+
+
+def test_checkpoint_rng_states_are_moved_back_to_cpu_before_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    checkpoint = tmp_path / "checkpoint.pt"
+    RecurrentPPO(small_model(), config, device=torch.device("cpu")).save(checkpoint)
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    restored_states: dict[str, object] = {}
+
+    class DeviceState:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def cpu(self) -> str:
+            return f"{self.name}-cpu"
+
+    payload["torch_rng"] = DeviceState("torch")
+    payload["cuda_rng"] = [DeviceState("cuda-0"), DeviceState("cuda-1")]
+    monkeypatch.setattr("autodancer.training.ppo.torch.load", lambda *args, **kwargs: payload)
+    monkeypatch.setattr(
+        "autodancer.training.ppo.torch.set_rng_state",
+        lambda state: restored_states.__setitem__("torch", state),
+    )
+    monkeypatch.setattr("autodancer.training.ppo.torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr(
+        "autodancer.training.ppo.torch.cuda.set_rng_state_all",
+        lambda states: restored_states.__setitem__("cuda", states),
+    )
+
+    RecurrentPPO(small_model(), config, device=torch.device("cpu")).load(checkpoint)
+
+    assert restored_states == {
+        "torch": "torch-cpu",
+        "cuda": ["cuda-0-cpu", "cuda-1-cpu"],
+    }
