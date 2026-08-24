@@ -86,11 +86,13 @@ not a hidden shop location. All values are range-checked before entering the
 policy.
 
 Schema 9 carries absolute `observation.map_bounds` and may additionally carry
-`observation.revealed_map`, a `65 × 65`
-terrain snapshot anchored at the floor's spawn position. Lua emits it
+`observation.revealed_map`, a raw `65 × 65` terrain snapshot anchored at the
+floor's spawn position. Lua emits it
 periodically and immediately while the Map item is held. Zero is unknown;
 non-zero cells are terrain the game has actually marked revealed. Python
 combines these snapshots with the local visibility grid and Bard's own path
-into the derived `map_memory` policy input. If the level bounds or an observed
-position cannot fit in that canvas, collection fails with a map-capacity error
-instead of silently clipping state or restarting workers.
+into an absolute-coordinate history, then renders the derived `map_memory`
+policy input as a `65 × 65` viewport centred on Bard. If the full level bounds
+exceed that supported capacity, collection fails with a map-capacity error
+instead of silently clipping state or restarting workers. Distance travelled
+from the spawn does not consume additional capacity.

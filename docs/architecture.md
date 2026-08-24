@@ -17,8 +17,9 @@ such as enemy variants and equipment types.
 The policy processes that representation in parallel:
 
 - a residual CNN preserves local geometry and produces a global spatial view;
-- a separate CNN reads a persistent 65×65 floor map anchored at the spawn,
-  including revealed terrain, Bard's position, visit counts, and visit recency;
+- a separate CNN reads a player-centred 65×65 viewport over persistent
+  absolute-coordinate floor memory, including revealed terrain, Bard's
+  position, visit counts, and visit recency;
 - a two-layer attention encoder reads up to 64 salient actor, item, trap, stair,
   and player tokens with explicit row and column positions;
 - a slot-aware attention encoder reads all thirteen HUD inventory slots,
