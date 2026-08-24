@@ -70,7 +70,7 @@ def record(
     truncated = status == "aborted"
     mask = np.zeros(11, dtype=int)
     if status == "running":
-        mask[:4] = 1
+        mask[:5] = 1
     player = np.zeros(PLAYER_FEATURES, dtype=int)
     player[PlayerFeature.HEALTH] = 6
     player[PlayerFeature.MAX_HEALTH] = 6
@@ -203,7 +203,7 @@ def test_terminal_record_may_mask_every_action() -> None:
     validate_record(record(3, "terminal", status="won"))
     payload = record(0, "reset")
     payload["observation"]["action_mask"] = [0] * 11
-    with pytest.raises(ProtocolError, match="cannot mask every action"):
+    with pytest.raises(ProtocolError, match="directions and WAIT"):
         validate_record(payload)
 
 

@@ -31,6 +31,12 @@ ACTION <session_id> <command_id> <logical_action>
 Logical actions are integers `0..10`. Process creation and replacement are
 owned by the Python supervisor; the coordinator never controls the game UI.
 
+The logical action order is `up`, `right`, `down`, `left`, `wait`, `bomb`,
+`item 1`, `item 2`, `throw`, `spell 1`, and `spell 2`. In a running Bard
+record, the four directions and wait must always be enabled. Each remaining
+mask bit must exactly match the corresponding inventory slot and cooldown
+state; Python rejects the complete record if it does not.
+
 ## Transition acknowledgement
 
 An action-driven transition echoes:
@@ -54,7 +60,9 @@ An action-driven transition echoes:
 A reset record acknowledges `kind`, session, command ID, and seed. Python also
 requires its top-level seed to match. It rejects stale sessions, duplicate or
 out-of-order acknowledgements, unexpected run-ID changes, malformed records,
-and records belonging to another worker.
+and records belonging to another worker. For an action, `observed_action` is
+mandatory and must equal `engine_action`; an echoed request without an engine
+observation is not considered proof that the action occurred.
 
 ## Symbolic observation
 

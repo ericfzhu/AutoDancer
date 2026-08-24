@@ -74,6 +74,25 @@ uv run autodancer-benchmark `
 The benchmark reports throughput, latency percentiles, process memory/CPU use,
 restarts, and the recommended tested worker count.
 
+Run the fixed-seed live mechanic diagnostic before changing rewards or policy
+architecture:
+
+```powershell
+uv run autodancer-diagnose `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --seeds "46001,46002,46003" `
+  --max-steps 1000 `
+  --output ".\runs\mechanic-diagnostics\report.json"
+```
+
+The diagnostic verifies the logical-to-engine mapping and acknowledgement path,
+checks the legal mask against the actual inventory, and classifies real-engine
+outcomes as movement, waiting, combat, interaction, digging, wall attempts,
+unchanged directions, and floor transitions. It then searches the fixed seeded
+runs for reproducible evidence of combat, items, stairs, and returning to a
+visited position. Missing scenarios are reported as unobserved rather than
+silently treated as passes.
+
 Establish a reproducible gameplay baseline by comparing a checkpoint's
 deterministic policy with a masked-random policy on the same explicit seeds:
 

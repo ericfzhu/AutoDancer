@@ -515,6 +515,9 @@ local function buildObservation()
     for index = 1, 4 do
         mask[index] = 1
     end
+    -- Bard can always consume a beat without moving. This is logical action 4
+    -- (Lua array index 5) and must remain available independently of inventory.
+    mask[5] = 1
 
     if player and player.position then
         ensureMapOrigin(player)

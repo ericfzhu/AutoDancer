@@ -28,6 +28,7 @@ from autodancer.live.protocol import (
 )
 from autodancer.memory import FloorMapMemory
 from autodancer.observation import observation_space
+from autodancer.outcomes import classify_action_outcome
 from autodancer.rewards import RewardConfig, RewardTracker
 
 
@@ -133,6 +134,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         ):
             raise ValueError(f"Action {selected.name} is masked in the current live state")
 
+        previous_observation = self._last_observation
         command = bridge.send_action(selected)
         record = source.read(self.turn_timeout)
         validate_record(record)
@@ -153,6 +155,10 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             info["episode_status"] = status
             info["client_turn_limit"] = self.max_turns
         info["raw_events"] = events
+        if previous_observation is not None:
+            info["action_outcome"] = classify_action_outcome(
+                previous_observation, observation, selected, info
+            ).as_dict()
         info["completed"] = int(status == "won")
         info["deaths"] = int(status == "dead")
         info["turns"] = self._episode_steps
@@ -184,6 +190,12 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if command.kind == "ACTION":
             received.append(acknowledgement.get("requested_action"))
             expected.append(None if command.action is None else int(command.action))
+            engine_action = acknowledgement.get("engine_action")
+            observed_action = acknowledgement.get("observed_action")
+            if engine_action is None or observed_action != engine_action:
+                raise ProtocolError(
+                    "Lua acknowledgement did not observe the injected engine action"
+                )
         elif command.kind == "RESET":
             received.append(acknowledgement.get("seed"))
             expected.append(command.seed)

@@ -317,8 +317,26 @@ def validate_record(record: Mapping[str, Any]) -> None:
     observation = decode_observation(record.get("observation", {}))
     decode_revealed_map(record.get("observation", {}).get("revealed_map"))
     decode_map_bounds(record.get("observation", {}).get("map_bounds"))
-    if status == "running" and not np.any(observation["action_mask"]):
-        raise ProtocolError("A running record cannot mask every action")
+    if status == "running":
+        mask = observation["action_mask"]
+        if not np.all(mask[:5] == 1):
+            raise ProtocolError("Running Bard records must enable four directions and WAIT")
+        inventory = observation["inventory"]
+        expected_specials = np.asarray(
+            [
+                inventory[6, 0] != 0,
+                inventory[1, 0] != 0 and inventory[1, 6] != 0,
+                inventory[2, 0] != 0 and inventory[2, 6] != 0,
+                inventory[0, 0] != 0,
+                inventory[4, 0] != 0 and inventory[4, 6] != 0,
+                inventory[5, 0] != 0 and inventory[5, 6] != 0,
+            ],
+            dtype=np.int8,
+        )
+        if not np.array_equal(mask[5:], expected_specials):
+            raise ProtocolError(
+                "Running Bard special-action mask does not match inventory availability"
+            )
     _validate_events(record.get("events", []))
     metrics = record.get("metrics", {})
     if not isinstance(metrics, Mapping):
@@ -339,9 +357,14 @@ def validate_record(record: Mapping[str, Any]) -> None:
             )
             if requested >= ACTION_COUNT:
                 raise ProtocolError(f"bridge requested_action must be below {ACTION_COUNT}")
-            _integer(bridge.get("engine_action"), "bridge engine_action", minimum=0)
-            if bridge.get("observed_action") is not None:
-                _integer(bridge["observed_action"], "bridge observed_action", minimum=0)
+            engine_action = _integer(
+                bridge.get("engine_action"), "bridge engine_action", minimum=0
+            )
+            observed_action = _integer(
+                bridge.get("observed_action"), "bridge observed_action", minimum=0
+            )
+            if observed_action != engine_action:
+                raise ProtocolError("Bridge observed action does not match injected engine action")
         elif bridge_kind == "RESET":
             _integer(bridge.get("seed"), "bridge seed", minimum=0)
         else:

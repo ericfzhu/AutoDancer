@@ -33,6 +33,7 @@ autodancer-live-smoke = "autodancer.live.smoke:main"
 autodancer-train = "autodancer.training.train:main"
 autodancer-baseline = "autodancer.training.baseline:main"
 autodancer-benchmark = "autodancer.training.benchmark:main"
+autodancer-diagnose = "autodancer.live.diagnose:main"
 autodancer-reward-compare = "autodancer.training.reward_compare:main"
 
 [tool.hatch.build.targets.wheel]
