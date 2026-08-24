@@ -107,6 +107,18 @@ The report separates unsupported, inactive, merely trace, and material input
 paths. See `docs/representation-diagnostics.md` for the controlled
 counterfactual, gradient test, and the measured A7 results.
 
+Run the recoverable Architecture 8 controlled-learning experiment with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run-architecture8-controls.ps1
+```
+
+The launcher compares unchanged A2 fine-tuning under legacy and current action
+contracts with the exact-parity A8 candidate. It evaluates fixed learning-curve
+points first and runs broad held-out gameplay only if A8 passes its predeclared
+representation, health, and local-gameplay gates. See
+[`docs/architecture8-controls.md`](docs/architecture8-controls.md).
+
 Establish a reproducible gameplay baseline by comparing a checkpoint's
 deterministic policy with a masked-random policy on the same explicit seeds:
 

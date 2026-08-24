@@ -15,6 +15,7 @@ from torch import Tensor
 
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
+from autodancer.training.action_contract import apply_action_contract
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
 
@@ -163,12 +164,14 @@ class VersionedAsyncRolloutCollector:
         seed: int,
         batch_delay: float = 0.002,
         telemetry_callback: Any | None = None,
+        action_contract: str = "current",
     ) -> None:
         self.environment = environment
         self.model = model
         self.device = device
         self.batch_delay = batch_delay
         self.telemetry_callback = telemetry_callback
+        self.action_contract = action_contract
         seed_sequence = np.random.SeedSequence(seed)
         self.rngs = [
             np.random.default_rng(item) for item in seed_sequence.spawn(environment.num_envs)
@@ -176,6 +179,7 @@ class VersionedAsyncRolloutCollector:
         observations, infos = environment.reset(
             [self._seed(i) for i in range(environment.num_envs)]
         )
+        observations = apply_action_contract(observations, self.action_contract)
         initial_hidden = model.initial_state(environment.num_envs, device=device)
         self.states = [
             ActorState(
@@ -301,6 +305,7 @@ class VersionedAsyncRolloutCollector:
                     self._recovery_counts[reason] = self._recovery_counts.get(reason, 0) + 1
                     self._last_recovery_error = f"{type(error).__name__}: {error}"
                 observation, info = self.environment.recover(index, self._seed(index))
+                observation = apply_action_contract(observation, self.action_contract)
                 self.states[index] = ActorState(
                     observation,
                     info,
@@ -348,6 +353,7 @@ class VersionedAsyncRolloutCollector:
             inference_wait += time.monotonic() - inference_started
             environment_started = time.monotonic()
             next_observation, reward, terminated, truncated, info = worker.step(action)
+            next_observation = apply_action_contract(next_observation, self.action_contract)
             step_latency = time.monotonic() - environment_started
             environment_wait += step_latency
             supervisor = getattr(self.environment, "supervisor", None)
@@ -390,6 +396,9 @@ class VersionedAsyncRolloutCollector:
                     }
                 )
                 next_observation, next_info = worker.reset(seed=self._seed(index))
+                next_observation = apply_action_contract(
+                    next_observation, self.action_contract
+                )
                 state = ActorState(
                     next_observation,
                     next_info,

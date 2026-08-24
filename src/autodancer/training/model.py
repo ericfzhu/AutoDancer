@@ -25,6 +25,7 @@ from autodancer.constants import (
 
 ARCHITECTURE_VERSION = 6
 A7_ARCHITECTURE_VERSION = 7
+A8_ARCHITECTURE_VERSION = 8
 START_ACTION = ACTION_COUNT
 
 
@@ -600,12 +601,102 @@ class AdapterActorCritic(nn.Module):
         }
 
 
-PolicyModel = RecurrentActorCritic | AdapterActorCritic
+class ProjectedAdapterActorCritic(nn.Module):
+    """Architecture 2 plus a zero-output, high-dimensional sensory residual."""
+
+    def __init__(self, config: AdapterConfig | None = None, *, initialize: bool = True) -> None:
+        super().__init__()
+        self.config = config or AdapterConfig()
+        self.base = RecurrentActorCritic(self.config.base_config(), initialize=initialize)
+        self.adapter = SensoryResidualAdapter(self.config)
+        self.adapter_projection = nn.Linear(
+            self.config.hidden_size, self.config.hidden_size, bias=False
+        )
+        if initialize:
+            for module in self.adapter.modules():
+                if isinstance(module, (nn.Linear, nn.Conv2d)):
+                    nn.init.orthogonal_(module.weight, gain=2**0.5)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
+            # Exact A2 parity with a full matrix path: the first update can
+            # learn many residual directions instead of one scalar gate.
+            nn.init.zeros_(self.adapter_projection.weight)
+
+    @property
+    def hidden_size(self) -> int:
+        return self.config.hidden_size
+
+    def architecture_spec(self) -> dict[str, Any]:
+        return {"version": A8_ARCHITECTURE_VERSION, "config": asdict(self.config)}
+
+    def initial_state(self, batch_size: int, *, device: torch.device | None = None) -> Tensor:
+        return self.base.initial_state(batch_size, device=device)
+
+    def set_base_trainable(self, trainable: bool) -> None:
+        for parameter in self.base.parameters():
+            parameter.requires_grad_(trainable)
+
+    def encode(self, observation: dict[str, Tensor]) -> Tensor:
+        return self.base.encode(observation) + self.adapter_projection(self.adapter(observation))
+
+    def step(self, observation: dict[str, Tensor], state: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        hidden, cell = self.base.lstm(self.encode(observation), (state[:, 0], state[:, 1]))
+        next_state = torch.stack((hidden, cell), dim=1)
+        logits = self.base.actor(hidden).masked_fill(~observation["action_mask"].bool(), -1.0e9)
+        return logits, self.base.critic(hidden).squeeze(-1), next_state
+
+    def forward(self, observation: dict[str, Tensor], state: Tensor) -> tuple[Tensor, Tensor]:
+        logits, _, state = self.step(observation, state)
+        return logits, state
+
+    def act(
+        self, observation: dict[str, Tensor], state: Tensor, *, deterministic: bool = False
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        logits, value, next_state = self.step(observation, state)
+        distribution = Categorical(logits=logits)
+        action = logits.argmax(-1) if deterministic else distribution.sample()
+        return action, distribution.log_prob(action), distribution.entropy(), value, next_state
+
+    def evaluate_sequence(
+        self,
+        observation: dict[str, Tensor],
+        actions: Tensor,
+        initial_state: Tensor,
+        episode_starts: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        state = initial_state
+        log_probs, entropies, values = [], [], []
+        for step in range(actions.shape[1]):
+            state = state * (~episode_starts[:, step]).float().reshape(-1, 1, 1)
+            logits, value, state = self.step(
+                {key: item[:, step] for key, item in observation.items()}, state
+            )
+            distribution = Categorical(logits=logits)
+            log_probs.append(distribution.log_prob(actions[:, step]))
+            entropies.append(distribution.entropy())
+            values.append(value)
+        return torch.stack(log_probs, 1), torch.stack(entropies, 1), torch.stack(values, 1)
+
+    def architecture_metrics(self) -> dict[str, float]:
+        adapter_squared = sum(
+            float(parameter.detach().float().square().sum())
+            for parameter in self.adapter.parameters()
+        )
+        projection = self.adapter_projection.weight.detach().float()
+        return {
+            "adapter_projection_norm": float(projection.norm()),
+            "adapter_projection_max": float(projection.abs().max()),
+            "adapter_parameter_norm": adapter_squared**0.5,
+        }
+
+
+PolicyModel = RecurrentActorCritic | AdapterActorCritic | ProjectedAdapterActorCritic
 
 
 def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, ...]]:
     """Return group-specific parameter prefixes, excluding shared downstream layers."""
-    prefix = "base." if isinstance(model, AdapterActorCritic) else ""
+    adapted = isinstance(model, (AdapterActorCritic, ProjectedAdapterActorCritic))
+    prefix = "base." if adapted else ""
     groups = {
         "local_terrain": tuple(
             prefix + name for name in ("terrain_class.", "terrain_type.", "visibility.")
@@ -631,7 +722,7 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
             prefix + name for name in ("previous_action.", "context_encoder.")
         ),
     }
-    if isinstance(model, AdapterActorCritic):
+    if adapted:
         groups.update(
             {
                 "tactical_grid": ("adapter.tactical.",),
@@ -641,6 +732,9 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
                 "adapter_gate": ("adapter_gate",),
             }
         )
+        if isinstance(model, ProjectedAdapterActorCritic):
+            groups.pop("adapter_gate")
+            groups["adapter_projection"] = ("adapter_projection.",)
     elif model.architecture_spec()["version"] == ARCHITECTURE_VERSION:
         groups.update(
             {
@@ -693,4 +787,6 @@ def model_from_spec(spec: dict[str, Any], *, initialize: bool = True) -> PolicyM
         return RecurrentActorCritic(ModelConfig(**config), initialize=initialize)
     if version == A7_ARCHITECTURE_VERSION:
         return AdapterActorCritic(AdapterConfig(**config), initialize=initialize)
+    if version == A8_ARCHITECTURE_VERSION:
+        return ProjectedAdapterActorCritic(AdapterConfig(**config), initialize=initialize)
     raise ValueError(f"Unsupported policy architecture version: {version}")

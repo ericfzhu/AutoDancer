@@ -24,6 +24,7 @@ from autodancer.training.model import (
     AdapterActorCritic,
     AdapterConfig,
     ModelConfig,
+    ProjectedAdapterActorCritic,
     RecurrentActorCritic,
 )
 from autodancer.training.ppo import (
@@ -324,6 +325,82 @@ def test_architecture_seven_gate_then_adapter_receive_gradients() -> None:
     assert any(
         parameter.grad is not None and torch.count_nonzero(parameter.grad) > 0
         for parameter in model.adapter.parameters()
+    )
+
+
+def test_architecture_eight_finetune_preserves_a2_then_opens_adapter(tmp_path: Path) -> None:
+    source = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            map_size=0,
+        )
+    ).eval()
+    path = tmp_path / "architecture-2.pt"
+    torch.save(
+        {
+            "model": source.state_dict(),
+            "architecture": source.architecture_spec(),
+            "checkpoint_metadata": {"reward": {"version": 2}},
+        },
+        path,
+    )
+    target = ProjectedAdapterActorCritic(
+        AdapterConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            tactical_size=16,
+            map_size=16,
+            player_size=8,
+            inventory_size=8,
+        )
+    ).eval()
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_for_finetune(path)
+    value = {key: tensor[0] for key, tensor in observations(1, 2).items()}
+    value["grid"][..., int(GridChannel.FACING) :] = 2
+    value["map_memory"].fill_(1)
+    value["player"][:, 16:].fill_(3)
+    value["inventory"][:, 8:].fill_(1)
+    state = source.initial_state(2)
+    with torch.inference_mode():
+        source_step = source.step(value, state)
+        target_step = target.step(value, state)
+    assert provenance["architecture_upgrade"] == "v2_to_v8_zero_projection_exact"
+    assert torch.count_nonzero(target.adapter_projection.weight) == 0
+    assert all(
+        torch.equal(left, right) for left, right in zip(source_step, target_step, strict=True)
+    )
+
+    target.zero_grad(set_to_none=True)
+    logits, critic, _ = target.step(value, state)
+    (logits[:, 0].sum() + critic.sum()).backward()
+    assert target.adapter_projection.weight.grad is not None
+    assert torch.count_nonzero(target.adapter_projection.weight.grad) > 0
+    assert all(
+        parameter.grad is None or torch.count_nonzero(parameter.grad) == 0
+        for parameter in target.adapter.parameters()
+    )
+    with torch.no_grad():
+        target.adapter_projection.weight.fill_(0.01)
+    target.zero_grad(set_to_none=True)
+    logits, critic, _ = target.step(value, state)
+    (logits[:, 0].sum() + critic.sum()).backward()
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad) > 0
+        for parameter in target.adapter.parameters()
     )
 
 

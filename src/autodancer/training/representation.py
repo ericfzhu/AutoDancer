@@ -31,6 +31,7 @@ from autodancer.constants import (
 from autodancer.training.model import (
     AdapterActorCritic,
     PolicyModel,
+    ProjectedAdapterActorCritic,
     current_representation_gradient_norms,
     model_from_spec,
     representation_parameter_groups,
@@ -275,6 +276,7 @@ def analyze_model(
         "architecture": model.architecture_spec(),
         "groups": groups,
         "adapter_gate_gradient_norm": gradient_norms.get("adapter_gate"),
+        "adapter_projection_gradient_norm": gradient_norms.get("adapter_projection"),
     }
 
 
@@ -304,8 +306,14 @@ def analyze_checkpoint(
             "checkpoint_metadata": payload.get("checkpoint_metadata", {}),
         }
     )
-    if isinstance(model, AdapterActorCritic):
+    if isinstance(model, (AdapterActorCritic, ProjectedAdapterActorCritic)):
         result["architecture_metrics"] = model.architecture_metrics()
+    result["material_new_groups"] = [
+        name for name in NEW_GROUPS if result["groups"][name]["material"]
+    ]
+    result["all_new_groups_material"] = len(result["material_new_groups"]) == len(
+        NEW_GROUPS
+    )
     return result
 
 
@@ -323,6 +331,11 @@ def main() -> int:
         type=float,
         default=0.01,
         help="minimum sensitivity and gradient ratios for material influence (default: 0.01)",
+    )
+    parser.add_argument(
+        "--require-material-new-groups",
+        action="store_true",
+        help="exit nonzero unless every checkpoint materially uses all four new groups",
     )
     arguments = parser.parse_args()
     if (
@@ -351,7 +364,8 @@ def main() -> int:
         temporary.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         temporary.replace(arguments.output)
     print(json.dumps(report, sort_keys=True))
-    return 0
+    passed = all(item["all_new_groups_material"] for item in report["checkpoints"])
+    return 0 if passed or not arguments.require_material_new_groups else 1
 
 
 if __name__ == "__main__":

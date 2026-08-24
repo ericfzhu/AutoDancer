@@ -86,3 +86,19 @@ between `0.000030` and `0.001276`; aggregate progress improved slightly from
 attempts worsened from 76.7% to 91.7%. A2 therefore remains the baseline. A
 future compatibility design must preserve zero initial output while allowing
 the new branch to receive useful gradients immediately.
+
+## Architecture 8 controlled residual
+
+Architecture 8 is the next candidate, not a promoted default. It retains the
+complete A2 actor-critic and replaces A7's scalar gate with a zero-initialized
+512-by-512 residual projection after the schema-9 sensory adapter. At
+initialization the new branch contributes exactly zero, preserving A2 logits,
+values, recurrent state, and deterministic actions. The projection itself
+receives gradients immediately; once it opens, gradients reach the adapter.
+
+For the first ten PPO updates the preserved A2 base is frozen. This turns the
+first 10,240 transitions into a direct test of whether the new path learns,
+instead of allowing ordinary PPO drift in the old path to masquerade as an
+architecture improvement. A2 legacy-action and current-action controls use the
+same source checkpoint, reward, seed, budget, and checkpoint cadence. The full
+predeclared protocol is in `docs/architecture8-controls.md`.

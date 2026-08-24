@@ -19,6 +19,7 @@ from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
+from autodancer.training.action_contract import ACTION_CONTRACTS, apply_action_contract
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
@@ -380,6 +381,7 @@ def evaluate_live_policy(
     device: torch.device,
     model: PolicyModel | None = None,
     dashboard_state: DashboardState | None = None,
+    action_contract: str = "current",
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -398,6 +400,7 @@ def evaluate_live_policy(
             reset_seeds.extend(range(parking_seed, parking_seed + padding_count))
             parking_seed += padding_count
         observation, infos = environment.reset(reset_seeds)
+        observation = apply_action_contract(observation, action_contract)
         if dashboard_state is not None:
             dashboard_state.update_workers(environment.worker_ids, observation, infos)
         accumulators: list[EpisodeAccumulator | None] = [
@@ -441,6 +444,7 @@ def evaluate_live_policy(
                     model, observation, hidden, device, previous_actions, previous_rewards
                 )
             next_observation, rewards, terminated, truncated, step_infos = environment.step(actions)
+            next_observation = apply_action_contract(next_observation, action_contract)
             if dashboard_state is not None:
                 dashboard_state.update_workers(
                     environment.worker_ids,
@@ -483,6 +487,7 @@ def evaluate_live_policy(
                     reset_indices,
                     [result[0] for result in reset_results],
                 )
+                next_observation = apply_action_contract(next_observation, action_contract)
                 if next_hidden is not None:
                     next_hidden = zero_hidden_rows(next_hidden, reset_indices)
             observation = next_observation
@@ -556,6 +561,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                         policy_seed=arguments.policy_seed,
                         device=device,
                         dashboard_state=dashboard_state,
+                        action_contract=arguments.action_contract,
                     )
                 )
                 trained_results = evaluate_live_policy(
@@ -566,6 +572,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     device=device,
                     model=model,
                     dashboard_state=dashboard_state,
+                    action_contract=arguments.action_contract,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
             finally:
@@ -592,11 +599,15 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_global_step": int(payload.get("global_step", 0)),
         "checkpoint_updates": int(payload.get("updates", 0)),
         "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+        "checkpoint_action_contract": payload.get("checkpoint_metadata", {}).get(
+            "action_contract"
+        ),
         "evaluation_reward": reward_config.specification(),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
         "policy_seed": arguments.policy_seed,
+        "action_contract": arguments.action_contract,
         "worker_restarts": restarts,
         "reference": reference,
         "trained": trained,
@@ -648,6 +659,7 @@ def main() -> int:
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")

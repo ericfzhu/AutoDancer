@@ -366,3 +366,54 @@ class RecurrentPPO:
         }
         self.checkpoint_metadata["initialization"] = provenance
         return provenance
+
+    def initialize_for_finetune(self, path: str | Path) -> dict[str, Any]:
+        """Preserve the complete source function while resetting optimizer state."""
+        path = Path(path)
+        payload = torch.load(path, map_location=self.device, weights_only=False)
+        source_spec = payload.get("architecture")
+        target_spec = self.model.architecture_spec()
+        exact = source_spec == target_spec
+        a2_to_a8 = (
+            isinstance(source_spec, dict)
+            and source_spec.get("version") == 2
+            and target_spec.get("version") == 8
+            and source_spec.get("config")
+            == {
+                key: target_spec["config"][key]
+                for key in (
+                    "cell_size",
+                    "spatial_size",
+                    "hidden_size",
+                    "entity_limit",
+                    "attention_layers",
+                    "attention_heads",
+                )
+            }
+        )
+        if exact:
+            self.model.load_state_dict(payload["model"])
+            upgrade = "exact_function_preserving_finetune"
+        elif a2_to_a8:
+            target = self.model.state_dict()
+            transferred = {f"base.{name}": value for name, value in payload["model"].items()}
+            missing, unexpected = self.model.load_state_dict(transferred, strict=False)
+            allowed_missing = {
+                name
+                for name in target
+                if name.startswith(("adapter.", "adapter_projection."))
+            }
+            if unexpected or set(missing) != allowed_missing:
+                raise ValueError("Architecture-2 checkpoint did not exactly populate A8 base")
+            upgrade = "v2_to_v8_zero_projection_exact"
+        else:
+            raise ValueError("Fine-tune checkpoint architecture is incompatible with target")
+        provenance = {
+            "path": str(path.resolve()),
+            "global_step": int(payload.get("global_step", 0)),
+            "updates": int(payload.get("updates", 0)),
+            "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+            "architecture_upgrade": upgrade,
+        }
+        self.checkpoint_metadata["initialization"] = provenance
+        return provenance

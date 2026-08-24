@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import random
+import shutil
 import time
 from collections.abc import Callable
 from dataclasses import asdict
@@ -19,6 +20,7 @@ from torch import Tensor
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
+from autodancer.training.action_contract import ACTION_CONTRACTS, apply_action_contract
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import (
@@ -26,6 +28,7 @@ from autodancer.training.model import (
     AdapterActorCritic,
     ModelConfig,
     PolicyModel,
+    ProjectedAdapterActorCritic,
     RecurrentActorCritic,
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
@@ -66,6 +69,18 @@ def replace_observation_rows(
     for index, replacement in zip(indices, replacements, strict=True):
         for key in target:
             target[key][index] = replacement[key]
+
+
+def archive_checkpoint(source: Path, target: Path) -> None:
+    """Archive an atomic checkpoint without serializing the model twice."""
+    if target.exists():
+        return
+    try:
+        os.link(source, target)
+    except OSError:
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        shutil.copyfile(source, temporary)
+        os.replace(temporary, target)
 
 
 class RolloutCollector:
@@ -242,17 +257,19 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, float]:
 
 def evaluate_policy(
     environment: AutoDancerVectorEnv,
-    model: RecurrentActorCritic,
+    model: PolicyModel,
     *,
     device: torch.device,
     seed: int,
     steps: int,
+    action_contract: str = "current",
 ) -> dict[str, float]:
     """Evaluate deterministically on every worker, leaving all workers reset."""
     rng = np.random.default_rng(seed)
     observation, _ = environment.reset(
         rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist()
     )
+    observation = apply_action_contract(observation, action_contract)
     hidden = model.initial_state(environment.num_envs, device=device)
     previous_actions = np.full(environment.num_envs, START_ACTION, dtype=np.int64)
     previous_rewards = np.zeros(environment.num_envs, dtype=np.float32)
@@ -266,6 +283,7 @@ def evaluate_policy(
             policy_observation["previous_reward"] = torch.from_numpy(previous_rewards).to(device)
             action, _, _, _, next_hidden = model.act(policy_observation, hidden, deterministic=True)
         observation, reward, terminated, truncated, _ = environment.step(action.cpu().numpy())
+        observation = apply_action_contract(observation, action_contract)
         returns += reward
         done = terminated | truncated
         done_indices = np.flatnonzero(done).tolist()
@@ -276,6 +294,7 @@ def evaluate_policy(
                 rng.integers(0, 2**31, size=len(done_indices), dtype=np.int64).tolist(),
             )
             replace_observation_rows(observation, done_indices, [item[0] for item in resets])
+            observation = apply_action_contract(observation, action_contract)
             returns[done_indices] = 0.0
         previous_actions = action.cpu().numpy().astype(np.int64, copy=True)
         previous_rewards = reward.astype(np.float32, copy=True)
@@ -353,21 +372,33 @@ def train(arguments: argparse.Namespace) -> None:
             try:
                 # Resume replaces every tensor, but a warm start can intentionally
                 # leave new architecture modules and the critic at fresh values.
-                model: PolicyModel = (
-                    AdapterActorCritic(initialize=arguments.resume is None)
-                    if arguments.architecture == 7
-                    else RecurrentActorCritic(ModelConfig(), initialize=arguments.resume is None)
-                )
+                initialize = arguments.resume is None
+                if arguments.architecture == 2:
+                    model: PolicyModel = RecurrentActorCritic(
+                        ModelConfig(map_size=0), initialize=initialize
+                    )
+                elif arguments.architecture == 7:
+                    model = AdapterActorCritic(initialize=initialize)
+                elif arguments.architecture == 8:
+                    model = ProjectedAdapterActorCritic(initialize=initialize)
+                else:
+                    model = RecurrentActorCritic(ModelConfig(), initialize=initialize)
                 algorithm = RecurrentPPO(
                     model,
                     ppo_config,
                     device=device,
-                    checkpoint_metadata={"reward": reward_config.specification()},
+                    checkpoint_metadata={
+                        "reward": reward_config.specification(),
+                        "action_contract": arguments.action_contract,
+                        "freeze_base_updates": arguments.freeze_base_updates,
+                    },
                 )
                 if arguments.resume:
                     algorithm.load(arguments.resume)
                 elif arguments.initialize_from:
                     algorithm.initialize_from(arguments.initialize_from)
+                elif arguments.fine_tune_from:
+                    algorithm.initialize_for_finetune(arguments.fine_tune_from)
                 collector = VersionedAsyncRolloutCollector(
                     environment,
                     algorithm.model,
@@ -375,6 +406,7 @@ def train(arguments: argparse.Namespace) -> None:
                     seed=arguments.seed,
                     telemetry_callback=telemetry_callback,
                     batch_delay=arguments.inference_batch_delay_ms / 1000.0,
+                    action_contract=arguments.action_contract,
                 )
                 started = time.monotonic()
                 metrics: dict[str, Any] = {
@@ -388,11 +420,16 @@ def train(arguments: argparse.Namespace) -> None:
                 )
                 while algorithm.global_step < arguments.total_steps:
                     rollout = collector.collect(ppo_config.rollout_length)
+                    base_frozen = False
+                    if isinstance(model, ProjectedAdapterActorCritic):
+                        base_frozen = algorithm.updates < arguments.freeze_base_updates
+                        model.set_base_trainable(not base_frozen)
                     update_metrics = algorithm.update(rollout)
                     elapsed = max(time.monotonic() - started, 1.0e-6)
                     metrics = {
                         "global_step": algorithm.global_step,
                         "updates": algorithm.updates,
+                        "base_frozen": float(base_frozen),
                         "steps_per_second": algorithm.global_step / elapsed,
                         **update_metrics,
                         **collector.last_runtime_metrics,
@@ -406,7 +443,9 @@ def train(arguments: argparse.Namespace) -> None:
                         ),
                         **(
                             model.architecture_metrics()
-                            if isinstance(model, AdapterActorCritic)
+                            if isinstance(
+                                model, (AdapterActorCritic, ProjectedAdapterActorCritic)
+                            )
                             else {}
                         ),
                     }
@@ -420,6 +459,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 device=device,
                                 seed=arguments.seed + algorithm.updates,
                                 steps=arguments.evaluation_steps,
+                                action_contract=arguments.action_contract,
                             )
                         )
                         if dashboard_state is not None:
@@ -444,7 +484,12 @@ def train(arguments: argparse.Namespace) -> None:
                     if algorithm.global_step % arguments.checkpoint_interval < (
                         ppo_config.rollout_length * arguments.num_instances
                     ):
-                        algorithm.save(arguments.run_dir / "latest.pt", metrics=metrics)
+                        latest = arguments.run_dir / "latest.pt"
+                        algorithm.save(latest, metrics=metrics)
+                        archive_checkpoint(
+                            latest,
+                            arguments.run_dir / f"checkpoint-{algorithm.global_step:08d}.pt",
+                        )
                 algorithm.save(arguments.run_dir / "final.pt", metrics=metrics)
                 collector.close()
                 if dashboard_state is not None:
@@ -460,6 +505,13 @@ def train(arguments: argparse.Namespace) -> None:
                                 if arguments.initialize_from is not None
                                 else None
                             ),
+                            "fine_tuned_from": (
+                                str(arguments.fine_tune_from.resolve())
+                                if arguments.fine_tune_from is not None
+                                else None
+                            ),
+                            "action_contract": arguments.action_contract,
+                            "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),
@@ -497,6 +549,11 @@ def main() -> int:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
     parser.add_argument(
+        "--fine-tune-from",
+        type=Path,
+        help="preserve the complete source function while resetting optimizer state",
+    )
+    parser.add_argument(
         "--initialize-from",
         type=Path,
         help="warm-start policy/representation weights while keeping a fresh critic and optimizer",
@@ -505,9 +562,9 @@ def main() -> int:
     parser.add_argument(
         "--architecture",
         type=int,
-        choices=(6, 7),
+        choices=(2, 6, 7, 8),
         default=6,
-        help="policy architecture (A7 is the zero-gated A2 compatibility experiment)",
+        help="policy architecture (A8 is the zero-projection staged adapter)",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollout-length", type=int, default=128)
@@ -523,6 +580,8 @@ def main() -> int:
     parser.add_argument("--worker-profile", choices=("symbolic",), default="symbolic")
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--inference-batch-delay-ms", type=float, default=2.0)
+    parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
+    parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--reward-config",
         type=Path,
@@ -542,12 +601,17 @@ def main() -> int:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.total_steps <= 0 or arguments.num_instances <= 0:
         parser.error("--total-steps and --num-instances must be positive")
-    if arguments.resume is not None and arguments.initialize_from is not None:
-        parser.error("--resume and --initialize-from are mutually exclusive")
+    sources = (arguments.resume, arguments.initialize_from, arguments.fine_tune_from)
+    if sum(value is not None for value in sources) > 1:
+        parser.error("--resume, --initialize-from, and --fine-tune-from are mutually exclusive")
     if arguments.dashboard is not None and not 0 <= arguments.dashboard <= 65535:
         parser.error("--dashboard port must be in [0, 65535]")
     if arguments.inference_batch_delay_ms < 0:
         parser.error("--inference-batch-delay-ms cannot be negative")
+    if arguments.freeze_base_updates < 0:
+        parser.error("--freeze-base-updates cannot be negative")
+    if arguments.freeze_base_updates and arguments.architecture != 8:
+        parser.error("--freeze-base-updates is only valid for Architecture 8")
     train(arguments)
     return 0
 

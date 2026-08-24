@@ -2,11 +2,11 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 9 routed · 22 resolved**._
+_Question status: **0 open · 9 routed · 25 resolved**._
 
 ## One paragraph
 
-AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. Architecture candidates must now prove material input sensitivity and gradient reach before broad live training. A2 with Reward V2 remains the measured baseline after A7 failed both that retrospective representation test and its gameplay gates.
+AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 is a controlled candidate: it preserves A2 exactly, gives new schema-9 inputs an immediately trainable residual projection, and must pass learning-curve and representation gates before broad gameplay.
 
 ## Decisions locked
 
@@ -21,6 +21,7 @@ AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of 
 | Baseline | Retain Reward V2 with Architecture A2 after V3, V4, A6, and A7 failed their declared gates. | [Reward history](../reward-history.md) |
 | A7 outcome | Reject the zero-scalar-gated adapter: initialization parity passed, but zero of twelve new-input checkpoint tests reached material influence and gameplay gates failed; retain A2. | [Representation test](../representation-diagnostics.md) |
 | Architecture admission | Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient. | [Representation test](../representation-diagnostics.md) |
+| A8 experiment | Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass. | [A8 controls](../architecture8-controls.md) |
 
 ## Cost model
 
@@ -42,7 +43,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 6. **Gathering live experience** — Workers advance independently, but every accepted rollout belongs to one frozen policy version. _(adds C)_
 7. **Changing the weights** — Recurrent PPO replays short sequences, then publishes one new policy version. _(adds L, K)_
 8. **Keeping experiments honest** — Representation gates admit candidates; held-out gameplay decides promotion. _(adds E, D)_
-9. **What A7 proved** — Exact compatibility is possible, but a zero scalar gate can leave new inputs only trace-active. _(adds F)_
+9. **From A7 to controlled A8** — A7 identified gradient starvation; A8 isolates whether a trainable residual can actually use richer inputs. _(adds F, H)_
 10. **The whole agent system** — Explore every building block, version lineage, flow, decision, and open question.
 
 ## Structures
@@ -206,7 +207,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 `A4 · schema 7 · 6,401,258`: tactical, song, and thirteen-slot equipment state.
 `A5 · schema 8 · 6,478,670`: hazards, objects, interactions, prices, tells, explosives.
 `A6 · schema 9 · 6,478,798`: shop audio and bounds; same 512 LSTM and heads.
-`A7 · rejected · 6,401,648`: preserves the entire A2 network and injects schema-9-only features through a bounded scalar-gated residual; the gate stayed nearly closed during the pilot.
+`A7 · rejected · 6,401,648`: exact A2 plus a scalar-gated residual that stayed nearly closed.
+`A8 · candidate`: exact A2 plus the same sensory branch and a zero-output 512×512 projection that receives a full first-step gradient.
 
 **Steps in execution.**
 
@@ -425,6 +427,34 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 - ~~**Q-F2** Did the richer observations receive meaningful influence?~~ ✓ No: all twelve trained checkpoint/group checks were only trace-active, with zero material groups and zero argmax action changes (2026-08-24).
 - **Q-F3** What replaces the scalar-gate design? → _Use a representation-learning preflight to test an exact-zero output projection or staged frozen-base adapter before live gameplay training._
 
+#### H · Architecture A8 controls
+
+**In one line.** Three controlled curves test action-contract drift and sensory learning before broad gameplay.
+
+**What it does.** A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Two unchanged-A2 arms separate ordinary fine-tuning from the repaired WAIT contract, while a frozen-base warmup forces any early change to come from the new path.
+
+**How it's built.** **Predeclared experiment.**
+`A2 legacy`: exact A2, WAIT masked, 30,720 transitions.
+`A2 fixed`: exact A2, current 11-action mask, same budget.
+`A8`: exact A2 plus sensory residual, base frozen through update 10.
+`Curve`: checkpoints 0/10,240/20,480/30,720 on seeds 45001–45016.
+`Admission`: all four new groups material at warmup and final plus bounded local harm.
+`Integration`: only admitted candidates play seeds 46001–46030.
+
+**Steps in execution.**
+
+1. **Prove parity** — Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.
+2. **Open projection** — Freeze A2 while the full residual matrix receives the first gradients.
+3. **Measure curves** — Evaluate both controls and A8 at four fixed checkpoints.
+4. **Gate representation** — Require every new observation group to show material sensitivity and gradient reach.
+5. **Integrate broadly** — Run longer held-out gameplay only if all preceding gates pass.
+
+**Questions.**
+
+- ~~**Q-H1** Does A8 already replace A2?~~ ✓ No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).
+- ~~**Q-H2** Why freeze the base?~~ ✓ It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).
+- ~~**Q-H3** What does an A8 pass mean?~~ ✓ Only readiness for multi-seed confirmation, not final promotion (2026-08-24).
+
 ## Flows (representative packets)
 
 Payload shapes are what the design implies, not measured traffic.
@@ -484,6 +514,16 @@ Payload shapes are what the design implies, not measured traffic.
 | 3 | F → A | gated logits | `{"initial_gate":0}` |
 | 4 | F → E | paired candidate | `{"reward":"V2 unchanged"}` |
 
+### Controlled A8 learning experiment
+
+| # | From → To | Packet | Representative payload |
+|---|---|---|---|
+| 1 | K → H | exact V2 A2 | `{"parity_error":0}` |
+| 2 | O → H | schema-9-only inputs | `{"projection_initially_zero":true}` |
+| 3 | H → L | frozen-base warmup | `{"updates":10}` |
+| 4 | L → E | four-point curves | `{"controls":["legacy-no-wait","current"]}` |
+| 5 | E → H | admit or stop | `{"broad_only_after_pass":true}` |
+
 ## Questions — index
 
 Reference by ID. ✓ resolved (with date) · → routed to a named next step · otherwise open.
@@ -519,6 +559,9 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-F1**~~ (F) ✓ Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
 - ~~**Q-F2**~~ (F) ✓ No: all twelve trained checkpoint/group checks were only trace-active, with zero material groups and zero argmax action changes (2026-08-24).
 - **Q-F3** (F) What replaces the scalar-gate design? → _Use a representation-learning preflight to test an exact-zero output projection or staged frozen-base adapter before live gameplay training._
+- ~~**Q-H1**~~ (H) ✓ No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).
+- ~~**Q-H2**~~ (H) ✓ It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).
+- ~~**Q-H3**~~ (H) ✓ Only readiness for multi-seed confirmation, not final promotion (2026-08-24).
 
 ## What the platform gives vs what we own
 
@@ -540,7 +583,9 @@ src/autodancer/
   rewards.py            versioned reward tracker
   training/
     model.py            recurrent actor-critic
+    action_contract.py  versioned policy-side action masks
     representation.py   sensitivity and gradient gates
+    architecture8_compare.py  predeclared A8 decision gates
     async_collector.py  versioned actor scheduler
     ppo.py              recurrent PPO and checkpoints
     baseline.py         deterministic evaluation

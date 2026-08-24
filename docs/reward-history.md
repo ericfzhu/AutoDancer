@@ -582,6 +582,26 @@ an equivalent controlled representation-learning gate—before broad live
 training. Exact results and methodology are in
 `docs/representation-diagnostics.md`.
 
+### Architecture 8 controlled-learning protocol (predeclared)
+
+Reward V2 remains fixed while Architecture 8 tests the representation-learning
+failure identified above. The experiment includes two A2 controls: exact A2
+fine-tuning under V2's legacy policy-side no-WAIT contract, and exact A2
+fine-tuning under the repaired current 11-action contract. A8 uses the current
+contract, preserves the complete A2 function through a zero-output residual
+projection, and freezes the A2 base for its first 10,240 transitions.
+
+All three arms use training seed `36001`, a 30,720-transition budget, and saved
+curve points at 0, 10,240, 20,480, and 30,720. Deterministic curve evaluation
+uses seeds `45001–45016`. A8 must pass material new-input tests at warmup and
+final plus predeclared local-gameplay harm bounds before any broad integration
+test. If it passes, final policies use seeds `46001–46030` with a 3,000-turn
+cap. Exact criteria are in `docs/architecture8-controls.md`.
+
+Status: implementation and static parity validation are complete; live results
+have not yet been observed. This entry must be updated with measured curves and
+the gated decision after the recoverable launcher finishes.
+
 ## Rules for future entries
 
 Every new reward version must record:

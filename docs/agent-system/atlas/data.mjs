@@ -8,7 +8,7 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. Architecture candidates must now prove material input sensitivity and gradient reach before broad live training. A2 with Reward V2 remains the measured baseline after A7 failed both that retrospective representation test and its gameplay gates.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 is a controlled candidate: it preserves A2 exactly, gives new schema-9 inputs an immediately trainable residual projection, and must pass learning-curve and representation gates before broad gameplay.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
@@ -29,7 +29,9 @@ src/autodancer/
   rewards.py            versioned reward tracker
   training/
     model.py            recurrent actor-critic
+    action_contract.py  versioned policy-side action masks
     representation.py   sensitivity and gradient gates
+    architecture8_compare.py  predeclared A8 decision gates
     async_collector.py  versioned actor scheduler
     ppo.py              recurrent PPO and checkpoints
     baseline.py         deterministic evaluation
@@ -50,6 +52,7 @@ export const DECISIONS = [
   { axis: 'Baseline', decision: 'Retain Reward V2 with Architecture A2 after V3, V4, A6, and A7 failed their declared gates.', adr: '[Reward history](../reward-history.md)' },
   { axis: 'A7 outcome', decision: 'Reject the zero-scalar-gated adapter: initialization parity passed, but zero of twelve new-input checkpoint tests reached material influence and gameplay gates failed; retain A2.', adr: '[Representation test](../representation-diagnostics.md)' },
   { axis: 'Architecture admission', decision: 'Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient.', adr: '[Representation test](../representation-diagnostics.md)' },
+  { axis: 'A8 experiment', decision: 'Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass.', adr: '[A8 controls](../architecture8-controls.md)' },
 ];
 
 export const GROUPS = [
@@ -114,7 +117,7 @@ export const NODES = [
     id: 'P', code: 'P', name: 'Policy and value network', short: 'ACTOR CRITIC', group: 'decide', gx: 5.5, gy: 10.5, w: 4, d: 3, h: 82, kind: 'tall',
     one: 'One hybrid neural network chooses actions and estimates future return.',
     what: 'Parallel encoders process local geometry, salient entities, inventory, player/audio state, previous action/reward, and—after A2—the explicit map. They fuse to 512 features, pass through a 512-unit LSTM, and split into masked actor and critic heads.',
-    how: `<strong>Architecture lineage.</strong><br><code>A2 · schema 5 · 5,953,167</code>: local residual CNN, entity transformer, player MLP, eight-slot inventory transformer, context encoder, 512 LSTM.<br><code>A3 · schema 6 · 6,398,494</code>: adds 65×65 map CNN and expands fusion 896→1,024.<br><code>A4 · schema 7 · 6,401,258</code>: tactical, song, and thirteen-slot equipment state.<br><code>A5 · schema 8 · 6,478,670</code>: hazards, objects, interactions, prices, tells, explosives.<br><code>A6 · schema 9 · 6,478,798</code>: shop audio and bounds; same 512 LSTM and heads.<br><code>A7 · rejected · 6,401,648</code>: preserves the entire A2 network and injects schema-9-only features through a bounded scalar-gated residual; the gate stayed nearly closed during the pilot.`,
+    how: `<strong>Architecture lineage.</strong><br><code>A2 · schema 5 · 5,953,167</code>: local residual CNN, entity transformer, player MLP, eight-slot inventory transformer, context encoder, 512 LSTM.<br><code>A3 · schema 6 · 6,398,494</code>: adds 65×65 map CNN and expands fusion 896→1,024.<br><code>A4 · schema 7 · 6,401,258</code>: tactical, song, and thirteen-slot equipment state.<br><code>A5 · schema 8 · 6,478,670</code>: hazards, objects, interactions, prices, tells, explosives.<br><code>A6 · schema 9 · 6,478,798</code>: shop audio and bounds; same 512 LSTM and heads.<br><code>A7 · rejected · 6,401,648</code>: exact A2 plus a scalar-gated residual that stayed nearly closed.<br><code>A8 · candidate</code>: exact A2 plus the same sensory branch and a zero-output 512×512 projection that receives a full first-step gradient.`,
     steps: [['Embed', 'Turn categorical classes, exact-type hashes, positions, and numeric state into compact features.'], ['Perceive', 'Run local/map CNNs and entity/inventory attention encoders in parallel.'], ['Fuse', 'Project all streams into a shared 512-value latent.'], ['Remember', 'Update the LSTM hidden and cell state.'], ['Decide', 'Produce 11 masked action logits and one state-value estimate.']],
     cond: [{ q: 'Is A6 too small to learn the game?', r: 'The A6 pilot does not support that conclusion: it changed the latent interface and had only 51,200 new transitions versus A2’s 250,880. Capacity was not isolated (2026-08-24).' }, { q: 'Would simply scaling parameter count solve progression?', to: 'Establish a stable, behavior-preserving architecture and learning curve before running controlled width/depth scaling experiments.' }],
   },
@@ -182,6 +185,14 @@ export const NODES = [
     steps: [['Load', 'Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.'], ['Prove parity', 'Measure exact output and deterministic-action parity before live training.'], ['Adapt', 'Let PPO learn the scalar gate and residual while continuing to update the A2 base.'], ['Measure influence', 'Perturb each new input group and backpropagate to its encoder.'], ['Reject', 'Retain A2 after representation and held-out gameplay gates fail.']],
     cond: [{ q: 'Was A7 behavior-preserving at initialization?', r: 'Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).' }, { q: 'Did the richer observations receive meaningful influence?', r: 'No: all twelve trained checkpoint/group checks were only trace-active, with zero material groups and zero argmax action changes (2026-08-24).' }, { q: 'What replaces the scalar-gate design?', to: 'Use a representation-learning preflight to test an exact-zero output projection or staged frozen-base adapter before live gameplay training.' }],
   },
+  {
+    id: 'H', code: 'H', name: 'Architecture A8 controls', short: 'A8 CONTROLS', group: 'future', gx: 14.5, gy: 20.5, w: 3.5, d: 3, h: 68, kind: 'tall',
+    one: 'Three controlled curves test action-contract drift and sensory learning before broad gameplay.',
+    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Two unchanged-A2 arms separate ordinary fine-tuning from the repaired WAIT contract, while a frozen-base warmup forces any early change to come from the new path.',
+    how: `<strong>Predeclared experiment.</strong><br><code>A2 legacy</code>: exact A2, WAIT masked, 30,720 transitions.<br><code>A2 fixed</code>: exact A2, current 11-action mask, same budget.<br><code>A8</code>: exact A2 plus sensory residual, base frozen through update 10.<br><code>Curve</code>: checkpoints 0/10,240/20,480/30,720 on seeds 45001–45016.<br><code>Admission</code>: all four new groups material at warmup and final plus bounded local harm.<br><code>Integration</code>: only admitted candidates play seeds 46001–46030.`,
+    steps: [['Prove parity', 'Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.'], ['Open projection', 'Freeze A2 while the full residual matrix receives the first gradients.'], ['Measure curves', 'Evaluate both controls and A8 at four fixed checkpoints.'], ['Gate representation', 'Require every new observation group to show material sensitivity and gradient reach.'], ['Integrate broadly', 'Run longer held-out gameplay only if all preceding gates pass.']],
+    cond: [{ q: 'Does A8 already replace A2?', r: 'No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).' }, { q: 'Why freeze the base?', r: 'It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).' }, { q: 'What does an A8 pass mean?', r: 'Only readiness for multi-seed confirmation, not final promotion (2026-08-24).' }],
+  },
 ];
 
 export const FLOWS = [
@@ -224,6 +235,13 @@ export const FLOWS = [
     ['O', 'F', 'A6-only inputs', { branch: 'residual' }, 'yx'],
     ['F', 'A', 'gated logits', { initial_gate: 0 }, 'xy'],
     ['F', 'E', 'paired candidate', { reward: 'V2 unchanged' }, 'yx'],
+  ] },
+  { id: 'a8', name: 'Controlled A8 learning experiment', hops: [
+    ['K', 'H', 'exact V2 A2', { parity_error: 0 }, 'xy'],
+    ['O', 'H', 'schema-9-only inputs', { projection_initially_zero: true }, 'yx'],
+    ['H', 'L', 'frozen-base warmup', { updates: 10 }, 'xy'],
+    ['L', 'E', 'four-point curves', { controls: ['legacy-no-wait', 'current'] }, 'yx'],
+    ['E', 'H', 'admit or stop', { broad_only_after_pass: true }, 'xy'],
   ] },
 ];
 
@@ -277,10 +295,10 @@ export const CH = [
     flow: [['K', 'E', 'candidate', { architecture: 6 }], ['E', 'W', 'unseen seeds', { count: 30 }], ['W', 'E', 'outcomes', { mean_floor_progress: 1.011 }], ['E', 'D', 'decision', { retain: 'A2' }]],
   },
   {
-    id: 'next', title: 'What A7 proved', reveal: ['F'],
-    lede: 'Exact compatibility is possible, but a zero scalar gate can leave new inputs only trace-active.',
-    story: `<p>A7 fixed A6’s initialization confound: it began as the exact measured A2 function. Direct representation tests later found zero material new-input groups across all three checkpoints, while ordinary PPO updates changed the base. <mark>A7 is rejected; richer observations remain untested rather than disproven.</mark></p>`,
-    flow: [['P', 'F', 'exact A2 behavior path', { error: 0 }], ['O', 'F', 'starved residual', { max_final_gate: 0.001276 }], ['F', 'E', 'held-out failure', { progress: 1.033, stairs: 0 }], ['E', 'K', 'retain baseline', { architecture: 'A2' }]],
+    id: 'next', title: 'From A7 to controlled A8', reveal: ['F', 'H'],
+    lede: 'A7 identified gradient starvation; A8 isolates whether a trainable residual can actually use richer inputs.',
+    story: `<p>A7 proved exact compatibility but left every new group trace-active. A8 keeps that exact starting behavior, replaces the scalar bottleneck with a full zero-output projection, and freezes A2 during warmup. <mark>Learning curves and representation gates now precede broad gameplay.</mark></p>`,
+    flow: [['P', 'F', 'exact A2 path', { error: 0 }], ['F', 'H', 'replace scalar bottleneck', { projection: '512×512' }], ['O', 'H', 'new sensory inputs', { groups: 4 }], ['H', 'L', 'frozen-base warmup', { transitions: 10240 }], ['L', 'E', 'admission evidence', { broad_only_after_pass: true }]],
   },
   {
     id: 'all', title: 'The whole agent system', reveal: [],
