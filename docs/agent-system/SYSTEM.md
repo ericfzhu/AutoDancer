@@ -6,7 +6,7 @@ _Question status: **0 open · 9 routed · 22 resolved**._
 
 ## One paragraph
 
-AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline; the implemented A7 candidate is now under a predeclared paired test.
+AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline after the A7 compatibility pilot failed its gameplay and adapter-learning gates.
 
 ## Decisions locked
 
@@ -19,7 +19,7 @@ AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of 
 | Information | Expose only player-visible state plus memory a human player could reasonably retain. | [Parity](../observation-parity.md) |
 | Selection | Choose policies by held-out gameplay outcomes, never by shaped return. | [Reward history](../reward-history.md) |
 | Baseline | Retain Reward V2 with Architecture A2 after V3, V4, and the A6 representation pilot failed their gates. | [Reward history](../reward-history.md) |
-| A7 experiment | Test the implemented exact A2 path plus zero-gated schema-9 residual under Reward V2; parity passed before live training. | [Reward history](../reward-history.md) |
+| A7 outcome | Reject the zero-scalar-gated adapter: initialization parity passed, but the gate stayed nearly closed and gameplay gates failed; retain A2. | [Reward history](../reward-history.md) |
 
 ## Cost model
 
@@ -41,7 +41,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 6. **Gathering live experience** — Workers advance independently, but every accepted rollout belongs to one frozen policy version. _(adds C)_
 7. **Changing the weights** — Recurrent PPO replays short sequences, then publishes one new policy version. _(adds L, K)_
 8. **Keeping experiments honest** — A policy earns promotion in gameplay, while the dashboard explains what happened live. _(adds E, D)_
-9. **The A7 compatibility bridge** — The next hypothesis changes how new features enter the policy, not the reward. _(adds F)_
+9. **What A7 proved** — Exact compatibility is possible, but a zero scalar gate can starve the new branch of useful learning. _(adds F)_
 10. **The whole agent system** — Explore every building block, version lineage, flow, decision, and open question.
 
 ## Structures
@@ -103,7 +103,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **How it's built.** **Version lineage.**
 `Early` control sent directions to an attached game.
 `Schema 5+` standardized 11 logical actions and exact command acknowledgements.
-`Current limitation` keeps directional moves legal even when a wall or context will prevent displacement; this avoids hiding attacks and digging, but repeated blocked inputs are not distinguished before selection.
+`Current limitations`: directions remain legal even when a wall or context will prevent displacement, and the Lua mask does not currently enable the declared WAIT action. A7 evaluation therefore produced directional actions only; action-contract repair is kept separate from that architecture result.
 
 **Steps in execution.**
 
@@ -113,8 +113,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **Questions.**
 
-- **Q-A1** Should known blocked directions be masked? → _First classify stationary outcomes, then design a context-aware mask that preserves attacks, digging, and interactions._
-- ~~**Q-A2** Is WAIT inherently bad?~~ ✓ No; Bard can make a strategic wait while the world advances, so stationary behavior must be classified by outcome rather than action name (2026-08-24).
+- **Q-A1** Should known blocked directions be masked? → _Use the new unchanged-direction and repeated-direction diagnostics to design a context-aware mask that preserves attacks, digging, and interactions._
+- ~~**Q-A2** Is WAIT inherently bad?~~ ✓ No; Bard can make a strategic wait while the world advances. The declared WAIT action must first be restored in the live mask, then evaluated by outcome (2026-08-24).
 
 #### W · Worker fleet
 
@@ -204,7 +204,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 `A4 · schema 7 · 6,401,258`: tactical, song, and thirteen-slot equipment state.
 `A5 · schema 8 · 6,478,670`: hazards, objects, interactions, prices, tells, explosives.
 `A6 · schema 9 · 6,478,798`: shop audio and bounds; same 512 LSTM and heads.
-`A7 · candidate`: preserves the entire A2 network and injects schema-9-only features through a bounded zero-gated residual.
+`A7 · rejected · 6,401,648`: preserves the entire A2 network and injects schema-9-only features through a bounded scalar-gated residual; the gate stayed nearly closed during the pilot.
 
 **Steps in execution.**
 
@@ -354,8 +354,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **How it's built.** **Version lineage.**
 `Baseline` compared checkpoint argmax play with masked random on held-out seeds.
 `Reward pilots` added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.
-`V4+` added action distribution, unchanged-position streaks, unique positions, staircase discovery, and discovery-to-exit diagnostics.
-`A6 gate` rejected the richer architecture: floor progress 1.011 vs A2’s 1.033, kills .83 vs 1.47, items .53 vs 1.30, and unchanged position 91.0% vs 74.3%.
+`A6 gate` rejected the disruptive warm-start.
+`A7 gate` measured exact initial parity and separated productive stationary outcomes from repeated direction attempts. A7 modestly improved progress 1.000→1.033, but had zero stair discoveries, raised unchanged directions 76.7%→91.7%, and failed item, timeout, streak, and runtime-health gates.
 
 **Steps in execution.**
 
@@ -397,26 +397,27 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 #### F · Architecture A7 adapter
 
-**In one line.** Preserve A2 behavior exactly, then learn a bounded residual from richer inputs.
+**In one line.** Exact A2 initialization succeeded, but the scalar gate barely opened and gameplay regressed.
 
 **What it does.** A7 is an implemented experimental model. The complete A2 actor-critic remains intact while a separate branch reads only map, tactical, hazard, interaction, audio, and expanded inventory fields that A2 could not see.
 
-**How it's built.** **Implemented lineage.**
-`A6 lesson`: expanding fusion 896→1,024 put random weights in front of a transferred LSTM and actor.
-`A7`: copy every A2 tensor—including critic—under `base.*`; project only new schema-9 fields to a 512-value residual; add `tanh(gate) × residual` before the unchanged LSTM. The real V2 checkpoint preflight measured exactly zero logit, value, recurrent-state, sequence, and new-input perturbation error at gate zero.
+**How it's built.** **Measured lineage.**
+`Parity`: every A2 tensor—including critic—loaded under `base.*`, with exactly zero output and recurrent-state error at gate zero.
+`Training`: all three 51,200-step pilots were finite, but final gates were only −0.001276, +0.000265, and −0.000030.
+`Gameplay`: two pilots reached floor 2 and aggregate deaths improved, but there were zero stair discoveries, items fell to 71% of A2, step limits worsened, and unchanged directions rose to 91.7%. The richer branch therefore never gained enough influence to answer whether its information helps.
 
 **Steps in execution.**
 
 1. **Load** — Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.
-2. **Prove parity** — Require zero output error and identical deterministic actions before live training.
-3. **Adapt** — Open a bounded scalar gate, then train the new residual once gradients can reach it.
-4. **Pilot** — Train seeds 35001–35003 and evaluate A2/A7 on 44001–44030 under gameplay gates.
+2. **Prove parity** — Measure exact output and deterministic-action parity before live training.
+3. **Adapt** — Let PPO learn the scalar gate and residual while continuing to update the A2 base.
+4. **Reject** — Retain A2 after the paired held-out gameplay gates fail.
 
 **Questions.**
 
-- ~~**Q-F1** Is A7 behavior-preserving at initialization?~~ ✓ Yes; unit tests and the real V2 checkpoint preflight measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
-- ~~**Q-F2** Should A7 also change rewards or action masks?~~ ✓ No; Reward V2 and the existing effective action contract stay fixed so the architecture question remains causal (2026-08-24).
-- **Q-F3** When does A7 become current? → _Only if at least two pilots improve progress and the aggregate passes stair, survival, competence, stationary-behavior, and runtime gates._
+- ~~**Q-F1** Was A7 behavior-preserving at initialization?~~ ✓ Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
+- ~~**Q-F2** Did the richer observations receive meaningful influence?~~ ✓ No clear evidence: every final scalar gate had magnitude below 0.0013, so ordinary A2 fine-tuning dominated the policy change (2026-08-24).
+- **Q-F3** What replaces the scalar-gate design? → _Test an exact-zero output projection or staged frozen-base adapter phase that receives gradients immediately; isolate the action mask first._
 
 ## Flows (representative packets)
 
@@ -468,7 +469,7 @@ Payload shapes are what the design implies, not measured traffic.
 | 4 | W → B | fresh pipe/session | `{"healthy_capacity":8}` |
 | 5 | C → T | clear recurrent state | `{"h":0,"c":0}` |
 
-### A7 compatibility experiment
+### Rejected A7 compatibility experiment
 
 | # | From → To | Packet | Representative payload |
 |---|---|---|---|
@@ -485,8 +486,8 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - **Q-G2** (G) What is the practical maximum worker count? → _Run autodancer-benchmark across 1, 2, 4, 6, 8, 10, and 12 workers on the target machine._
 - ~~**Q-B1**~~ (B) ✓ Not yet: direct JSON pipes exceeded the 2× throughput target, so binary framing remains contingent on future profiling (2026-08-24).
 - ~~**Q-B2**~~ (B) ✓ No; cross-worker, stale-session, duplicate, run-ID, seed, and sequence mismatches are rejected (2026-08-24).
-- **Q-A1** (A) Should known blocked directions be masked? → _First classify stationary outcomes, then design a context-aware mask that preserves attacks, digging, and interactions._
-- ~~**Q-A2**~~ (A) ✓ No; Bard can make a strategic wait while the world advances, so stationary behavior must be classified by outcome rather than action name (2026-08-24).
+- **Q-A1** (A) Should known blocked directions be masked? → _Use the new unchanged-direction and repeated-direction diagnostics to design a context-aware mask that preserves attacks, digging, and interactions._
+- ~~**Q-A2**~~ (A) ✓ No; Bard can make a strategic wait while the world advances. The declared WAIT action must first be restored in the live mask, then evaluated by outcome (2026-08-24).
 - ~~**Q-W1**~~ (W) ✓ No; startup or recovery fails clearly rather than silently reducing capacity (2026-08-24).
 - ~~**Q-W2**~~ (W) ✓ Only when the auto benchmark finds a repeatable gain; otherwise Windows scheduling is retained (2026-08-24).
 - **Q-O1** (O) Can multiple objects share one cell without information loss? → _Define an ordered or set-valued representation for overlapping visible entities and objects before the next schema bump._
@@ -509,9 +510,9 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-E2**~~ (E) ✓ No; the warm start randomly reinitialized the expanded fusion interface, so representation and transfer disruption were confounded (2026-08-24).
 - ~~**Q-D1**~~ (D) ✓ Only modestly: it reuses observation tensors already built for training and avoids image capture or full game rendering (2026-08-24).
 - ~~**Q-D2**~~ (D) ✓ No; it is an observer only and cannot control or alter gameplay (2026-08-24).
-- ~~**Q-F1**~~ (F) ✓ Yes; unit tests and the real V2 checkpoint preflight measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
-- ~~**Q-F2**~~ (F) ✓ No; Reward V2 and the existing effective action contract stay fixed so the architecture question remains causal (2026-08-24).
-- **Q-F3** (F) When does A7 become current? → _Only if at least two pilots improve progress and the aggregate passes stair, survival, competence, stationary-behavior, and runtime gates._
+- ~~**Q-F1**~~ (F) ✓ Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
+- ~~**Q-F2**~~ (F) ✓ No clear evidence: every final scalar gate had magnitude below 0.0013, so ordinary A2 fine-tuning dominated the policy change (2026-08-24).
+- **Q-F3** (F) What replaces the scalar-gate design? → _Test an exact-zero output projection or staged frozen-base adapter phase that receives gradients immediately; isolate the action mask first._
 
 ## What the platform gives vs what we own
 

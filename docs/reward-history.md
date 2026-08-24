@@ -433,7 +433,7 @@ or optimization problem.
 
 ## Architecture 7 with Reward V2: function-preserving sensory adapter
 
-**Status: predeclared; implementation and paired pilot pending as of 2026-08-24.**
+**Status: rejected after the completed paired pilot on 2026-08-24.**
 
 ### Question and causal hypothesis
 
@@ -507,6 +507,55 @@ acceptance evaluation. A failure retains A2 and distinguishes three cases:
 the gate never learns (optimization failure), the gate learns without gameplay
 gain (information not useful at this budget), or richer inputs improve local
 diagnostics without progression (navigation/control remains the bottleneck).
+
+### Result
+
+The real V2 checkpoint passed the mandatory initialization proof with exactly
+zero measured error—not merely error below tolerance—for logits, critic values,
+next LSTM state, reset-containing sequences, deterministic actions, and changes
+to every A7-only input. All three pilots then completed 51,200 transitions and
+50 finite PPO updates. The adapter gates changed and remained bounded, but
+finished extremely close to closed: `-0.001276`, `+0.000265`, and `-0.000030`.
+
+Deterministic evaluation on seeds `44001` through `44030` produced:
+
+| Held-out metric | A2 | A7 aggregate |
+| --- | ---: | ---: |
+| Mean floor progress | 1.000 | 1.033 |
+| Death rate | 46.7% | 40.0% |
+| Step-limit rate | 53.3% | 58.9% |
+| Enemy kills / episode | 1.53 | 1.51 |
+| Item pickups / episode | 1.30 | 0.92 |
+| Unchanged directional attempts | 76.7% | 91.7% |
+| Repeated same-direction attempts | 67.5% | 89.6% |
+| Mean longest unchanged-position streak | 1,341 | 1,693 |
+| Unique positions per 100 turns | 0.813 | 0.815 |
+| Staircase discoveries | 0 | 0 |
+
+Two pilots improved mean floor progress independently: seed `35001` reached
+1.033 and seed `35003` reached 1.067, while seed `35002` remained at 1.000.
+The aggregate also improved survival and retained 98.6% of A2's kills. Those
+are positive directional signals, but they do not satisfy the experiment.
+There was no staircase evidence; item retention fell to 71%; step-limit and
+stationary-streak metrics worsened; unchanged directional attempts increased
+rather than falling by 20%; and evaluation required two worker replacements in
+each of the latter two candidate waves. All evaluation actions again belonged
+to the four directional actions.
+
+The predeclared decision is `retain_v2_architecture_2`. No A7 continuation is
+started. The result is classified primarily as an adapter-optimization failure,
+not evidence that richer observations are harmful: the bounded scalar gate
+never opened beyond magnitude 0.0013, so the new branch had almost no influence
+while ordinary PPO updates could still move the preserved A2 base. The modest
+progress gain therefore cannot be attributed confidently to map or tactical
+information.
+
+The next architecture experiment should retain exact A2 initialization while
+allowing useful new features to receive gradients immediately—for example, a
+zero-output final residual projection with a nonzero path, or a staged phase
+that freezes the A2 base while training the adapter. It must also isolate the
+directional-action collapse and the unavailable live `WAIT` mask before another
+long representation pilot. Reward V5 remains deferred.
 
 ## Rules for future entries
 

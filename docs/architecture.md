@@ -52,7 +52,7 @@ explicit partial upgrades for interaction-state and audio additions.
 
 ## Architecture 7 experimental compatibility path
 
-Architecture 7 is an implemented candidate, not the promoted default. It
+Architecture 7 is an implemented but rejected experiment, not the promoted default. It
 preserves a complete Architecture-2 actor-critic—including its local encoders,
 fusion layer, 512-unit LSTM, actor, and critic—and adds a separate residual
 encoder for schema-9-only state:
@@ -78,3 +78,11 @@ perturbations of all new inputs while the gate is closed.
 The paired pilot keeps Reward V2 and the existing action contract fixed. Its
 predeclared seeds, diagnostics, and gameplay gates are recorded in
 `reward-history.md`; passing static parity does not itself promote A7.
+
+The completed three-seed pilot confirmed exact initialization parity but did
+not confirm effective sensory adaptation. Final scalar gates had magnitudes
+between `0.000030` and `0.001276`; aggregate progress improved slightly from
+1.000 to 1.033, but stair discovery remained zero and unchanged directional
+attempts worsened from 76.7% to 91.7%. A2 therefore remains the baseline. A
+future compatibility design must preserve zero initial output while allowing
+the new branch to receive useful gradients immediately.

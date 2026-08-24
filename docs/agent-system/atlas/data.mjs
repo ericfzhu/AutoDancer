@@ -8,7 +8,7 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline; the implemented A7 candidate is now under a predeclared paired test.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline after the A7 compatibility pilot failed its gameplay and adapter-learning gates.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
@@ -47,7 +47,7 @@ export const DECISIONS = [
   { axis: 'Information', decision: 'Expose only player-visible state plus memory a human player could reasonably retain.', adr: '[Parity](../observation-parity.md)' },
   { axis: 'Selection', decision: 'Choose policies by held-out gameplay outcomes, never by shaped return.', adr: '[Reward history](../reward-history.md)' },
   { axis: 'Baseline', decision: 'Retain Reward V2 with Architecture A2 after V3, V4, and the A6 representation pilot failed their gates.', adr: '[Reward history](../reward-history.md)' },
-  { axis: 'A7 experiment', decision: 'Test the implemented exact A2 path plus zero-gated schema-9 residual under Reward V2; parity passed before live training.', adr: '[Reward history](../reward-history.md)' },
+  { axis: 'A7 outcome', decision: 'Reject the zero-scalar-gated adapter: initialization parity passed, but the gate stayed nearly closed and gameplay gates failed; retain A2.', adr: '[Reward history](../reward-history.md)' },
 ];
 
 export const GROUPS = [
@@ -80,9 +80,9 @@ export const NODES = [
     id: 'A', code: 'A', name: 'Action contract', short: '11 ACTIONS', group: 'live', gx: 10, gy: 1, w: 3, d: 2, h: 44, kind: 'gate',
     one: 'The policy chooses one of eleven engine-level Bard actions.',
     what: 'The discrete action space is up, right, down, left, wait, use item, bomb, throw, and three spell slots. The observation carries a mask so impossible inventory actions cannot be sampled.',
-    how: `<strong>Version lineage.</strong><br><code>Early</code> control sent directions to an attached game.<br><code>Schema 5+</code> standardized 11 logical actions and exact command acknowledgements.<br><code>Current limitation</code> keeps directional moves legal even when a wall or context will prevent displacement; this avoids hiding attacks and digging, but repeated blocked inputs are not distinguished before selection.`,
+    how: `<strong>Version lineage.</strong><br><code>Early</code> control sent directions to an attached game.<br><code>Schema 5+</code> standardized 11 logical actions and exact command acknowledgements.<br><code>Current limitations</code>: directions remain legal even when a wall or context will prevent displacement, and the Lua mask does not currently enable the declared WAIT action. A7 evaluation therefore produced directional actions only; action-contract repair is kept separate from that architecture result.`,
     steps: [['Mask', 'Set unavailable item, bomb, throw, and spell actions to illegal.'], ['Sample', 'Mask logits, then sample during training or take argmax during evaluation.'], ['Acknowledge', 'Require the transition to echo the exact requested action and command ID.']],
-    cond: [{ q: 'Should known blocked directions be masked?', to: 'First classify stationary outcomes, then design a context-aware mask that preserves attacks, digging, and interactions.' }, { q: 'Is WAIT inherently bad?', r: 'No; Bard can make a strategic wait while the world advances, so stationary behavior must be classified by outcome rather than action name (2026-08-24).' }],
+    cond: [{ q: 'Should known blocked directions be masked?', to: 'Use the new unchanged-direction and repeated-direction diagnostics to design a context-aware mask that preserves attacks, digging, and interactions.' }, { q: 'Is WAIT inherently bad?', r: 'No; Bard can make a strategic wait while the world advances. The declared WAIT action must first be restored in the live mask, then evaluated by outcome (2026-08-24).' }],
   },
   {
     id: 'W', code: 'W', name: 'Worker fleet', short: 'WORKER FLEET', group: 'live', gx: 1, gy: 5.5, w: 3, d: 3, h: 58, kind: 'cards',
@@ -112,7 +112,7 @@ export const NODES = [
     id: 'P', code: 'P', name: 'Policy and value network', short: 'ACTOR CRITIC', group: 'decide', gx: 5.5, gy: 10.5, w: 4, d: 3, h: 82, kind: 'tall',
     one: 'One hybrid neural network chooses actions and estimates future return.',
     what: 'Parallel encoders process local geometry, salient entities, inventory, player/audio state, previous action/reward, and—after A2—the explicit map. They fuse to 512 features, pass through a 512-unit LSTM, and split into masked actor and critic heads.',
-    how: `<strong>Architecture lineage.</strong><br><code>A2 · schema 5 · 5,953,167</code>: local residual CNN, entity transformer, player MLP, eight-slot inventory transformer, context encoder, 512 LSTM.<br><code>A3 · schema 6 · 6,398,494</code>: adds 65×65 map CNN and expands fusion 896→1,024.<br><code>A4 · schema 7 · 6,401,258</code>: tactical, song, and thirteen-slot equipment state.<br><code>A5 · schema 8 · 6,478,670</code>: hazards, objects, interactions, prices, tells, explosives.<br><code>A6 · schema 9 · 6,478,798</code>: shop audio and bounds; same 512 LSTM and heads.<br><code>A7 · candidate</code>: preserves the entire A2 network and injects schema-9-only features through a bounded zero-gated residual.`,
+    how: `<strong>Architecture lineage.</strong><br><code>A2 · schema 5 · 5,953,167</code>: local residual CNN, entity transformer, player MLP, eight-slot inventory transformer, context encoder, 512 LSTM.<br><code>A3 · schema 6 · 6,398,494</code>: adds 65×65 map CNN and expands fusion 896→1,024.<br><code>A4 · schema 7 · 6,401,258</code>: tactical, song, and thirteen-slot equipment state.<br><code>A5 · schema 8 · 6,478,670</code>: hazards, objects, interactions, prices, tells, explosives.<br><code>A6 · schema 9 · 6,478,798</code>: shop audio and bounds; same 512 LSTM and heads.<br><code>A7 · rejected · 6,401,648</code>: preserves the entire A2 network and injects schema-9-only features through a bounded scalar-gated residual; the gate stayed nearly closed during the pilot.`,
     steps: [['Embed', 'Turn categorical classes, exact-type hashes, positions, and numeric state into compact features.'], ['Perceive', 'Run local/map CNNs and entity/inventory attention encoders in parallel.'], ['Fuse', 'Project all streams into a shared 512-value latent.'], ['Remember', 'Update the LSTM hidden and cell state.'], ['Decide', 'Produce 11 masked action logits and one state-value estimate.']],
     cond: [{ q: 'Is A6 too small to learn the game?', r: 'The A6 pilot does not support that conclusion: it changed the latent interface and had only 51,200 new transitions versus A2’s 250,880. Capacity was not isolated (2026-08-24).' }, { q: 'Would simply scaling parameter count solve progression?', to: 'Establish a stable, behavior-preserving architecture and learning curve before running controlled width/depth scaling experiments.' }],
   },
@@ -160,7 +160,7 @@ export const NODES = [
     id: 'E', code: 'E', name: 'Evaluation and selection', short: 'EVALUATION', group: 'evidence', gx: 1, gy: 20.5, w: 3.5, d: 3, h: 48, kind: 'gate',
     one: 'Deterministic unseen-seed gameplay decides whether a version advances.',
     what: 'Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, items, movement, stairs, and runtime health.',
-    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>V4+</code> added action distribution, unchanged-position streaks, unique positions, staircase discovery, and discovery-to-exit diagnostics.<br><code>A6 gate</code> rejected the richer architecture: floor progress 1.011 vs A2’s 1.033, kills .83 vs 1.47, items .53 vs 1.30, and unchanged position 91.0% vs 74.3%.`,
+    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>A6 gate</code> rejected the disruptive warm-start.<br><code>A7 gate</code> measured exact initial parity and separated productive stationary outcomes from repeated direction attempts. A7 modestly improved progress 1.000→1.033, but had zero stair discoveries, raised unchanged directions 76.7%→91.7%, and failed item, timeout, streak, and runtime-health gates.`,
     steps: [['Predeclare', 'Write hypotheses, seeds, budgets, metrics, and pass/fail gates before training.'], ['Evaluate', 'Run deterministic argmax policy on ordered unseen seeds.'], ['Aggregate', 'Preserve per-checkpoint direction as well as arm-level means.'], ['Decide', 'Promote, continue, or reject using gameplay-ranked rules.'], ['Record', 'Append rationale and results to reward-history.md.']],
     cond: [{ q: 'Why was A6 rejected even though it has more information?', r: 'It failed the predeclared gameplay gate and produced worse local competence and more stationary outcomes within the pilot budget (2026-08-24).' }, { q: 'Does the A6 result prove explicit map memory is harmful?', r: 'No; the warm start randomly reinitialized the expanded fusion interface, so representation and transfer disruption were confounded (2026-08-24).' }],
   },
@@ -173,12 +173,12 @@ export const NODES = [
     cond: [{ q: 'Does rendering symbolic workers affect the game workers?', r: 'Only modestly: it reuses observation tensors already built for training and avoids image capture or full game rendering (2026-08-24).' }, { q: 'Is the dashboard part of policy input?', r: 'No; it is an observer only and cannot control or alter gameplay (2026-08-24).' }],
   },
   {
-    id: 'F', code: 'F', name: 'Architecture A7 adapter', short: 'A7 TESTING', group: 'future', gx: 10.5, gy: 20.5, w: 3.5, d: 3, h: 62, kind: 'tall',
-    one: 'Preserve A2 behavior exactly, then learn a bounded residual from richer inputs.',
+    id: 'F', code: 'F', name: 'Architecture A7 adapter', short: 'A7 REJECTED', group: 'future', gx: 10.5, gy: 20.5, w: 3.5, d: 3, h: 62, kind: 'tall',
+    one: 'Exact A2 initialization succeeded, but the scalar gate barely opened and gameplay regressed.',
     what: 'A7 is an implemented experimental model. The complete A2 actor-critic remains intact while a separate branch reads only map, tactical, hazard, interaction, audio, and expanded inventory fields that A2 could not see.',
-    how: `<strong>Implemented lineage.</strong><br><code>A6 lesson</code>: expanding fusion 896→1,024 put random weights in front of a transferred LSTM and actor.<br><code>A7</code>: copy every A2 tensor—including critic—under <code>base.*</code>; project only new schema-9 fields to a 512-value residual; add <code>tanh(gate) × residual</code> before the unchanged LSTM. The real V2 checkpoint preflight measured exactly zero logit, value, recurrent-state, sequence, and new-input perturbation error at gate zero.`,
-    steps: [['Load', 'Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.'], ['Prove parity', 'Require zero output error and identical deterministic actions before live training.'], ['Adapt', 'Open a bounded scalar gate, then train the new residual once gradients can reach it.'], ['Pilot', 'Train seeds 35001–35003 and evaluate A2/A7 on 44001–44030 under gameplay gates.']],
-    cond: [{ q: 'Is A7 behavior-preserving at initialization?', r: 'Yes; unit tests and the real V2 checkpoint preflight measured exact tensor and output parity, including reset-containing sequences (2026-08-24).' }, { q: 'Should A7 also change rewards or action masks?', r: 'No; Reward V2 and the existing effective action contract stay fixed so the architecture question remains causal (2026-08-24).' }, { q: 'When does A7 become current?', to: 'Only if at least two pilots improve progress and the aggregate passes stair, survival, competence, stationary-behavior, and runtime gates.' }],
+    how: `<strong>Measured lineage.</strong><br><code>Parity</code>: every A2 tensor—including critic—loaded under <code>base.*</code>, with exactly zero output and recurrent-state error at gate zero.<br><code>Training</code>: all three 51,200-step pilots were finite, but final gates were only −0.001276, +0.000265, and −0.000030.<br><code>Gameplay</code>: two pilots reached floor 2 and aggregate deaths improved, but there were zero stair discoveries, items fell to 71% of A2, step limits worsened, and unchanged directions rose to 91.7%. The richer branch therefore never gained enough influence to answer whether its information helps.`,
+    steps: [['Load', 'Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.'], ['Prove parity', 'Measure exact output and deterministic-action parity before live training.'], ['Adapt', 'Let PPO learn the scalar gate and residual while continuing to update the A2 base.'], ['Reject', 'Retain A2 after the paired held-out gameplay gates fail.']],
+    cond: [{ q: 'Was A7 behavior-preserving at initialization?', r: 'Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).' }, { q: 'Did the richer observations receive meaningful influence?', r: 'No clear evidence: every final scalar gate had magnitude below 0.0013, so ordinary A2 fine-tuning dominated the policy change (2026-08-24).' }, { q: 'What replaces the scalar-gate design?', to: 'Test an exact-zero output projection or staged frozen-base adapter phase that receives gradients immediately; isolate the action mask first.' }],
   },
 ];
 
@@ -217,7 +217,7 @@ export const FLOWS = [
     ['W', 'B', 'fresh pipe/session', { healthy_capacity: 8 }, 'yx'],
     ['C', 'T', 'clear recurrent state', { h: 0, c: 0 }, 'xy'],
   ] },
-  { id: 'a7', name: 'A7 compatibility experiment', hops: [
+  { id: 'a7', name: 'Rejected A7 compatibility experiment', hops: [
     ['P', 'F', 'exact A2 path', { transferred: 'all compatible policy behavior' }, 'xy'],
     ['O', 'F', 'A6-only inputs', { branch: 'residual' }, 'yx'],
     ['F', 'A', 'gated logits', { initial_gate: 0 }, 'xy'],
@@ -275,10 +275,10 @@ export const CH = [
     flow: [['K', 'E', 'candidate', { architecture: 6 }], ['E', 'W', 'unseen seeds', { count: 30 }], ['W', 'E', 'outcomes', { mean_floor_progress: 1.011 }], ['E', 'D', 'decision', { retain: 'A2' }]],
   },
   {
-    id: 'next', title: 'The A7 compatibility bridge', reveal: ['F'],
-    lede: 'The next hypothesis changes how new features enter the policy, not the reward.',
-    story: `<p>A6 added information but broke the old latent interface during warm-start. A7 now begins as the measured exact A2 function and lets richer inputs enter through a zero-gated residual. <mark>Implementation and parity are complete; held-out gameplay still decides promotion.</mark></p>`,
-    flow: [['P', 'F', 'exact A2 behavior path', { preserved: true }], ['O', 'F', 'new-feature residual', { initial_gate: 0 }], ['F', 'A', 'candidate logits', { reward: 'V2' }], ['F', 'E', 'paired evaluation', { seeds: '44001–44030' }]],
+    id: 'next', title: 'What A7 proved', reveal: ['F'],
+    lede: 'Exact compatibility is possible, but a zero scalar gate can starve the new branch of useful learning.',
+    story: `<p>A7 fixed A6’s initialization confound: it began as the exact measured A2 function. Its scalar gate nevertheless stayed below magnitude 0.0013, while ordinary PPO updates changed the base and stationary directional behavior worsened. <mark>A7 is rejected; richer observations remain untested rather than disproven.</mark></p>`,
+    flow: [['P', 'F', 'exact A2 behavior path', { error: 0 }], ['O', 'F', 'starved residual', { max_final_gate: 0.001276 }], ['F', 'E', 'held-out failure', { progress: 1.033, stairs: 0 }], ['E', 'K', 'retain baseline', { architecture: 'A2' }]],
   },
   {
     id: 'all', title: 'The whole agent system', reveal: [],
