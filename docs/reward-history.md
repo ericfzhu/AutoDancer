@@ -16,8 +16,9 @@ kills, and pickups rather than with the training reward alone.
 | --- | --- | --- | --- | --- |
 | Legacy event reward | Retired | First end-to-end live trainer | Prove that live PPO could learn from engine events | Learned survival/passivity, no held-out progression |
 | Reward V1 | Retired | Legacy policy rarely explored or fought | Add bounded progress, exploration, combat, and item signals | Better survival, combat, pickups, and exploration; still no stairs |
-| Reward V2 | Current implementation | V1 never left floor 1-1 | Add staircase discovery and distance guidance; suppress safe loops | Strong combat and collection, 24 floor transitions, no zone completion; penalties dominated return |
-| Reward V3 | Implemented; pilot running | V2 learned local competence but not sustained progression | Make progression authoritative and shaping positive, bounded, and potential-based | Must be established by the directional pilot |
+| Reward V2 | Retained baseline | V1 never left floor 1-1 | Add staircase discovery and distance guidance; suppress safe loops | Strongest local competence and floor progress so far; 24 training floor transitions, no zone completion; penalties dominated return |
+| Reward V3 | Rejected | V2 learned local competence but not sustained progression | Make progression authoritative and shaping positive, bounded, and potential-based | Reduced timeouts but replaced them with unsafe activity; no held-out progress gain |
+| Reward V4A/V4B | Rejected | V3 lost local competence | Restore bounded combat and item competence; separately test stronger stair potential | Became safer but overwhelmingly passive; no held-out progress gain |
 
 ## Before versioning: direct event reward
 
@@ -348,7 +349,7 @@ whether those missing inputs caused the navigation failure.
 
 ## Architecture 6 with Reward V2: representation-isolation experiment
 
-**Status: overnight experiment configured for 2026-08-24.**
+**Status: rejected after the completed overnight experiment on 2026-08-24.**
 
 This experiment changes the observation/model architecture while restoring the
 exact Reward V2 calculation. Three architecture-6 policies warm-start from
@@ -362,6 +363,73 @@ finite and valid, and evaluation has no worker restarts. A passing experiment
 continues the strongest gameplay-ranked checkpoint to 250,880 total
 transitions. Reward V5 remains deferred until this representation question is
 answered.
+
+### Result
+
+All three Architecture-6 pilots completed 51,200 transitions and 50 finite PPO
+updates. Each checkpoint was evaluated deterministically on seeds `43001`
+through `43030`, alongside the V2 reference:
+
+| Held-out metric | V2 Architecture 2 | Architecture 6 aggregate |
+| --- | ---: | ---: |
+| Mean floor progress | 1.033 | 1.011 |
+| Death rate | 30.0% | 32.2% |
+| Step-limit rate | 66.7% | 67.8% |
+| Enemy kills / episode | 1.47 | 0.83 |
+| Item pickups / episode | 1.30 | 0.53 |
+| Unchanged-position rate | 74.3% | 91.0% |
+| Mean longest unchanged-position streak | 1,278 | 1,813 |
+| Unique positions per 100 turns | 0.668 | 0.654 |
+| Staircase discovery rate | 0% | 0% |
+
+Architecture 6 did not improve aggregate progression, and only one pilot ever
+reached floor 2. It lost substantial combat and item competence and produced
+much longer stationary sequences. All recorded evaluation actions were
+directional; explicit wait, item, bomb, throw, and spell actions were zero.
+Consequently, the 91% unchanged-position rate does not describe passive
+`WAIT` actions. It most likely contains repeated directional inputs into a
+persistent obstruction, mixed with legitimate stationary attacks and digging.
+The current diagnostic cannot yet separate those cases.
+
+The predeclared decision was `retain_v2_architecture_2`. No Architecture-6
+250k continuation was started. This result does not motivate a reward change:
+Reward V2 already charged most unchanged turns `-0.015` through its turn and
+revisit terms, yet the blocked-action behavior persisted. A stronger generic
+stationary penalty could also punish combat and digging without solving the
+underlying action-selection failure.
+
+### Interpretation and next architectural question
+
+Architecture 6 has 6.48 million parameters versus 5.95 million for Architecture
+2. It retains the same 512-unit LSTM and actor/critic heads while adding the
+65x65 map CNN and expanded tactical, inventory, player, interaction, hazard,
+and audio inputs. Each pilot received only 51,200 new transitions, whereas the
+V2 source checkpoint had accumulated 250,880.
+
+More information should not reduce the best representable policy, but this
+upgrade was not behavior-preserving. Adding the 128-value map representation
+expanded the fusion input from 896 to 1,024 values. The old fusion matrix could
+not be transferred and was randomly initialized; the new map encoder and new
+feature columns were also fresh, while the transferred LSTM and actor suddenly
+received a different latent distribution. The experiment therefore establishes
+that this partially warm-started A6 did not recover and improve within 51,200
+steps. It does not establish that explicit map memory is harmful or that a
+fully trained A6 cannot outperform A2.
+
+Before another reward version or a larger A6 run:
+
+1. classify unchanged-position turns as productive combat, digging,
+   interaction, changed-target movement, or repeated blocked movement;
+2. stop advertising provably impossible movement as legal while preserving
+   attacks and diggable walls;
+3. add new sensory information through a zero-initialized residual adapter so
+   the upgraded policy initially reproduces A2 logits exactly;
+4. verify that equivalence before training, then evaluate learning curves at
+   fixed checkpoints through a longer budget.
+
+This will distinguish insufficient training time from an ineffective map
+representation without using reward changes to compensate for an observation
+or optimization problem.
 
 ## Rules for future entries
 
