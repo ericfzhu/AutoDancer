@@ -15,7 +15,7 @@ from torch import Tensor
 
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
-from autodancer.training.model import START_ACTION, RecurrentActorCritic
+from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
 
 
@@ -64,7 +64,7 @@ class InferenceScheduler:
 
     def __init__(
         self,
-        model: RecurrentActorCritic,
+        model: PolicyModel,
         *,
         device: torch.device,
         max_batch: int,
@@ -157,7 +157,7 @@ class VersionedAsyncRolloutCollector:
     def __init__(
         self,
         environment: Any,
-        model: RecurrentActorCritic,
+        model: PolicyModel,
         *,
         device: torch.device,
         seed: int,

@@ -21,7 +21,13 @@ from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
-from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
+from autodancer.training.model import (
+    START_ACTION,
+    AdapterActorCritic,
+    ModelConfig,
+    PolicyModel,
+    RecurrentActorCritic,
+)
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
 
 TelemetryCallback = Callable[
@@ -66,7 +72,7 @@ class RolloutCollector:
     def __init__(
         self,
         environment: AutoDancerVectorEnv,
-        model: RecurrentActorCritic,
+        model: PolicyModel,
         *,
         device: torch.device,
         seed: int,
@@ -347,7 +353,11 @@ def train(arguments: argparse.Namespace) -> None:
             try:
                 # Resume replaces every tensor, but a warm start can intentionally
                 # leave new architecture modules and the critic at fresh values.
-                model = RecurrentActorCritic(ModelConfig(), initialize=arguments.resume is None)
+                model: PolicyModel = (
+                    AdapterActorCritic(initialize=arguments.resume is None)
+                    if arguments.architecture == 7
+                    else RecurrentActorCritic(ModelConfig(), initialize=arguments.resume is None)
+                )
                 algorithm = RecurrentPPO(
                     model,
                     ppo_config,
@@ -393,6 +403,11 @@ def train(arguments: argparse.Namespace) -> None:
                         },
                         "worker_restarts": sum(
                             handle.restart_count for handle in supervisor.workers.values()
+                        ),
+                        **(
+                            model.architecture_metrics()
+                            if isinstance(model, AdapterActorCritic)
+                            else {}
                         ),
                     }
                     if next_evaluation is not None and algorithm.global_step >= next_evaluation:
@@ -487,6 +502,13 @@ def main() -> int:
         help="warm-start policy/representation weights while keeping a fresh critic and optimizer",
     )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument(
+        "--architecture",
+        type=int,
+        choices=(6, 7),
+        default=6,
+        help="policy architecture (A7 is the zero-gated A2 compatibility experiment)",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollout-length", type=int, default=128)
     parser.add_argument("--sequence-length", type=int, default=32)

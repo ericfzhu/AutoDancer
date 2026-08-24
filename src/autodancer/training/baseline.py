@@ -20,7 +20,7 @@ from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUI
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
 from autodancer.training.dashboard import DashboardServer, DashboardState
-from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
+from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
 
@@ -45,12 +45,20 @@ class EpisodeAccumulator:
     unchanged_position_turns: int = 0
     max_unchanged_position_streak: int = 0
     idle_turns: int = 0
+    productive_stationary_combat_turns: int = 0
+    productive_stationary_interaction_turns: int = 0
+    unchanged_direction_turns: int = 0
+    repeated_direction_turns: int = 0
+    special_no_effect_turns: int = 0
+    max_repeated_direction_streak: int = 0
     staircase_discoveries: int = 0
     staircase_exits: int = 0
     stair_discovery_to_exit_turns: list[int] = field(default_factory=list)
     _visited_positions: set[tuple[int, int, int, int]] = field(default_factory=set)
     _last_position: tuple[int, int, int, int] | None = None
     _unchanged_position_streak: int = 0
+    _last_unchanged_direction: int | None = None
+    _repeated_direction_streak: int = 0
     _floor: tuple[int, int] = (0, 0)
     _stairs_seen_on_floor: bool = False
     _pending_stair_turn: int | None = None
@@ -117,7 +125,10 @@ class EpisodeAccumulator:
             self._floor = current_floor
             self._stairs_seen_on_floor = False
             self._pending_stair_turn = None
-        if position == self._last_position:
+        events = list(info.get("raw_events", []))
+        event_kinds = {str(event.get("kind", "")) for event in events}
+        unchanged = position == self._last_position
+        if unchanged:
             self.unchanged_position_turns += 1
             self._unchanged_position_streak += 1
             self.max_unchanged_position_streak = max(
@@ -126,9 +137,36 @@ class EpisodeAccumulator:
             )
         else:
             self._unchanged_position_streak = 0
-        events = list(info.get("raw_events", []))
-        if action == int(Action.WAIT) and position == self._last_position and not events:
+        if action == int(Action.WAIT) and unchanged and not events:
             self.idle_turns += 1
+        if unchanged and event_kinds & {"enemy_damage", "enemy_kill"}:
+            self.productive_stationary_combat_turns += 1
+            self._last_unchanged_direction = None
+            self._repeated_direction_streak = 0
+        elif unchanged and event_kinds & {
+            "item_collected",
+            "container_opened",
+            "currency_collected",
+        }:
+            self.productive_stationary_interaction_turns += 1
+            self._last_unchanged_direction = None
+            self._repeated_direction_streak = 0
+        elif unchanged and int(Action.UP) <= action <= int(Action.LEFT):
+            self.unchanged_direction_turns += 1
+            if action == self._last_unchanged_direction:
+                self.repeated_direction_turns += 1
+                self._repeated_direction_streak += 1
+            else:
+                self._repeated_direction_streak = 1
+            self.max_repeated_direction_streak = max(
+                self.max_repeated_direction_streak, self._repeated_direction_streak
+            )
+            self._last_unchanged_direction = action
+        elif unchanged and action != int(Action.WAIT) and not events:
+            self.special_no_effect_turns += 1
+        else:
+            self._last_unchanged_direction = None
+            self._repeated_direction_streak = 0
         self._last_position = position
         self._visited_positions.add(position)
         if self._has_visible_stairs(observation) and not self._stairs_seen_on_floor:
@@ -170,6 +208,14 @@ class EpisodeAccumulator:
             "unchanged_position_turns": self.unchanged_position_turns,
             "max_unchanged_position_streak": self.max_unchanged_position_streak,
             "idle_turns": self.idle_turns,
+            "productive_stationary_combat_turns": self.productive_stationary_combat_turns,
+            "productive_stationary_interaction_turns": (
+                self.productive_stationary_interaction_turns
+            ),
+            "unchanged_direction_turns": self.unchanged_direction_turns,
+            "repeated_direction_turns": self.repeated_direction_turns,
+            "special_no_effect_turns": self.special_no_effect_turns,
+            "max_repeated_direction_streak": self.max_repeated_direction_streak,
             "unique_positions": len(self._visited_positions),
             "staircase_discoveries": self.staircase_discoveries,
             "staircase_exits": self.staircase_exits,
@@ -242,6 +288,30 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         / max(total_turns, 1),
         "idle_rate": sum(int(episode.get("idle_turns", 0)) for episode in episodes)
         / max(total_turns, 1),
+        "productive_stationary_combat_rate": sum(
+            int(episode.get("productive_stationary_combat_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "productive_stationary_interaction_rate": sum(
+            int(episode.get("productive_stationary_interaction_turns", 0))
+            for episode in episodes
+        )
+        / max(total_turns, 1),
+        "unchanged_direction_rate": sum(
+            int(episode.get("unchanged_direction_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "repeated_direction_rate": sum(
+            int(episode.get("repeated_direction_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "special_no_effect_rate": sum(
+            int(episode.get("special_no_effect_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "mean_max_repeated_direction_streak": float(
+            np.mean([episode.get("max_repeated_direction_streak", 0) for episode in episodes])
+        ),
         "mean_max_unchanged_position_streak": float(
             np.mean([episode.get("max_unchanged_position_streak", 0) for episode in episodes])
         ),
@@ -279,7 +349,7 @@ def compare_summaries(reference: dict[str, Any], trained: dict[str, Any]) -> dic
 
 
 def _model_actions(
-    model: RecurrentActorCritic,
+    model: PolicyModel,
     observation: dict[str, np.ndarray],
     hidden: Tensor,
     device: torch.device,
@@ -308,7 +378,7 @@ def evaluate_live_policy(
     max_steps: int,
     policy_seed: int,
     device: torch.device,
-    model: RecurrentActorCritic | None = None,
+    model: PolicyModel | None = None,
     dashboard_state: DashboardState | None = None,
 ) -> list[dict[str, Any]]:
     if not seeds:
@@ -436,10 +506,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
     architecture = payload.get("architecture", {})
-    model_config = dict(architecture.get("config", {}))
-    if architecture.get("version") == 2:
-        model_config["map_size"] = 0
-    expected = RecurrentActorCritic(ModelConfig(**model_config), initialize=False)
+    expected = model_from_spec(architecture, initialize=False)
     if payload.get("architecture") != expected.architecture_spec():
         raise ValueError("Checkpoint model architecture is incompatible with the schema-9 policy")
     model = expected.to(device)

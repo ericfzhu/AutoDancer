@@ -19,7 +19,13 @@ from autodancer.constants import (
     GridChannel,
     PlayerFeature,
 )
-from autodancer.training.model import START_ACTION, ModelConfig, RecurrentActorCritic
+from autodancer.training.model import (
+    START_ACTION,
+    AdapterActorCritic,
+    AdapterConfig,
+    ModelConfig,
+    RecurrentActorCritic,
+)
 from autodancer.training.ppo import (
     PPOConfig,
     RecurrentPPO,
@@ -216,6 +222,109 @@ def test_architecture_two_checkpoint_can_partially_initialize_map_policy(
     assert torch.equal(target.facing.weight, facing_before)
     assert torch.equal(target.cell_projection[0].weight[:, :68], source.cell_projection[0].weight)
     assert provenance["architecture_upgrade"] == "v2_to_v6_player_parity"
+
+
+def test_architecture_seven_warm_start_exactly_preserves_a2_and_gates_new_inputs(
+    tmp_path: Path,
+) -> None:
+    source = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            map_size=0,
+        )
+    ).eval()
+    path = tmp_path / "architecture-2.pt"
+    torch.save(
+        {
+            "model": source.state_dict(),
+            "architecture": source.architecture_spec(),
+            "checkpoint_metadata": {"reward": {"version": 2}},
+        },
+        path,
+    )
+    target = AdapterActorCritic(
+        AdapterConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            tactical_size=16,
+            map_size=16,
+            player_size=8,
+            inventory_size=8,
+        )
+    ).eval()
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_from(path)
+    value = {key: tensor[0] for key, tensor in observations(1, 2).items()}
+    changed = {key: tensor.clone() for key, tensor in value.items()}
+    changed["map_memory"].fill_(3)
+    changed["grid"][..., int(GridChannel.FACING) :].fill_(2)
+    changed["player"][:, 16:].fill_(5)
+    changed["inventory"][:, :8, 4:].fill_(7)
+    changed["inventory"][:, 8:].fill_(7)
+    state = source.initial_state(2)
+    with torch.inference_mode():
+        source_step = source.step(value, state)
+        target_step = target.step(value, state)
+        changed_step = target.step(changed, state)
+    assert provenance["architecture_upgrade"] == "v2_to_v7_zero_gated_exact"
+    assert all(
+        torch.equal(tensor, target.state_dict()[f"base.{name}"])
+        for name, tensor in source.state_dict().items()
+    )
+    assert all(
+        torch.equal(left, right) for left, right in zip(source_step, target_step, strict=True)
+    )
+    assert all(
+        torch.equal(left, right) for left, right in zip(target_step, changed_step, strict=True)
+    )
+
+
+def test_architecture_seven_gate_then_adapter_receive_gradients() -> None:
+    model = AdapterActorCritic(
+        AdapterConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            tactical_size=16,
+            map_size=16,
+            player_size=8,
+            inventory_size=8,
+        )
+    )
+    value = {key: tensor[0] for key, tensor in observations(1, 2).items()}
+    logits, critic, _ = model.step(value, model.initial_state(2))
+    (logits[:, 0].sum() + critic.sum()).backward()
+    assert model.adapter_gate.grad is not None
+    assert torch.isfinite(model.adapter_gate.grad)
+    assert all(
+        parameter.grad is None or torch.count_nonzero(parameter.grad) == 0
+        for parameter in model.adapter.parameters()
+    )
+    model.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        model.adapter_gate.fill_(0.1)
+    logits, critic, _ = model.step(value, model.initial_state(2))
+    (logits[:, 0].sum() + critic.sum()).backward()
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad) > 0
+        for parameter in model.adapter.parameters()
+    )
 
 
 def test_architecture_four_checkpoint_can_initialize_interaction_policy(

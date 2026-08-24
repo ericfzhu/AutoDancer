@@ -49,3 +49,32 @@ player, and inventory encoders plus recurrent and actor weights. New tactical,
 map, equipment, song, object, price, and animation inputs, the expanded fusion
 layer, and critic are initialized afresh. Architectures 4 and 5 also have
 explicit partial upgrades for interaction-state and audio additions.
+
+## Architecture 7 experimental compatibility path
+
+Architecture 7 is an implemented candidate, not the promoted default. It
+preserves a complete Architecture-2 actor-critic—including its local encoders,
+fusion layer, 512-unit LSTM, actor, and critic—and adds a separate residual
+encoder for schema-9-only state:
+
+- tactical, hazard, object, price, and animation grid channels;
+- the player-centred 65×65 explicit floor-memory viewport;
+- song timing and shop-audio player fields; and
+- expanded inventory slots and per-slot state.
+
+The new branch projects to the existing 512-value latent and is multiplied by
+`tanh(adapter_gate)` before the original LSTM. The scalar gate initializes to
+exactly zero, so a loaded A2 checkpoint is the initial function. The bounded
+gate can then learn how much residual information to admit without replacing
+the proven latent interface.
+
+The A2-to-A7 warm start copies every source tensor, including the critic, into
+the preserved `base` module. It resets only the optimizer and initializes only
+the adapter. `architecture7_parity.py` is a mandatory preflight: on the real V2
+checkpoint it currently reports zero error for logits, values, next recurrent
+state, reset-containing sequences, deterministic actions, and arbitrary
+perturbations of all new inputs while the gate is closed.
+
+The paired pilot keeps Reward V2 and the existing action contract fixed. Its
+predeclared seeds, diagnostics, and gameplay gates are recorded in
+`reward-history.md`; passing static parity does not itself promote A7.

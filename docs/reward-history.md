@@ -431,6 +431,83 @@ This will distinguish insufficient training time from an ineffective map
 representation without using reward changes to compensate for an observation
 or optimization problem.
 
+## Architecture 7 with Reward V2: function-preserving sensory adapter
+
+**Status: predeclared; implementation and paired pilot pending as of 2026-08-24.**
+
+### Question and causal hypothesis
+
+Architecture 7 tests whether Architecture 6 failed because its partial warm
+start destroyed the useful Architecture-2 latent representation, rather than
+because persistent map and tactical information are intrinsically unhelpful.
+It retains the complete Architecture-2 policy as a base and injects only the
+schema-9 information unavailable to Architecture 2 through a bounded residual
+adapter. The adapter gate starts at exactly zero. Before training, the upgraded
+model must therefore reproduce the source checkpoint's logits, values,
+recurrent states, and deterministic actions within numerical tolerance even
+when the new inputs are perturbed.
+
+This is an architecture experiment, not Reward V5. Reward V2, observation
+schema 9, PPO settings, live workers, and the existing action mask remain
+unchanged. In particular, the separately identified unavailable-`WAIT` mask is
+not repaired inside this experiment because doing so would change the effective
+action space and confound the A2/A7 comparison.
+
+### Pre-training acceptance gate
+
+The pilot may not start unless an automated parity test demonstrates all of the
+following against `runs/reward-v2-250k/final.pt`:
+
+1. actor logits, critic values, and both LSTM state tensors match at absolute
+   tolerance `1e-6` over batched single steps and reset-containing sequences;
+2. deterministic actions are identical;
+3. arbitrary changes to map memory and schema-9-only grid, player, and
+   inventory fields cannot affect the zero-gated A7 output;
+4. every A2 tensor, including its critic, is loaded into the preserved base,
+   while only the adapter is freshly initialized.
+
+Training diagnostics must subsequently show finite PPO losses, a healthy fixed
+worker count, a bounded finite gate, a changing gate, and eventually non-zero
+adapter parameter gradients. A gate that remains functionally zero means the
+new information was not learned and fails the hypothesis even if gameplay is
+unchanged.
+
+### Directional pilot and seeds
+
+Three A7 checkpoints warm-start from the same A2 source with fresh optimizers
+and train for 51,200 transitions on seeds `35001`, `35002`, and `35003` using
+eight workers. A2 and all A7 checkpoints are evaluated deterministically on
+new seeds `44001` through `44030` with a 3,000-turn cap. These seeds are fixed
+before any A7 result is observed and become development history afterward.
+
+Evaluation additionally separates unchanged-position outcomes into productive
+combat or interaction, explicit waits, special-action no-ops, and unchanged
+directional attempts. Repeated same-direction attempts at the same position
+are recorded as a blocked-movement proxy; they are not claimed to be an exact
+game-engine legality label.
+
+### Predeclared gameplay decision
+
+A7 passes only if its three-checkpoint aggregate:
+
+- improves mean floor progress over A2, with the direction reproduced by at
+  least two of three independently trained checkpoints;
+- produces staircase evidence: discovery, discovery-to-exit conversion, or
+  completed exits must improve, and zero discoveries is an automatic failure;
+- keeps death rate no more than five percentage points above A2;
+- retains at least 80% of A2 enemy kills and item pickups per episode;
+- reduces unchanged directional attempts by at least 20%, excluding productive
+  stationary combat and interactions; and
+- does not worsen step-limit rate or the mean longest unchanged-position
+  streak.
+
+Selection is based on unshaped gameplay outcomes, never shaped return. A pass
+authorizes a separately seeded 250,880-transition continuation and 64-seed
+acceptance evaluation. A failure retains A2 and distinguishes three cases:
+the gate never learns (optimization failure), the gate learns without gameplay
+gain (information not useful at this budget), or richer inputs improve local
+diagnostics without progression (navigation/control remains the bottleneck).
+
 ## Rules for future entries
 
 Every new reward version must record:

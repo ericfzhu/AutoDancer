@@ -24,6 +24,7 @@ from autodancer.constants import (
 )
 
 ARCHITECTURE_VERSION = 6
+A7_ARCHITECTURE_VERSION = 7
 START_ACTION = ACTION_COUNT
 
 
@@ -36,6 +37,33 @@ class ModelConfig:
     attention_layers: int = 2
     attention_heads: int = 4
     map_size: int = 128
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterConfig:
+    """Function-preserving Architecture-7 configuration."""
+
+    cell_size: int = 96
+    spatial_size: int = 512
+    hidden_size: int = 512
+    entity_limit: int = 64
+    attention_layers: int = 2
+    attention_heads: int = 4
+    tactical_size: int = 128
+    map_size: int = 128
+    player_size: int = 64
+    inventory_size: int = 96
+
+    def base_config(self) -> ModelConfig:
+        return ModelConfig(
+            cell_size=self.cell_size,
+            spatial_size=self.spatial_size,
+            hidden_size=self.hidden_size,
+            entity_limit=self.entity_limit,
+            attention_layers=self.attention_layers,
+            attention_heads=self.attention_heads,
+            map_size=0,
+        )
 
 
 class ResidualBlock(nn.Module):
@@ -423,3 +451,167 @@ class RecurrentActorCritic(nn.Module):
             entropies.append(distribution.entropy())
             values.append(value)
         return torch.stack(log_probs, 1), torch.stack(entropies, 1), torch.stack(values, 1)
+
+
+class SensoryResidualAdapter(nn.Module):
+    """Encode only schema-9 fields that Architecture 2 cannot observe."""
+
+    def __init__(self, config: AdapterConfig) -> None:
+        super().__init__()
+        extra_grid_channels = len(GridChannel) - int(GridChannel.FACING)
+        self.tactical = nn.Sequential(
+            nn.Conv2d(extra_grid_channels, 48, 3, padding=1),
+            nn.SiLU(),
+            nn.Conv2d(48, 64, 3, stride=2, padding=1),
+            nn.SiLU(),
+            nn.AdaptiveAvgPool2d((3, 3)),
+            nn.Flatten(),
+            nn.Linear(64 * 3 * 3, config.tactical_size),
+            nn.LayerNorm(config.tactical_size),
+            nn.SiLU(),
+        )
+        self.map = nn.Sequential(
+            nn.Conv2d(len(MapChannel), 32, 5, stride=2, padding=2),
+            nn.SiLU(),
+            nn.Conv2d(32, 48, 3, stride=2, padding=1),
+            nn.SiLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),
+            nn.Flatten(),
+            nn.Linear(48 * 4 * 4, config.map_size),
+            nn.LayerNorm(config.map_size),
+            nn.SiLU(),
+        )
+        self.player = nn.Sequential(
+            nn.Linear(PLAYER_FEATURES - 16, config.player_size),
+            nn.LayerNorm(config.player_size),
+            nn.SiLU(),
+        )
+        # A2 sees four fields in eight slots. The adapter sees the remaining
+        # attributes in those slots plus all fields in the five new slots.
+        inventory_values = 8 * 4 + (INVENTORY_SLOTS - 8) * 8
+        self.inventory = nn.Sequential(
+            nn.Linear(inventory_values, config.inventory_size),
+            nn.LayerNorm(config.inventory_size),
+            nn.SiLU(),
+        )
+        fused = config.tactical_size + config.map_size + config.player_size + config.inventory_size
+        self.output = nn.Sequential(
+            nn.Linear(fused, config.hidden_size),
+            nn.LayerNorm(config.hidden_size),
+            nn.Tanh(),
+        )
+
+    @staticmethod
+    def _scale(value: Tensor) -> Tensor:
+        value = value.float()
+        return torch.sign(value) * torch.log1p(torch.abs(value)) / 10.0
+
+    def forward(self, observation: dict[str, Tensor]) -> Tensor:
+        grid = self._scale(observation["grid"][..., int(GridChannel.FACING) :])
+        tactical = self.tactical(grid.permute(0, 3, 1, 2))
+        memory = self._scale(observation["map_memory"])
+        map_features = self.map(memory.permute(0, 3, 1, 2))
+        player = self.player(self._scale(observation["player"][..., 16:PLAYER_FEATURES]))
+        inventory = observation["inventory"]
+        new_inventory = torch.cat(
+            (inventory[:, :8, 4:8].flatten(1), inventory[:, 8:, :8].flatten(1)), dim=-1
+        )
+        inventory_features = self.inventory(self._scale(new_inventory))
+        return self.output(torch.cat((tactical, map_features, player, inventory_features), dim=-1))
+
+
+class AdapterActorCritic(nn.Module):
+    """Architecture 2 plus a bounded, initially disabled sensory residual."""
+
+    def __init__(self, config: AdapterConfig | None = None, *, initialize: bool = True) -> None:
+        super().__init__()
+        self.config = config or AdapterConfig()
+        self.base = RecurrentActorCritic(self.config.base_config(), initialize=initialize)
+        self.adapter = SensoryResidualAdapter(self.config)
+        self.adapter_gate = nn.Parameter(torch.zeros(()))
+        if initialize:
+            for module in self.adapter.modules():
+                if isinstance(module, (nn.Linear, nn.Conv2d)):
+                    nn.init.orthogonal_(module.weight, gain=2**0.5)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
+
+    @property
+    def hidden_size(self) -> int:
+        return self.config.hidden_size
+
+    def architecture_spec(self) -> dict[str, Any]:
+        return {"version": A7_ARCHITECTURE_VERSION, "config": asdict(self.config)}
+
+    def initial_state(self, batch_size: int, *, device: torch.device | None = None) -> Tensor:
+        return self.base.initial_state(batch_size, device=device)
+
+    def encode(self, observation: dict[str, Tensor]) -> Tensor:
+        gate = torch.tanh(self.adapter_gate)
+        return self.base.encode(observation) + gate * self.adapter(observation)
+
+    def step(self, observation: dict[str, Tensor], state: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        hidden, cell = self.base.lstm(self.encode(observation), (state[:, 0], state[:, 1]))
+        next_state = torch.stack((hidden, cell), dim=1)
+        logits = self.base.actor(hidden).masked_fill(~observation["action_mask"].bool(), -1.0e9)
+        return logits, self.base.critic(hidden).squeeze(-1), next_state
+
+    def forward(self, observation: dict[str, Tensor], state: Tensor) -> tuple[Tensor, Tensor]:
+        logits, _, state = self.step(observation, state)
+        return logits, state
+
+    def act(
+        self, observation: dict[str, Tensor], state: Tensor, *, deterministic: bool = False
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        logits, value, next_state = self.step(observation, state)
+        distribution = Categorical(logits=logits)
+        action = logits.argmax(-1) if deterministic else distribution.sample()
+        return action, distribution.log_prob(action), distribution.entropy(), value, next_state
+
+    def evaluate_sequence(
+        self,
+        observation: dict[str, Tensor],
+        actions: Tensor,
+        initial_state: Tensor,
+        episode_starts: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        state = initial_state
+        log_probs, entropies, values = [], [], []
+        for step in range(actions.shape[1]):
+            state = state * (~episode_starts[:, step]).float().reshape(-1, 1, 1)
+            logits, value, state = self.step(
+                {key: item[:, step] for key, item in observation.items()}, state
+            )
+            distribution = Categorical(logits=logits)
+            log_probs.append(distribution.log_prob(actions[:, step]))
+            entropies.append(distribution.entropy())
+            values.append(value)
+        return torch.stack(log_probs, 1), torch.stack(entropies, 1), torch.stack(values, 1)
+
+    def architecture_metrics(self) -> dict[str, float]:
+        squared_norm = sum(
+            float(parameter.detach().float().square().sum())
+            for parameter in self.adapter.parameters()
+        )
+        return {
+            "adapter_gate_raw": float(self.adapter_gate.detach()),
+            "adapter_gate": float(torch.tanh(self.adapter_gate.detach())),
+            "adapter_parameter_norm": squared_norm**0.5,
+        }
+
+
+PolicyModel = RecurrentActorCritic | AdapterActorCritic
+
+
+def model_from_spec(spec: dict[str, Any], *, initialize: bool = True) -> PolicyModel:
+    """Construct the exact model described by a checkpoint architecture spec."""
+    version = int(spec.get("version", 0))
+    config = dict(spec.get("config", {}))
+    if version == 2:
+        config["map_size"] = 0
+        return RecurrentActorCritic(ModelConfig(**config), initialize=initialize)
+    if version == ARCHITECTURE_VERSION:
+        return RecurrentActorCritic(ModelConfig(**config), initialize=initialize)
+    if version == A7_ARCHITECTURE_VERSION:
+        return AdapterActorCritic(AdapterConfig(**config), initialize=initialize)
+    raise ValueError(f"Unsupported policy architecture version: {version}")

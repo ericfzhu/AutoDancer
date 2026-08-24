@@ -158,3 +158,30 @@ def test_episode_diagnostics_measure_idle_exploration_and_stair_conversion() -> 
     assert result["staircase_exits"] == 1
     assert result["stair_discovery_to_exit_turns"] == [1]
     assert result["extrinsic_return"] == 5.0
+
+
+def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns() -> None:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 1
+    value = {"grid": grid, "player": player}
+    accumulator = EpisodeAccumulator(7, "worker-0000", "run-7")
+    accumulator.initialize(value, {"zone": 1, "floor": 1})
+    accumulator.observe(
+        value,
+        0.0,
+        {"zone": 1, "floor": 1, "raw_events": [{"kind": "enemy_damage", "amount": 1}]},
+        int(Action.RIGHT),
+    )
+    accumulator.observe(
+        value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT)
+    )
+    accumulator.observe(
+        value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT)
+    )
+    result = accumulator.finish("running")
+    assert result["productive_stationary_combat_turns"] == 1
+    assert result["unchanged_direction_turns"] == 2
+    assert result["repeated_direction_turns"] == 1
+    assert result["max_repeated_direction_streak"] == 2

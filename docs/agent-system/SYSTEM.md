@@ -2,11 +2,11 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 10 routed · 21 resolved**._
+_Question status: **0 open · 9 routed · 22 resolved**._
 
 ## One paragraph
 
-AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. Architecture A6 is implemented, but A2 with Reward V2 remains the measured baseline; A7 is a proposed function-preserving upgrade, not current code.
+AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline; the implemented A7 candidate is now under a predeclared paired test.
 
 ## Decisions locked
 
@@ -19,7 +19,7 @@ AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of 
 | Information | Expose only player-visible state plus memory a human player could reasonably retain. | [Parity](../observation-parity.md) |
 | Selection | Choose policies by held-out gameplay outcomes, never by shaped return. | [Reward history](../reward-history.md) |
 | Baseline | Retain Reward V2 with Architecture A2 after V3, V4, and the A6 representation pilot failed their gates. | [Reward history](../reward-history.md) |
-| Next architecture | Design A7 as a function-preserving A2 path plus a gated residual for new A6 inputs; it is not built yet. | [Reward history](../reward-history.md) |
+| A7 experiment | Test the implemented exact A2 path plus zero-gated schema-9 residual under Reward V2; parity passed before live training. | [Reward history](../reward-history.md) |
 
 ## Cost model
 
@@ -41,7 +41,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 6. **Gathering live experience** — Workers advance independently, but every accepted rollout belongs to one frozen policy version. _(adds C)_
 7. **Changing the weights** — Recurrent PPO replays short sequences, then publishes one new policy version. _(adds L, K)_
 8. **Keeping experiments honest** — A policy earns promotion in gameplay, while the dashboard explains what happened live. _(adds E, D)_
-9. **The proposed A7 bridge** — The next hypothesis changes how new features enter the policy, not the reward. _(adds F)_
+9. **The A7 compatibility bridge** — The next hypothesis changes how new features enter the policy, not the reward. _(adds F)_
 10. **The whole agent system** — Explore every building block, version lineage, flow, decision, and open question.
 
 ## Structures
@@ -204,7 +204,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 `A4 · schema 7 · 6,401,258`: tactical, song, and thirteen-slot equipment state.
 `A5 · schema 8 · 6,478,670`: hazards, objects, interactions, prices, tells, explosives.
 `A6 · schema 9 · 6,478,798`: shop audio and bounds; same 512 LSTM and heads.
-`A7` is proposed separately and not implemented.
+`A7 · candidate`: preserves the entire A2 network and injects schema-9-only features through a bounded zero-gated residual.
 
 **Steps in execution.**
 
@@ -393,30 +393,30 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 - ~~**Q-D1** Does rendering symbolic workers affect the game workers?~~ ✓ Only modestly: it reuses observation tensors already built for training and avoids image capture or full game rendering (2026-08-24).
 - ~~**Q-D2** Is the dashboard part of policy input?~~ ✓ No; it is an observer only and cannot control or alter gameplay (2026-08-24).
 
-### Designed, not built
+### Experimental candidates
 
-#### F · Architecture A7 adapter _(not switched on)_
+#### F · Architecture A7 adapter
 
-**In one line.** Proposed: preserve A2 behavior while learning a gated residual from richer inputs.
+**In one line.** Preserve A2 behavior exactly, then learn a bounded residual from richer inputs.
 
-**What it does.** A7 is the next architecture hypothesis, not an implemented model. It aims to avoid A6’s abrupt latent-distribution change by keeping an exact A2-compatible path and initially zeroing the influence of map, tactical, hazard, interaction, and audio features.
+**What it does.** A7 is an implemented experimental model. The complete A2 actor-critic remains intact while a separate branch reads only map, tactical, hazard, interaction, audio, and expanded inventory fields that A2 could not see.
 
-**How it's built.** **Proposed lineage.**
-`A6 lesson`: adding useful inputs changed fusion 896→1,024, forcing random fusion weights in front of a transferred LSTM and actor.
-`A7 proposal`: load the complete A2 policy path exactly, encode A6-only features in a residual branch, and combine them through a zero-initialized learned gate. Add stationary-outcome classification before changing action masks or rewards. No source code or experiment result exists yet.
+**How it's built.** **Implemented lineage.**
+`A6 lesson`: expanding fusion 896→1,024 put random weights in front of a transferred LSTM and actor.
+`A7`: copy every A2 tensor—including critic—under `base.*`; project only new schema-9 fields to a 512-value residual; add `tanh(gate) × residual` before the unchanged LSTM. The real V2 checkpoint preflight measured exactly zero logit, value, recurrent-state, sequence, and new-input perturbation error at gate zero.
 
 **Steps in execution.**
 
-1. **Classify** — Label unchanged-position turns as blocked movement, combat, digging, interaction, target change, or explicit wait.
-2. **Preserve** — Reconstruct an exact A2 forward path and verify identical logits and values after checkpoint load.
-3. **Adapt** — Add A6-only encoders behind a zero-initialized residual gate.
-4. **Pilot** — Train paired seeds and compare with A2 under predeclared gameplay gates.
+1. **Load** — Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.
+2. **Prove parity** — Require zero output error and identical deterministic actions before live training.
+3. **Adapt** — Open a bounded scalar gate, then train the new residual once gradients can reach it.
+4. **Pilot** — Train seeds 35001–35003 and evaluate A2/A7 on 44001–44030 under gameplay gates.
 
 **Questions.**
 
-- **Q-F1** What must be true before calling A7 behavior-preserving? → _Unit-test bitwise or tightly bounded logit/value parity with the loaded A2 checkpoint when the residual gate is zero._
-- ~~**Q-F2** Should A7 also change rewards?~~ ✓ No; keep Reward V2 during the architecture-isolation experiment so the causal question stays interpretable (2026-08-24).
-- **Q-F3** When does A7 become current? → _Only after implementation, static validation, paired pilots, and held-out gameplay gates beat the retained A2 baseline._
+- ~~**Q-F1** Is A7 behavior-preserving at initialization?~~ ✓ Yes; unit tests and the real V2 checkpoint preflight measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
+- ~~**Q-F2** Should A7 also change rewards or action masks?~~ ✓ No; Reward V2 and the existing effective action contract stay fixed so the architecture question remains causal (2026-08-24).
+- **Q-F3** When does A7 become current? → _Only if at least two pilots improve progress and the aggregate passes stair, survival, competence, stationary-behavior, and runtime gates._
 
 ## Flows (representative packets)
 
@@ -468,7 +468,7 @@ Payload shapes are what the design implies, not measured traffic.
 | 4 | W → B | fresh pipe/session | `{"healthy_capacity":8}` |
 | 5 | C → T | clear recurrent state | `{"h":0,"c":0}` |
 
-### Proposed A7 decision path
+### A7 compatibility experiment
 
 | # | From → To | Packet | Representative payload |
 |---|---|---|---|
@@ -509,9 +509,9 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-E2**~~ (E) ✓ No; the warm start randomly reinitialized the expanded fusion interface, so representation and transfer disruption were confounded (2026-08-24).
 - ~~**Q-D1**~~ (D) ✓ Only modestly: it reuses observation tensors already built for training and avoids image capture or full game rendering (2026-08-24).
 - ~~**Q-D2**~~ (D) ✓ No; it is an observer only and cannot control or alter gameplay (2026-08-24).
-- **Q-F1** (F) What must be true before calling A7 behavior-preserving? → _Unit-test bitwise or tightly bounded logit/value parity with the loaded A2 checkpoint when the residual gate is zero._
-- ~~**Q-F2**~~ (F) ✓ No; keep Reward V2 during the architecture-isolation experiment so the causal question stays interpretable (2026-08-24).
-- **Q-F3** (F) When does A7 become current? → _Only after implementation, static validation, paired pilots, and held-out gameplay gates beat the retained A2 baseline._
+- ~~**Q-F1**~~ (F) ✓ Yes; unit tests and the real V2 checkpoint preflight measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
+- ~~**Q-F2**~~ (F) ✓ No; Reward V2 and the existing effective action contract stay fixed so the architecture question remains causal (2026-08-24).
+- **Q-F3** (F) When does A7 become current? → _Only if at least two pilots improve progress and the aggregate passes stair, survival, competence, stationary-behavior, and runtime gates._
 
 ## What the platform gives vs what we own
 
