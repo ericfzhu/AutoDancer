@@ -8,14 +8,14 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline after the A7 compatibility pilot failed its gameplay and adapter-learning gates.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. Architecture candidates must now prove material input sensitivity and gradient reach before broad live training. A2 with Reward V2 remains the measured baseline after A7 failed both that retrospective representation test and its gameplay gates.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
     'PPO replays 32-step recurrent chunks for four epochs. Dynamic inference waits at most 2 ms to batch whichever actors are ready.',
     'Architecture A2 has 5,953,167 trainable parameters; A6 has 6,478,798. The added capacity is mostly perception, not a larger 512-unit LSTM.',
   ],
-  deepDive: 'Experiment rationale and measured outcomes live in [reward-history.md](../reward-history.md). Protocol and performance details live in [protocol.md](../protocol.md) and [runtime-efficiency.md](../runtime-efficiency.md).',
+  deepDive: 'Experiment rationale and measured outcomes live in [reward-history.md](../reward-history.md). Action/mechanic evidence and representation gates live in [mechanic-diagnostics.md](../mechanic-diagnostics.md) and [representation-diagnostics.md](../representation-diagnostics.md). Protocol and performance details live in [protocol.md](../protocol.md) and [runtime-efficiency.md](../runtime-efficiency.md).',
   platformGives: 'NecroDancer supplies authoritative mechanics, level generation, entities, events, Bard timing, and SYNCHRONY duplicate-instance support. The mod runtime supplies Lua hooks; the native library supplies duplex named pipes.',
   weOwn: 'Worker lifecycle, identity and sequence validation, observations, player-visible map memory, legal-action masking, reward state, policy/value networks, recurrent rollout collection, PPO updates, checkpoints, evaluation gates, and the symbolic dashboard.',
   filesystem: `mods/AutoDancer/scripts/
@@ -29,6 +29,7 @@ src/autodancer/
   rewards.py            versioned reward tracker
   training/
     model.py            recurrent actor-critic
+    representation.py   sensitivity and gradient gates
     async_collector.py  versioned actor scheduler
     ppo.py              recurrent PPO and checkpoints
     baseline.py         deterministic evaluation
@@ -46,8 +47,9 @@ export const DECISIONS = [
   { axis: 'Capacity', decision: 'An explicit N means exactly N supervisor-owned workers; replace failures and never silently shrink the fleet.', adr: '[Runtime](../runtime-efficiency.md)' },
   { axis: 'Information', decision: 'Expose only player-visible state plus memory a human player could reasonably retain.', adr: '[Parity](../observation-parity.md)' },
   { axis: 'Selection', decision: 'Choose policies by held-out gameplay outcomes, never by shaped return.', adr: '[Reward history](../reward-history.md)' },
-  { axis: 'Baseline', decision: 'Retain Reward V2 with Architecture A2 after V3, V4, and the A6 representation pilot failed their gates.', adr: '[Reward history](../reward-history.md)' },
-  { axis: 'A7 outcome', decision: 'Reject the zero-scalar-gated adapter: initialization parity passed, but the gate stayed nearly closed and gameplay gates failed; retain A2.', adr: '[Reward history](../reward-history.md)' },
+  { axis: 'Baseline', decision: 'Retain Reward V2 with Architecture A2 after V3, V4, A6, and A7 failed their declared gates.', adr: '[Reward history](../reward-history.md)' },
+  { axis: 'A7 outcome', decision: 'Reject the zero-scalar-gated adapter: initialization parity passed, but zero of twelve new-input checkpoint tests reached material influence and gameplay gates failed; retain A2.', adr: '[Representation test](../representation-diagnostics.md)' },
+  { axis: 'Architecture admission', decision: 'Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient.', adr: '[Representation test](../representation-diagnostics.md)' },
 ];
 
 export const GROUPS = [
@@ -79,10 +81,10 @@ export const NODES = [
   {
     id: 'A', code: 'A', name: 'Action contract', short: '11 ACTIONS', group: 'live', gx: 10, gy: 1, w: 3, d: 2, h: 44, kind: 'gate',
     one: 'The policy chooses one of eleven engine-level Bard actions.',
-    what: 'The discrete action space is up, right, down, left, wait, use item, bomb, throw, and three spell slots. The observation carries a mask so impossible inventory actions cannot be sampled.',
-    how: `<strong>Version lineage.</strong><br><code>Early</code> control sent directions to an attached game.<br><code>Schema 5+</code> standardized 11 logical actions and exact command acknowledgements.<br><code>Current limitations</code>: directions remain legal even when a wall or context will prevent displacement, and the Lua mask does not currently enable the declared WAIT action. A7 evaluation therefore produced directional actions only; action-contract repair is kept separate from that architecture result.`,
-    steps: [['Mask', 'Set unavailable item, bomb, throw, and spell actions to illegal.'], ['Sample', 'Mask logits, then sample during training or take argmax during evaluation.'], ['Acknowledge', 'Require the transition to echo the exact requested action and command ID.']],
-    cond: [{ q: 'Should known blocked directions be masked?', to: 'Use the new unchanged-direction and repeated-direction diagnostics to design a context-aware mask that preserves attacks, digging, and interactions.' }, { q: 'Is WAIT inherently bad?', r: 'No; Bard can make a strategic wait while the world advances. The declared WAIT action must first be restored in the live mask, then evaluated by outcome (2026-08-24).' }],
+    what: 'The discrete action space is up, right, down, left, wait, bomb, action-item 1, action-item 2, throw, spell 1, and spell 2. The observation carries a mask so unavailable inventory actions cannot be sampled.',
+    how: `<strong>Version lineage.</strong><br><code>Early</code> control sent directions to an attached game.<br><code>Schema 5+</code> standardized 11 logical actions and command acknowledgements.<br><code>Current</code> always enables directions and WAIT, derives all six special-action bits from inventory/cooldown state, and requires SYNCHRONY's observed engine action to equal the injected action. Before/after state and events classify movement, wait, combat, interaction, digging, wall attempts, unchanged directions, special no-effect, and floor transitions.`,
+    steps: [['Mask', 'Always enable directions and wait; match special actions exactly to inventory state.'], ['Sample', 'Mask logits, then sample during training or take argmax during evaluation.'], ['Acknowledge', 'Require the observed engine action to equal the injected action.'], ['Classify', 'Describe the resolved mechanic from authoritative before/after state and events.']],
+    cond: [{ q: 'Should known blocked directions be masked?', to: 'Use outcome-classified live evidence to design a context-aware mask that preserves attacks, digging, and interactions.' }, { q: 'Is WAIT available now?', r: 'Yes; logical action 4 maps to engine IDLE, is always legal while Bard is running, and was live-acknowledged exactly (2026-08-24).' }],
   },
   {
     id: 'W', code: 'W', name: 'Worker fleet', short: 'WORKER FLEET', group: 'live', gx: 1, gy: 5.5, w: 3, d: 3, h: 58, kind: 'cards',
@@ -144,7 +146,7 @@ export const NODES = [
     id: 'L', code: 'L', name: 'Recurrent PPO learner', short: 'PPO LEARNER', group: 'learn', gx: 5.5, gy: 15.5, w: 3.5, d: 3, h: 78, kind: 'job',
     one: 'Clipped PPO changes the shared policy from complete live-game rollouts.',
     what: 'The learner computes generalized advantage estimates, normalizes them, and replays exact recurrent chunks through clipped actor and value losses with entropy and gradient controls.',
-    how: `<strong>Version lineage.</strong><br><code>Initial recurrent PPO</code> used the same core defaults but synchronous collection.<br><code>Architecture A2</code> established exact 32-step LSTM replay and architecture-checked checkpoints.<br><code>Async runtime</code> preserved the algorithm while feeding versioned actor fragments.<br><code>Current compute</code> supports CUDA for policy inference and updates; rollout cadence remains 128×N transitions per update. Defaults: γ .99, GAE .95, clip .2, lr 3e-4, entropy .01, value .5, grad norm .5, four epochs.`,
+    how: `<strong>Version lineage.</strong><br><code>Initial recurrent PPO</code> used the same core defaults but synchronous collection.<br><code>Architecture A2</code> established exact 32-step LSTM replay and architecture-checked checkpoints.<br><code>Async runtime</code> preserved the algorithm while feeding versioned actor fragments.<br><code>Current diagnostics</code> record one pre-clipping gradient snapshot per representation group on every update, alongside CUDA inference and optimization. Rollout cadence remains 128×N transitions per update. Defaults: γ .99, GAE .95, clip .2, lr 3e-4, entropy .01, value .5, grad norm .5, four epochs.`,
     steps: [['Bootstrap', 'Estimate the value after the final rollout state.'], ['Advantage', 'Compute backward GAE with terminal masking.'], ['Chunk', 'Split each worker trajectory into 32-step sequences with stored initial LSTM state.'], ['Optimize', 'Shuffle chunks across four epochs and update clipped policy and critic objectives.'], ['Publish', 'Increment the policy version only after the whole update finishes.']],
     cond: [{ q: 'Is one update per 1,024 steps optimal at eight workers?', to: 'Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed.' }, { q: 'May PPO train on a partial healthy fleet?', r: 'No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).' }],
   },
@@ -160,8 +162,8 @@ export const NODES = [
     id: 'E', code: 'E', name: 'Evaluation and selection', short: 'EVALUATION', group: 'evidence', gx: 1, gy: 20.5, w: 3.5, d: 3, h: 48, kind: 'gate',
     one: 'Deterministic unseen-seed gameplay decides whether a version advances.',
     what: 'Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, items, movement, stairs, and runtime health.',
-    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>A6 gate</code> rejected the disruptive warm-start.<br><code>A7 gate</code> measured exact initial parity and separated productive stationary outcomes from repeated direction attempts. A7 modestly improved progress 1.000→1.033, but had zero stair discoveries, raised unchanged directions 76.7%→91.7%, and failed item, timeout, streak, and runtime-health gates.`,
-    steps: [['Predeclare', 'Write hypotheses, seeds, budgets, metrics, and pass/fail gates before training.'], ['Evaluate', 'Run deterministic argmax policy on ordered unseen seeds.'], ['Aggregate', 'Preserve per-checkpoint direction as well as arm-level means.'], ['Decide', 'Promote, continue, or reject using gameplay-ranked rules.'], ['Record', 'Append rationale and results to reward-history.md.']],
+    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>A6 gate</code> rejected the disruptive warm-start.<br><code>A7 gameplay gate</code> measured exact initial parity and classified stationary outcomes.<br><code>Current representation gate</code> perturbs one input group at a time and measures output sensitivity plus encoder gradients. A supported path below 1% of established-input medians is trace, not material.`,
+    steps: [['Predeclare', 'Write hypotheses, seeds, budgets, metrics, and pass/fail gates before training.'], ['Probe representation', 'Require material counterfactual sensitivity and gradient reach before broad training.'], ['Evaluate', 'Run deterministic argmax policy on ordered unseen seeds.'], ['Aggregate', 'Preserve per-checkpoint direction as well as arm-level means.'], ['Decide', 'Promote, continue, or reject using gameplay-ranked rules.'], ['Record', 'Append rationale and results to reward-history.md.']],
     cond: [{ q: 'Why was A6 rejected even though it has more information?', r: 'It failed the predeclared gameplay gate and produced worse local competence and more stationary outcomes within the pilot budget (2026-08-24).' }, { q: 'Does the A6 result prove explicit map memory is harmful?', r: 'No; the warm start randomly reinitialized the expanded fusion interface, so representation and transfer disruption were confounded (2026-08-24).' }],
   },
   {
@@ -174,11 +176,11 @@ export const NODES = [
   },
   {
     id: 'F', code: 'F', name: 'Architecture A7 adapter', short: 'A7 REJECTED', group: 'future', gx: 10.5, gy: 20.5, w: 3.5, d: 3, h: 62, kind: 'tall',
-    one: 'Exact A2 initialization succeeded, but the scalar gate barely opened and gameplay regressed.',
+    one: 'Exact A2 initialization succeeded, but every new-input path remained below material influence.',
     what: 'A7 is an implemented experimental model. The complete A2 actor-critic remains intact while a separate branch reads only map, tactical, hazard, interaction, audio, and expanded inventory fields that A2 could not see.',
-    how: `<strong>Measured lineage.</strong><br><code>Parity</code>: every A2 tensor—including critic—loaded under <code>base.*</code>, with exactly zero output and recurrent-state error at gate zero.<br><code>Training</code>: all three 51,200-step pilots were finite, but final gates were only −0.001276, +0.000265, and −0.000030.<br><code>Gameplay</code>: two pilots reached floor 2 and aggregate deaths improved, but there were zero stair discoveries, items fell to 71% of A2, step limits worsened, and unchanged directions rose to 91.7%. The richer branch therefore never gained enough influence to answer whether its information helps.`,
-    steps: [['Load', 'Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.'], ['Prove parity', 'Measure exact output and deterministic-action parity before live training.'], ['Adapt', 'Let PPO learn the scalar gate and residual while continuing to update the A2 base.'], ['Reject', 'Retain A2 after the paired held-out gameplay gates fail.']],
-    cond: [{ q: 'Was A7 behavior-preserving at initialization?', r: 'Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).' }, { q: 'Did the richer observations receive meaningful influence?', r: 'No clear evidence: every final scalar gate had magnitude below 0.0013, so ordinary A2 fine-tuning dominated the policy change (2026-08-24).' }, { q: 'What replaces the scalar-gate design?', to: 'Test an exact-zero output projection or staged frozen-base adapter phase that receives gradients immediately; isolate the action mask first.' }],
+    how: `<strong>Measured lineage.</strong><br><code>Parity</code>: every A2 tensor—including critic—loaded under <code>base.*</code>, with exactly zero output and recurrent-state error at gate zero.<br><code>Training</code>: all three 51,200-step pilots were finite, but final gates were only −0.001276, +0.000265, and −0.000030.<br><code>Representation</code>: tactical grid, map, extended player, and extended inventory paths were numerically active, but zero of twelve checkpoint/group pairs reached both 1% sensitivity and gradient materiality; none changed an argmax action.<br><code>Gameplay</code>: two pilots reached floor 2, but items, timeouts, stationary behavior, and runtime health failed the declared gate.`,
+    steps: [['Load', 'Copy every A2 checkpoint tensor into the preserved base and reset only the optimizer.'], ['Prove parity', 'Measure exact output and deterministic-action parity before live training.'], ['Adapt', 'Let PPO learn the scalar gate and residual while continuing to update the A2 base.'], ['Measure influence', 'Perturb each new input group and backpropagate to its encoder.'], ['Reject', 'Retain A2 after representation and held-out gameplay gates fail.']],
+    cond: [{ q: 'Was A7 behavior-preserving at initialization?', r: 'Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).' }, { q: 'Did the richer observations receive meaningful influence?', r: 'No: all twelve trained checkpoint/group checks were only trace-active, with zero material groups and zero argmax action changes (2026-08-24).' }, { q: 'What replaces the scalar-gate design?', to: 'Use a representation-learning preflight to test an exact-zero output projection or staged frozen-base adapter before live gameplay training.' }],
   },
 ];
 
@@ -270,14 +272,14 @@ export const CH = [
   },
   {
     id: 'evidence', title: 'Keeping experiments honest', reveal: ['E', 'D'],
-    lede: 'A policy earns promotion in gameplay, while the dashboard explains what happened live.',
-    story: `<p>Evaluation uses deterministic actions, unseen ordered seeds, and predeclared gates. The dashboard is operational visibility—not an input—so observing the workers cannot alter the policy’s information.</p>`,
+    lede: 'Representation gates admit candidates; held-out gameplay decides promotion.',
+    story: `<p>A candidate must first prove that its new inputs can influence outputs and receive gradients materially. Evaluation then uses deterministic actions, unseen ordered seeds, and predeclared gameplay gates. The dashboard is operational visibility—not an input.</p>`,
     flow: [['K', 'E', 'candidate', { architecture: 6 }], ['E', 'W', 'unseen seeds', { count: 30 }], ['W', 'E', 'outcomes', { mean_floor_progress: 1.011 }], ['E', 'D', 'decision', { retain: 'A2' }]],
   },
   {
     id: 'next', title: 'What A7 proved', reveal: ['F'],
-    lede: 'Exact compatibility is possible, but a zero scalar gate can starve the new branch of useful learning.',
-    story: `<p>A7 fixed A6’s initialization confound: it began as the exact measured A2 function. Its scalar gate nevertheless stayed below magnitude 0.0013, while ordinary PPO updates changed the base and stationary directional behavior worsened. <mark>A7 is rejected; richer observations remain untested rather than disproven.</mark></p>`,
+    lede: 'Exact compatibility is possible, but a zero scalar gate can leave new inputs only trace-active.',
+    story: `<p>A7 fixed A6’s initialization confound: it began as the exact measured A2 function. Direct representation tests later found zero material new-input groups across all three checkpoints, while ordinary PPO updates changed the base. <mark>A7 is rejected; richer observations remain untested rather than disproven.</mark></p>`,
     flow: [['P', 'F', 'exact A2 behavior path', { error: 0 }], ['O', 'F', 'starved residual', { max_final_gate: 0.001276 }], ['F', 'E', 'held-out failure', { progress: 1.033, stairs: 0 }], ['E', 'K', 'retain baseline', { architecture: 'A2' }]],
   },
   {

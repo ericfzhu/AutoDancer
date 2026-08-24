@@ -603,6 +603,85 @@ class AdapterActorCritic(nn.Module):
 PolicyModel = RecurrentActorCritic | AdapterActorCritic
 
 
+def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, ...]]:
+    """Return group-specific parameter prefixes, excluding shared downstream layers."""
+    prefix = "base." if isinstance(model, AdapterActorCritic) else ""
+    groups = {
+        "local_terrain": tuple(
+            prefix + name for name in ("terrain_class.", "terrain_type.", "visibility.")
+        ),
+        "local_actors": tuple(
+            prefix + name for name in ("actor_class.", "actor_type.", "status.")
+        ),
+        "local_items_traps": tuple(
+            prefix + name for name in ("item_class.", "item_type.", "trap.")
+        ),
+        "base_player": (prefix + "player_encoder.",),
+        "base_inventory": tuple(
+            prefix + name
+            for name in (
+                "inventory_class.",
+                "inventory_type.",
+                "inventory_slot.",
+                "inventory_projection.",
+                "inventory_attention.",
+            )
+        ),
+        "recurrent_context": tuple(
+            prefix + name for name in ("previous_action.", "context_encoder.")
+        ),
+    }
+    if isinstance(model, AdapterActorCritic):
+        groups.update(
+            {
+                "tactical_grid": ("adapter.tactical.",),
+                "map_memory": ("adapter.map.",),
+                "extended_player": ("adapter.player.",),
+                "extended_inventory": ("adapter.inventory.",),
+                "adapter_gate": ("adapter_gate",),
+            }
+        )
+    elif model.architecture_spec()["version"] == ARCHITECTURE_VERSION:
+        groups.update(
+            {
+                "tactical_grid": (
+                    "facing.",
+                    "charge_direction.",
+                    "shield_direction.",
+                    "object_class.",
+                    "object_type.",
+                    "interaction_flags.",
+                    "price_currency.",
+                ),
+                "map_memory": ("map_",),
+                # These encoders mix old and new columns, so their gradient
+                # norms are shared; counterfactual sensitivity remains isolated.
+                "extended_player": ("player_encoder.",),
+                "extended_inventory": (
+                    "inventory_projection.",
+                    "inventory_attention.",
+                ),
+            }
+        )
+    return groups
+
+
+def current_representation_gradient_norms(model: PolicyModel) -> dict[str, float]:
+    """Measure group-specific parameter gradients already produced by a loss."""
+    result = {}
+    parameters = tuple(model.named_parameters())
+    for group, prefixes in representation_parameter_groups(model).items():
+        squared: Tensor | None = None
+        for name, parameter in parameters:
+            if parameter.grad is not None and any(
+                name == item or name.startswith(item) for item in prefixes
+            ):
+                term = parameter.grad.detach().double().square().sum()
+                squared = term if squared is None else squared + term
+        result[group] = 0.0 if squared is None else float(squared.sqrt())
+    return result
+
+
 def model_from_spec(spec: dict[str, Any], *, initialize: bool = True) -> PolicyModel:
     """Construct the exact model described by a checkpoint architecture spec."""
     version = int(spec.get("version", 0))

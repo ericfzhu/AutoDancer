@@ -557,6 +557,31 @@ that freezes the A2 base while training the adapter. It must also isolate the
 directional-action collapse and the unavailable live `WAIT` mask before another
 long representation pilot. Reward V5 remains deferred.
 
+### Post-pilot representation diagnostic
+
+After repairing the action contract and adding mechanic-level outcome
+classification, the fixed representation test measured each observation group
+in the A2 source and all three final A7 checkpoints. It used isolated
+counterfactual perturbations plus encoder gradient norms, with a fixed
+materiality floor of 1% relative to the median established A2 input path. The
+threshold was added after A7's gameplay evaluation, so this A7 analysis is
+descriptive; the gate is predeclared for future architecture candidates.
+
+All six established input groups were material in every checkpoint. All four
+A7-only groups were merely trace-active in every A7 checkpoint: their largest
+relative sensitivity was `4.8768e-4`, and no new-input perturbation changed an
+argmax action. The largest relative gradient was `4.3876e-2`, but that path's
+output influence remained below the sensitivity gate. Thus zero of twelve
+candidate/group pairs passed both requirements.
+
+This upgrades the A7 conclusion from an inference based mainly on its tiny
+scalar gate to a direct representation result. The richer observations were
+connected, but did not acquire enough influence for the gameplay pilot to test
+their usefulness. Future architecture candidates must pass this diagnostic—or
+an equivalent controlled representation-learning gate—before broad live
+training. Exact results and methodology are in
+`docs/representation-diagnostics.md`.
+
 ## Rules for future entries
 
 Every new reward version must record:

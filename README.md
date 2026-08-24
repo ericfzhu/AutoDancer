@@ -93,6 +93,20 @@ runs for reproducible evidence of combat, items, stairs, and returning to a
 visited position. Missing scenarios are reported as unobserved rather than
 silently treated as passes.
 
+Measure whether policy outputs and learning gradients materially use each
+observation group:
+
+```powershell
+uv run autodancer-representation `
+  ".\runs\reward-v2-250k\final.pt" `
+  ".\runs\architecture7-v2-pilot\training\seed-35001\final.pt" `
+  --output ".\runs\architecture7-v2-pilot\representation.json"
+```
+
+The report separates unsupported, inactive, merely trace, and material input
+paths. See `docs/representation-diagnostics.md` for the controlled
+counterfactual, gradient test, and the measured A7 results.
+
 Establish a reproducible gameplay baseline by comparing a checkpoint's
 deterministic policy with a masked-random policy on the same explicit seeds:
 

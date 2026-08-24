@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from autodancer.training.model import PolicyModel
+from autodancer.training.model import PolicyModel, current_representation_gradient_norms
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +111,7 @@ class RecurrentPPO:
             "approx_kl": [],
             "clip_fraction": [],
         }
+        representation_gradients: dict[str, float] | None = None
         self.model.train()
         for _ in range(config.update_epochs):
             random.shuffle(chunks)
@@ -155,6 +156,8 @@ class RecurrentPPO:
                 )
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                if representation_gradients is None:
+                    representation_gradients = current_representation_gradient_norms(self.model)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), config.max_grad_norm)
                 self.optimizer.step()
                 with torch.no_grad():
@@ -167,7 +170,14 @@ class RecurrentPPO:
                     )
         self.global_step += time_steps * workers
         self.updates += 1
-        return {name: float(np.mean(values)) for name, values in metrics.items()}
+        result = {name: float(np.mean(values)) for name, values in metrics.items()}
+        result.update(
+            {
+                f"gradient_{name}": value
+                for name, value in (representation_gradients or {}).items()
+            }
+        )
+        return result
 
     def _chunks(self, value: Tensor, chunks: list[tuple[int, int]]) -> Tensor:
         length = self.config.sequence_length
