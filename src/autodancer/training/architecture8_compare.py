@@ -70,8 +70,10 @@ def _curve(root: Path) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {arm: [] for arm in ARMS}
     evaluation = root / "curve-evaluation"
     for arm in ARMS:
-        source_arm = "a2-fixed" if arm == "a8" else arm
         for step in CURVE_STEPS:
+            # A8 is exactly the fixed-contract A2 policy only at step zero.
+            # Every trained A8 point has its own evaluation report.
+            source_arm = "a2-fixed" if arm == "a8" and step == 0 else arm
             report = _read(evaluation / f"{source_arm}-step-{step:08d}.json")
             if report is None:
                 continue

@@ -598,9 +598,34 @@ final plus predeclared local-gameplay harm bounds before any broad integration
 test. If it passes, final policies use seeds `46001–46030` with a 3,000-turn
 cap. Exact criteria are in `docs/architecture8-controls.md`.
 
-Status: implementation and static parity validation are complete; live results
-have not yet been observed. This entry must be updated with measured curves and
-the gated decision after the recoverable launcher finishes.
+### Architecture 8 curve result
+
+All three 30,720-transition arms and all eleven required curve reports
+completed. A8 preserved exact initial A2 behavior, and all four new groups—
+tactical grid, map memory, extended player state, and extended inventory—were
+material at both 10,240 and 30,720 transitions. The residual projection norm
+grew from `1.7694` to `2.1708`; this resolves A7's representation-learning
+failure rather than merely showing a connected but trace-active branch.
+
+At the final 16-seed curve point, fixed-contract A2 reached mean progress
+`1.0625`, death rate `0.375`, step-limit rate `0.625`, `1.0625` kills per
+episode, and `0.8125` items per episode. A8 reached mean progress `1.125`, death
+rate `0.3125`, step-limit rate `0.6875`, `1.5625` kills per episode, and
+`1.1875` items per episode. It therefore passed every predeclared
+representation and local-gameplay harm criterion.
+
+The overall curve gate nevertheless failed exactly as declared because both A2
+control training runs recorded one worker restart; A8 recorded zero. Broad
+gameplay was not run, so A8 is not promoted and A2 remains the baseline. The
+result is `stop_before_broad_gameplay`, with positive candidate evidence but an
+invalid control-health condition. The next valid step is an infrastructure-only
+retry of the two controls, preserving the protocol and A8 artifacts, rather
+than changing the architecture, reward, or decision thresholds.
+
+During result inspection, the comparator was found to reuse fixed-A2 reports
+for all A8 curve points instead of only the shared step-zero point. The stored
+A8 reports were unaffected. The comparator and its regression test were fixed,
+and the decision above uses the corrected reports.
 
 ## Rules for future entries
 

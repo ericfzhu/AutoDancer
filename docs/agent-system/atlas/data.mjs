@@ -8,7 +8,7 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 is a controlled candidate: it preserves A2 exactly, gives new schema-9 inputs an immediately trainable residual projection, and must pass learning-curve and representation gates before broad gameplay.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 resolved A7's gradient-starvation failure and passed every candidate curve criterion, but broad gameplay remains unrun because both A2 controls violated the predeclared zero-restart health gate.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
@@ -53,6 +53,7 @@ export const DECISIONS = [
   { axis: 'A7 outcome', decision: 'Reject the zero-scalar-gated adapter: initialization parity passed, but zero of twelve new-input checkpoint tests reached material influence and gameplay gates failed; retain A2.', adr: '[Representation test](../representation-diagnostics.md)' },
   { axis: 'Architecture admission', decision: 'Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient.', adr: '[Representation test](../representation-diagnostics.md)' },
   { axis: 'A8 experiment', decision: 'Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass.', adr: '[A8 controls](../architecture8-controls.md)' },
+  { axis: 'A8 curve outcome', decision: 'A8 passed representation and candidate gameplay criteria, but both A2 controls restarted once; stop before broad gameplay and retain A2 pending clean control retries.', adr: '[A8 result](../architecture8-controls.md#result)' },
 ];
 
 export const GROUPS = [
@@ -187,11 +188,11 @@ export const NODES = [
   },
   {
     id: 'H', code: 'H', name: 'Architecture A8 controls', short: 'A8 CONTROLS', group: 'future', gx: 14.5, gy: 20.5, w: 3.5, d: 3, h: 68, kind: 'tall',
-    one: 'Three controlled curves test action-contract drift and sensory learning before broad gameplay.',
-    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Two unchanged-A2 arms separate ordinary fine-tuning from the repaired WAIT contract, while a frozen-base warmup forces any early change to come from the new path.',
-    how: `<strong>Predeclared experiment.</strong><br><code>A2 legacy</code>: exact A2, WAIT masked, 30,720 transitions.<br><code>A2 fixed</code>: exact A2, current 11-action mask, same budget.<br><code>A8</code>: exact A2 plus sensory residual, base frozen through update 10.<br><code>Curve</code>: checkpoints 0/10,240/20,480/30,720 on seeds 45001–45016.<br><code>Admission</code>: all four new groups material at warmup and final plus bounded local harm.<br><code>Integration</code>: only admitted candidates play seeds 46001–46030.`,
+    one: 'A8 learned material sensory paths and positive curves, but unhealthy controls blocked broad gameplay.',
+    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Its completed curve made all four new groups material and improved final progress and survival over fixed A2. The experiment still stopped because each A2 control restarted one worker, violating the predeclared health gate.',
+    how: `<strong>Measured experiment.</strong><br><code>A2 legacy</code>: 30,720 transitions, final progress 1.0625, one training restart.<br><code>A2 fixed</code>: 30,720 transitions, final progress 1.0625, death 0.375, one training restart.<br><code>A8</code>: 30,720 transitions, final progress 1.125, death 0.3125, zero restarts.<br><code>Representation</code>: all four new groups material at warmup and final; projection norm 1.7694→2.1708.<br><code>Decision</code>: stop before broad gameplay because control health failed; retain A2 pending an infrastructure-only control retry.`,
     steps: [['Prove parity', 'Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.'], ['Open projection', 'Freeze A2 while the full residual matrix receives the first gradients.'], ['Measure curves', 'Evaluate both controls and A8 at four fixed checkpoints.'], ['Gate representation', 'Require every new observation group to show material sensitivity and gradient reach.'], ['Integrate broadly', 'Run longer held-out gameplay only if all preceding gates pass.']],
-    cond: [{ q: 'Does A8 already replace A2?', r: 'No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).' }, { q: 'Why freeze the base?', r: 'It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).' }, { q: 'What does an A8 pass mean?', r: 'Only readiness for multi-seed confirmation, not final promotion (2026-08-24).' }],
+    cond: [{ q: 'Does A8 already replace A2?', r: 'No. It passed candidate curve criteria, but broad gameplay was not admitted because both controls violated the zero-restart requirement (2026-08-25).' }, { q: 'Did A8 solve A7’s gradient starvation?', r: 'Yes: all four new observation groups were material at both measured checkpoints, while A7 had zero material groups (2026-08-25).' }, { q: 'What is the next valid step?', r: 'Repeat only the unhealthy controls without changing architecture, reward, seeds, or thresholds; admit broad gameplay only after clean comparable controls (2026-08-25).' }],
   },
 ];
 
@@ -296,8 +297,8 @@ export const CH = [
   },
   {
     id: 'next', title: 'From A7 to controlled A8', reveal: ['F', 'H'],
-    lede: 'A7 identified gradient starvation; A8 isolates whether a trainable residual can actually use richer inputs.',
-    story: `<p>A7 proved exact compatibility but left every new group trace-active. A8 keeps that exact starting behavior, replaces the scalar bottleneck with a full zero-output projection, and freezes A2 during warmup. <mark>Learning curves and representation gates now precede broad gameplay.</mark></p>`,
+    lede: 'A7 identified gradient starvation; A8 solved it, but unhealthy controls stopped the experiment before broad gameplay.',
+    story: `<p>A8 kept A2’s exact starting behavior and made all four new input groups material. Its final curve improved progress and survival, but each A2 control restarted one worker. <mark>A8 has positive candidate evidence, not promotion evidence; broad gameplay remains unrun.</mark></p>`,
     flow: [['P', 'F', 'exact A2 path', { error: 0 }], ['F', 'H', 'replace scalar bottleneck', { projection: '512×512' }], ['O', 'H', 'new sensory inputs', { groups: 4 }], ['H', 'L', 'frozen-base warmup', { transitions: 10240 }], ['L', 'E', 'admission evidence', { broad_only_after_pass: true }]],
   },
   {

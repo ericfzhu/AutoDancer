@@ -6,7 +6,7 @@ _Question status: **0 open · 9 routed · 25 resolved**._
 
 ## One paragraph
 
-AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 is a controlled candidate: it preserves A2 exactly, gives new schema-9 inputs an immediately trainable residual projection, and must pass learning-curve and representation gates before broad gameplay.
+AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 resolved A7's gradient-starvation failure and passed every candidate curve criterion, but broad gameplay remains unrun because both A2 controls violated the predeclared zero-restart health gate.
 
 ## Decisions locked
 
@@ -22,6 +22,7 @@ AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of 
 | A7 outcome | Reject the zero-scalar-gated adapter: initialization parity passed, but zero of twelve new-input checkpoint tests reached material influence and gameplay gates failed; retain A2. | [Representation test](../representation-diagnostics.md) |
 | Architecture admission | Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient. | [Representation test](../representation-diagnostics.md) |
 | A8 experiment | Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass. | [A8 controls](../architecture8-controls.md) |
+| A8 curve outcome | A8 passed representation and candidate gameplay criteria, but both A2 controls restarted once; stop before broad gameplay and retain A2 pending clean control retries. | [A8 result](../architecture8-controls.md#result) |
 
 ## Cost model
 
@@ -43,7 +44,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 6. **Gathering live experience** — Workers advance independently, but every accepted rollout belongs to one frozen policy version. _(adds C)_
 7. **Changing the weights** — Recurrent PPO replays short sequences, then publishes one new policy version. _(adds L, K)_
 8. **Keeping experiments honest** — Representation gates admit candidates; held-out gameplay decides promotion. _(adds E, D)_
-9. **From A7 to controlled A8** — A7 identified gradient starvation; A8 isolates whether a trainable residual can actually use richer inputs. _(adds F, H)_
+9. **From A7 to controlled A8** — A7 identified gradient starvation; A8 solved it, but unhealthy controls stopped the experiment before broad gameplay. _(adds F, H)_
 10. **The whole agent system** — Explore every building block, version lineage, flow, decision, and open question.
 
 ## Structures
@@ -429,17 +430,16 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 #### H · Architecture A8 controls
 
-**In one line.** Three controlled curves test action-contract drift and sensory learning before broad gameplay.
+**In one line.** A8 learned material sensory paths and positive curves, but unhealthy controls blocked broad gameplay.
 
-**What it does.** A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Two unchanged-A2 arms separate ordinary fine-tuning from the repaired WAIT contract, while a frozen-base warmup forces any early change to come from the new path.
+**What it does.** A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Its completed curve made all four new groups material and improved final progress and survival over fixed A2. The experiment still stopped because each A2 control restarted one worker, violating the predeclared health gate.
 
-**How it's built.** **Predeclared experiment.**
-`A2 legacy`: exact A2, WAIT masked, 30,720 transitions.
-`A2 fixed`: exact A2, current 11-action mask, same budget.
-`A8`: exact A2 plus sensory residual, base frozen through update 10.
-`Curve`: checkpoints 0/10,240/20,480/30,720 on seeds 45001–45016.
-`Admission`: all four new groups material at warmup and final plus bounded local harm.
-`Integration`: only admitted candidates play seeds 46001–46030.
+**How it's built.** **Measured experiment.**
+`A2 legacy`: 30,720 transitions, final progress 1.0625, one training restart.
+`A2 fixed`: 30,720 transitions, final progress 1.0625, death 0.375, one training restart.
+`A8`: 30,720 transitions, final progress 1.125, death 0.3125, zero restarts.
+`Representation`: all four new groups material at warmup and final; projection norm 1.7694→2.1708.
+`Decision`: stop before broad gameplay because control health failed; retain A2 pending an infrastructure-only control retry.
 
 **Steps in execution.**
 
@@ -451,9 +451,9 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **Questions.**
 
-- ~~**Q-H1** Does A8 already replace A2?~~ ✓ No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).
-- ~~**Q-H2** Why freeze the base?~~ ✓ It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).
-- ~~**Q-H3** What does an A8 pass mean?~~ ✓ Only readiness for multi-seed confirmation, not final promotion (2026-08-24).
+- ~~**Q-H1** Does A8 already replace A2?~~ ✓ No. It passed candidate curve criteria, but broad gameplay was not admitted because both controls violated the zero-restart requirement (2026-08-25).
+- ~~**Q-H2** Did A8 solve A7’s gradient starvation?~~ ✓ Yes: all four new observation groups were material at both measured checkpoints, while A7 had zero material groups (2026-08-25).
+- ~~**Q-H3** What is the next valid step?~~ ✓ Repeat only the unhealthy controls without changing architecture, reward, seeds, or thresholds; admit broad gameplay only after clean comparable controls (2026-08-25).
 
 ## Flows (representative packets)
 
@@ -559,9 +559,9 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-F1**~~ (F) ✓ Yes; unit tests and the real V2 checkpoint measured exact tensor and output parity, including reset-containing sequences (2026-08-24).
 - ~~**Q-F2**~~ (F) ✓ No: all twelve trained checkpoint/group checks were only trace-active, with zero material groups and zero argmax action changes (2026-08-24).
 - **Q-F3** (F) What replaces the scalar-gate design? → _Use a representation-learning preflight to test an exact-zero output projection or staged frozen-base adapter before live gameplay training._
-- ~~**Q-H1**~~ (H) ✓ No. A8 is an implemented candidate; A2 remains the measured baseline until held-out evidence supports promotion (2026-08-24).
-- ~~**Q-H2**~~ (H) ✓ It prevents ordinary A2 PPO drift from being mistaken for learning through the new sensory path during the first 10 updates (2026-08-24).
-- ~~**Q-H3**~~ (H) ✓ Only readiness for multi-seed confirmation, not final promotion (2026-08-24).
+- ~~**Q-H1**~~ (H) ✓ No. It passed candidate curve criteria, but broad gameplay was not admitted because both controls violated the zero-restart requirement (2026-08-25).
+- ~~**Q-H2**~~ (H) ✓ Yes: all four new observation groups were material at both measured checkpoints, while A7 had zero material groups (2026-08-25).
+- ~~**Q-H3**~~ (H) ✓ Repeat only the unhealthy controls without changing architecture, reward, seeds, or thresholds; admit broad gameplay only after clean comparable controls (2026-08-25).
 
 ## What the platform gives vs what we own
 

@@ -80,3 +80,16 @@ powershell -ExecutionPolicy Bypass -File .\tools\run-architecture8-controls.ps1
 The symbolic dashboard is served at <http://127.0.0.1:8765>. Results are written
 under `runs/architecture8-controls/`; `pipeline-complete.json` records the
 terminal gated decision.
+
+## Result
+
+The learning-curve stage completed. A8 made all four new input groups material
+at warmup and final, reached final mean progress `1.125` versus fixed A2's
+`1.0625`, lowered death rate from `0.375` to `0.3125`, and retained more than
+the required combat and item competence. A8 itself had no worker restart.
+
+The overall gate stopped before broad gameplay because both A2 controls each
+recorded one training worker restart. This is an invalid-control health result,
+not a broad-gameplay rejection of A8. Under the predeclared rules A2 remains the
+baseline until the controls are repeated cleanly and the broad gate is actually
+run.
