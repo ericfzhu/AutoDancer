@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +50,10 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         attach_existing: bool = False,
         max_turns: int = 10000,
         instance_id: str = "worker-0000",
+        session_id: str | None = None,
+        launch_id: str | None = None,
         reward_config: RewardConfig | None = None,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         if turn_source is None and log_path is None:
             self._source: TurnSource | None = None
@@ -59,6 +63,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             bridge = FileCommandBridge(command_path, instance_id=instance_id)
         self._bridge = bridge
         self.instance_id = instance_id
+        self.session_id = session_id
+        self.launch_id = launch_id
+        self.progress_callback = progress_callback
         self.turn_timeout = float(turn_timeout)
         self.reset_timeout = float(reset_timeout if reset_timeout is not None else turn_timeout)
         self.attach_existing = bool(attach_existing)
@@ -70,6 +77,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._last_observation: dict[str, np.ndarray] | None = None
         self._episode_steps = 0
         self._episode_done = False
+        self._episode_seed: int | None = None
+        self._run_id: str | None = None
         self.reward_tracker = RewardTracker(reward_config)
         self.map_memory = FloorMapMemory()
 
@@ -95,6 +104,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             record = source.read_latest(self.reset_timeout)
         else:
             selected_seed = int(seed if seed is not None else self.np_random.integers(0, 2**31))
+            command_started = time.monotonic()
             command = bridge.reset(selected_seed)
             deadline = time.monotonic() + self.reset_timeout
             while True:
@@ -111,13 +121,20 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                     if "must start with a reset record" not in str(error):
                         raise
             self._verify_acknowledgement(record, command)
+            reset_latency = time.monotonic() - command_started
         validate_record(record)
         if not self.attach_existing and record["kind"] != "reset":
             raise ProtocolError("The first record after RESTART must have kind 'reset'")
         self._episode_steps = 0
         self._episode_done = record["episode_status"] != "running"
+        self._episode_seed = int(record.get("seed", 0))
+        self._run_id = str(record["run_id"])
         observation, info = self._accept_record(record)
+        if not self.attach_existing:
+            info["reset_latency_seconds"] = reset_latency
         self.reward_tracker.reset(observation, info)
+        if self.progress_callback is not None:
+            self.progress_callback(info)
         return observation, info
 
     def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
@@ -135,12 +152,20 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             raise ValueError(f"Action {selected.name} is masked in the current live state")
 
         previous_observation = self._last_observation
+        command_started = time.monotonic()
         command = bridge.send_action(selected)
         record = source.read(self.turn_timeout)
         validate_record(record)
         if record["kind"] == "reset":
             raise ProtocolError("A reset arrived while waiting for an action result")
         self._verify_acknowledgement(record, command)
+        action_latency = time.monotonic() - command_started
+        if self._episode_seed is not None and int(record.get("seed", -1)) != self._episode_seed:
+            raise ProtocolError(
+                f"Episode seed changed from {self._episode_seed} to {record.get('seed')}"
+            )
+        if self._run_id is not None and str(record.get("run_id")) != self._run_id:
+            raise ProtocolError("Run ID changed while awaiting an action acknowledgement")
 
         observation, info = self._accept_record(record)
         self._episode_steps += 1
@@ -162,6 +187,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         info["completed"] = int(status == "won")
         info["deaths"] = int(status == "dead")
         info["turns"] = self._episode_steps
+        info["action_latency_seconds"] = action_latency
+        info["max_frame_bytes"] = int(getattr(source, "max_frame_bytes", 0))
+        info["last_command_status"] = getattr(source, "last_status", None)
         self._episode_done = terminated or truncated
         reward, components = self.reward_tracker.score(
             observation,
@@ -174,6 +202,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         extrinsic, shaping = self.reward_tracker.split_components(components)
         info["extrinsic_reward"] = extrinsic
         info["shaping_reward"] = shaping
+        if self.progress_callback is not None:
+            self.progress_callback(info)
         return observation, reward, terminated, truncated, info
 
     @staticmethod
@@ -238,12 +268,18 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             raise ProtocolError(
                 f"Expected worker {self.instance_id!r}, received {record.get('instance_id')!r}"
             )
+        if self.session_id is not None and record.get("session_id") != self.session_id:
+            raise ProtocolError("Transition supervisor session does not match this environment")
+        if self.launch_id is not None and record.get("launch_id") != self.launch_id:
+            raise ProtocolError("Transition launch identity does not match this environment")
         observation = self._adapt_observation(record)
         self._last_observation = observation
         status = str(record["episode_status"])
         info = {
             "protocol_schema_version": record["schema_version"],
             "instance_id": record["instance_id"],
+            "session_id": record["session_id"],
+            "launch_id": record["launch_id"],
             "run_id": record["run_id"],
             "sequence": record["sequence"],
             "seed": record.get("seed"),

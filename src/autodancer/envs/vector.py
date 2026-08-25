@@ -9,8 +9,18 @@ from typing import Any
 
 import numpy as np
 
+from autodancer.live.native_pipe import NativePipeError
+from autodancer.live.protocol import ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor
 from autodancer.memory import MapCapacityError
+
+
+class VectorInfrastructureError(RuntimeError):
+    def __init__(self, worker_index: int, worker_id: str, cause: BaseException) -> None:
+        self.worker_index = worker_index
+        self.worker_id = worker_id
+        self.cause = cause
+        super().__init__(f"Infrastructure failure in {worker_id}: {type(cause).__name__}: {cause}")
 
 
 class AutoDancerVectorEnv:
@@ -21,6 +31,7 @@ class AutoDancerVectorEnv:
             worker_id: supervisor.environment(worker_id) for worker_id in self.worker_ids
         }
         self._executor = ThreadPoolExecutor(max_workers=len(self.worker_ids))
+        self.infrastructure_events: list[dict[str, Any]] = []
 
     @property
     def num_envs(self) -> int:
@@ -48,8 +59,14 @@ class AutoDancerVectorEnv:
                 results.append(future.result())
             except MapCapacityError:
                 raise
-            except Exception:
-                results.append(self.recover(index, secrets.randbelow(2**31)))
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                results.append(
+                    self.recover(
+                        index,
+                        secrets.randbelow(2**31),
+                        failure=self._failure(index, error, operation="reset"),
+                    )
+                )
         return self._stack([result[0] for result in results]), [result[1] for result in results]
 
     def step(
@@ -74,24 +91,18 @@ class AutoDancerVectorEnv:
                 results.append(future.result())
             except MapCapacityError:
                 raise
-            except Exception as error:
-                observation, reset_info = self.recover(index, secrets.randbelow(2**31))
-                results.append(
-                    (
-                        observation,
-                        -1.0,
-                        False,
-                        True,
-                        {
-                            **reset_info,
-                            "episode_status": "aborted",
-                            "worker_replaced": True,
-                            "failure": type(error).__name__,
-                            "bridge": None,
-                            "reward_components": {"worker_failure": -1.0},
-                        },
-                    )
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                self.recover(
+                    index,
+                    secrets.randbelow(2**31),
+                    failure=self._failure(
+                        index,
+                        error,
+                        operation="step",
+                        action=int(actions[index]),
+                    ),
                 )
+                raise VectorInfrastructureError(index, self.worker_ids[index], error) from error
         latency = time.monotonic() - started
         for worker_id, result in zip(self.worker_ids, results, strict=True):
             handle = self.supervisor.workers[worker_id]
@@ -125,13 +136,46 @@ class AutoDancerVectorEnv:
                 results.append(future.result())
             except MapCapacityError:
                 raise
-            except Exception:
-                results.append(self.recover(index, int(seed)))
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                results.append(
+                    self.recover(
+                        index,
+                        int(seed),
+                        failure=self._failure(index, error, operation="reset_at"),
+                    )
+                )
         return results
 
-    def recover(self, worker_index: int, seed: int) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    def _failure(
+        self,
+        worker_index: int,
+        error: BaseException,
+        *,
+        operation: str,
+        action: int | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        value = {
+            "worker_index": worker_index,
+            "worker_id": self.worker_ids[worker_index],
+            "operation": operation,
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "action": action,
+            **(context or {}),
+        }
+        self.infrastructure_events.append(value)
+        return value
+
+    def recover(
+        self,
+        worker_index: int,
+        seed: int,
+        *,
+        failure: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         worker_id = self.worker_ids[worker_index]
-        self.supervisor.replace_worker(worker_id)
+        self.supervisor.replace_worker(worker_id, failure=failure)
         self.environments[worker_id].close()
         environment = self.supervisor.environment(worker_id)
         self.environments[worker_id] = environment

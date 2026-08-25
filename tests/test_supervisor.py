@@ -6,15 +6,25 @@ from types import SimpleNamespace
 
 import pytest
 
-from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig, SupervisorError
+from autodancer.live.native_pipe import pipe_name
+from autodancer.live.protocol import SCHEMA_VERSION
+from autodancer.live.supervisor import (
+    AutoDancerSupervisor,
+    SupervisorConfig,
+    SupervisorError,
+    synchronize_authoritative_mod,
+)
 
 
 def test_ready_log_discovery_preserves_worker_identity(tmp_path: Path) -> None:
     path = tmp_path / "NecroDancer-worker.log"
     marker = {
-        "schema_version": 9,
+        "message_type": "hello",
+        "schema_version": SCHEMA_VERSION,
         "instance_id": "worker-0007",
         "role": "worker",
+        "session_id": "test-session",
+        "launch_id": "test-launch",
         "game_version": "v4.2.1-b5713",
         "steam_build": "22938426",
         "command_file": "bridge-command.worker-0007.txt",
@@ -41,30 +51,48 @@ def test_supervisor_worker_slots_and_pipe_names_are_predictable(tmp_path: Path) 
     supervisor = AutoDancerSupervisor(config)
     supervisor.session_id = "test-session"
     assert supervisor.worker_ids == ["worker-0000", "worker-0001", "worker-0002"]
-    supervisor._prepare_pipes()
-    try:
-        assert [supervisor._pipe_servers[worker].name for worker in supervisor.worker_ids] == [
-            rf"\\.\pipe\AutoDancer-test-session-worker-000{index}" for index in range(3)
-        ]
-    finally:
-        for server in supervisor._pipe_servers.values():
-            server.close()
+    assert [pipe_name(supervisor.session_id, worker) for worker in supervisor.worker_ids] == [
+        rf"\\.\pipe\AutoDancer-test-session-worker-000{index}" for index in range(3)
+    ]
 
 
-def test_malformed_readiness_times_out_without_reducing_capacity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_malformed_or_stale_pipe_hello_is_rejected(tmp_path: Path) -> None:
     config = SupervisorConfig(
         tmp_path / "game", tmp_path / "mod", num_instances=2, startup_timeout=0.01
     )
     supervisor = AutoDancerSupervisor(config)
-    path = tmp_path / "NecroDancer.log"
-    path.write_text(
-        'AUTODANCER_READY:{"schema_version":3,"instance_id":"worker-0000"}\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(AutoDancerSupervisor, "_log_paths", lambda _: [path])
-    with pytest.raises(SupervisorError, match="Timed out waiting for worker"):
-        supervisor._wait_for_ready(
-            "worker-0000", {path: (0, path.stat().st_mtime_ns)}, role="worker"
-        )
+    stale = {
+        "message_type": "hello",
+        "schema_version": SCHEMA_VERSION,
+        "instance_id": "worker-0000",
+        "role": "worker",
+        "session_id": "wrong-session",
+        "launch_id": "old-launch",
+        "game_version": "v4.2.1-b5713",
+        "steam_build": "22938426",
+        "engine_state": {},
+    }
+    transport = SimpleNamespace(receive=lambda _timeout: json.dumps(stale).encode())
+    with pytest.raises(SupervisorError, match="rejected HELLO"):
+        supervisor._wait_for_hello("worker-0000", "new-launch", transport)  # type: ignore[arg-type]
+
+
+def test_authoritative_mod_is_atomically_deployed_and_old_copy_preserved(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "repository-mod"
+    destination = tmp_path / "game-mods" / "AutoDancer"
+    backup = tmp_path / "diagnostics" / "backups"
+    (source / "scripts").mkdir(parents=True)
+    (source / "mod.json").write_text("new", encoding="utf-8")
+    (source / "scripts" / "Bridge.lua").write_text("schema 10", encoding="utf-8")
+    destination.mkdir(parents=True)
+    (destination / "mod.json").write_text("old", encoding="utf-8")
+
+    assert synchronize_authoritative_mod(source, destination, backup_root=backup)
+    assert (destination / "mod.json").read_text(encoding="utf-8") == "new"
+    assert (destination / "scripts" / "Bridge.lua").is_file()
+    preserved = list(backup.glob("AutoDancer-*/mod.json"))
+    assert len(preserved) == 1
+    assert preserved[0].read_text(encoding="utf-8") == "old"
+    assert not synchronize_authoritative_mod(source, destination, backup_root=backup)

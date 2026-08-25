@@ -66,6 +66,7 @@ def benchmark_capacity(arguments: argparse.Namespace, capacity: int) -> dict[str
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
         affinity_policy=arguments.affinity,
+        diagnostic_root=arguments.run_dir / "controller-diagnostics",
     )
     with AutoDancerSupervisor(config) as supervisor:
         environment = AutoDancerVectorEnv(supervisor)

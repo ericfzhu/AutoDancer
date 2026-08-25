@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.envs.vector import AutoDancerVectorEnv, VectorInfrastructureError
 from autodancer.live.supervisor import SupervisorError
 
 
@@ -62,7 +62,8 @@ class FakeSupervisor:
     def environment(self, worker_id: str) -> FakeEnvironment:
         return self.environments[worker_id]
 
-    def replace_worker(self, worker_id: str) -> None:
+    def replace_worker(self, worker_id: str, *, failure=None) -> None:
+        del failure
         self.replacements.append(worker_id)
         self.environments[worker_id] = FakeEnvironment(int(worker_id[-1]))
 
@@ -77,12 +78,10 @@ def test_vector_env_preserves_slot_order_and_replaces_failed_worker() -> None:
     assert reset_observation["player"][:, 0].tolist() == [0, 1]
     assert [info["seed"] for info in infos] == [11, 22]
 
-    next_observation, rewards, _, truncated, infos = environment.step([3, 4])
-    assert next_observation["player"][:, 0].tolist() == [0, 1]
-    assert rewards.tolist() == [3.0, -1.0]
-    assert truncated.tolist() == [False, True]
-    assert infos[1]["worker_replaced"] is True
+    with pytest.raises(VectorInfrastructureError, match="worker-0001"):
+        environment.step([3, 4])
     assert supervisor.replacements == ["worker-0001"]
+    assert environment.infrastructure_events[0]["operation"] == "step"
     environment.close()
     assert supervisor.closed
 
@@ -90,7 +89,8 @@ def test_vector_env_preserves_slot_order_and_replaces_failed_worker() -> None:
 def test_vector_env_propagates_fixed_capacity_replacement_failure() -> None:
     supervisor = FakeSupervisor()
 
-    def fail_replacement(worker_id: str) -> None:
+    def fail_replacement(worker_id: str, *, failure=None) -> None:
+        del failure
         raise SupervisorError(f"could not restore {worker_id}")
 
     supervisor.replace_worker = fail_replacement  # type: ignore[method-assign]
