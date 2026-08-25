@@ -39,7 +39,11 @@ def test_comparison_requires_curve_gate_before_broad_gameplay(
     monkeypatch.setattr(
         architecture8_compare,
         "_training_health",
-        lambda root, arm: {"complete": True, "valid": True, "worker_restarts": 0},
+        lambda root, arm, attempt=None: {
+            "complete": True,
+            "valid": True,
+            "worker_restarts": 0,
+        },
     )
     for arm in architecture8_compare.ARMS:
         for step in architecture8_compare.CURVE_STEPS:
@@ -76,7 +80,7 @@ def test_a8_curve_reuses_fixed_control_only_at_step_zero(
     monkeypatch.setattr(
         architecture8_compare,
         "_training_health",
-        lambda root, arm: {"complete": True, "valid": True},
+        lambda root, arm, attempt=None: {"complete": True, "valid": True},
     )
     for step in architecture8_compare.CURVE_STEPS:
         _write_report(
@@ -99,3 +103,47 @@ def test_a8_curve_reuses_fixed_control_only_at_step_zero(
     ]
     assert curves["a8"][0]["summary"]["mean_progress"] == 1.0
     assert curves["a8"][-1]["summary"]["mean_progress"] == 1.3072
+
+
+def test_control_retry_uses_isolated_control_artifacts_and_original_a8(
+    tmp_path: Path, monkeypatch
+) -> None:
+    seen_health: list[tuple[str, str | None]] = []
+
+    def health(root: Path, arm: str, attempt: str | None = None):
+        seen_health.append((arm, attempt))
+        return {"complete": True, "valid": True}
+
+    monkeypatch.setattr(architecture8_compare, "_training_health", health)
+    for arm in ("a2-legacy", "a2-fixed"):
+        for step in architecture8_compare.CURVE_STEPS:
+            _write_report(
+                tmp_path
+                / "curve-evaluation"
+                / "control-retry-1"
+                / f"{arm}-step-{step:08d}.json",
+                _summary(progress=1.0),
+            )
+    for step in architecture8_compare.CURVE_STEPS[1:]:
+        _write_report(
+            tmp_path / "curve-evaluation" / f"a8-step-{step:08d}.json",
+            _summary(progress=1.1),
+        )
+    for name in ("warmup", "final"):
+        (tmp_path / f"representation-{name}.json").write_text(
+            json.dumps({"checkpoints": [{"all_new_groups_material": True}]}),
+            encoding="utf-8",
+        )
+
+    report = architecture8_compare.compare_experiment(
+        tmp_path, control_attempt="control-retry-1"
+    )
+
+    assert report["control_attempt"] == "control-retry-1"
+    assert report["curve_gate_passed"]
+    assert seen_health == [
+        ("a2-legacy", "control-retry-1"),
+        ("a2-fixed", "control-retry-1"),
+        ("a8", "control-retry-1"),
+    ]
+    assert report["curves"]["a8"][-1]["source_arm"] == "a8"

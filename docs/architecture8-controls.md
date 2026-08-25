@@ -93,3 +93,15 @@ recorded one training worker restart. This is an invalid-control health result,
 not a broad-gameplay rejection of A8. Under the predeclared rules A2 remains the
 baseline until the controls are repeated cleanly and the broad gate is actually
 run.
+
+The isolated retry preserves the original artifacts and reuses the completed
+A8 checkpoints and reports:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run-architecture8-control-retry.ps1
+```
+
+Retry controls live under `training/control-retry-1/` and their reports under
+matching evaluation subdirectories. If either control restarts, the retry stops
+before evaluation. If both remain healthy, the corrected comparator recomputes
+the curve gate and automatically runs broad gameplay when admitted.

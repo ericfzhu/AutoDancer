@@ -119,6 +119,13 @@ points first and runs broad held-out gameplay only if A8 passes its predeclared
 representation, health, and local-gameplay gates. See
 [`docs/architecture8-controls.md`](docs/architecture8-controls.md).
 
+If the initial A8 experiment stops only because its A2 controls restarted,
+repeat those controls without overwriting the original evidence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run-architecture8-control-retry.ps1
+```
+
 Establish a reproducible gameplay baseline by comparing a checkpoint's
 deterministic policy with a masked-random policy on the same explicit seeds:
 

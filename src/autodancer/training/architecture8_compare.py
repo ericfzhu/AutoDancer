@@ -28,9 +28,19 @@ def _per_episode(summary: dict[str, Any], field: str) -> float:
     return float(summary.get(field, 0.0)) / max(int(summary.get("episodes", 0)), 1)
 
 
-def _training_health(root: Path, arm: str) -> dict[str, Any]:
-    final = root / "training" / arm / "final.pt"
-    metrics_path = root / "training" / arm / "metrics.jsonl"
+def _arm_directory(root: Path, category: str, arm: str, control_attempt: str | None) -> Path:
+    base = root / category
+    if control_attempt and arm in {"a2-legacy", "a2-fixed"}:
+        base /= control_attempt
+    return base / arm
+
+
+def _training_health(
+    root: Path, arm: str, control_attempt: str | None = None
+) -> dict[str, Any]:
+    directory = _arm_directory(root, "training", arm, control_attempt)
+    final = directory / "final.pt"
+    metrics_path = directory / "metrics.jsonl"
     if not final.is_file() or not metrics_path.is_file():
         return {"complete": False, "valid": False}
     payload = torch.load(final, map_location="cpu", weights_only=False)
@@ -66,7 +76,9 @@ def _training_health(root: Path, arm: str) -> dict[str, Any]:
     return result
 
 
-def _curve(root: Path) -> dict[str, list[dict[str, Any]]]:
+def _curve(
+    root: Path, control_attempt: str | None = None
+) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {arm: [] for arm in ARMS}
     evaluation = root / "curve-evaluation"
     for arm in ARMS:
@@ -74,7 +86,10 @@ def _curve(root: Path) -> dict[str, list[dict[str, Any]]]:
             # A8 is exactly the fixed-contract A2 policy only at step zero.
             # Every trained A8 point has its own evaluation report.
             source_arm = "a2-fixed" if arm == "a8" and step == 0 else arm
-            report = _read(evaluation / f"{source_arm}-step-{step:08d}.json")
+            source_directory = evaluation
+            if control_attempt and source_arm in {"a2-legacy", "a2-fixed"}:
+                source_directory /= control_attempt
+            report = _read(source_directory / f"{source_arm}-step-{step:08d}.json")
             if report is None:
                 continue
             result[arm].append(
@@ -99,9 +114,14 @@ def _representation(root: Path, name: str) -> dict[str, Any] | None:
     return None if report is None else report["checkpoints"][0]
 
 
-def compare_experiment(root: Path) -> dict[str, Any]:
-    curves = _curve(root)
-    health = {arm: _training_health(root, arm) for arm in ARMS}
+def compare_experiment(
+    root: Path, *, control_attempt: str | None = None
+) -> dict[str, Any]:
+    curves = _curve(root, control_attempt)
+    health = {
+        arm: _training_health(root, arm, control_attempt)
+        for arm in ARMS
+    }
     warmup_representation = _representation(root, "warmup")
     final_representation = _representation(root, "final")
     fixed = _final_curve(curves, "a2-fixed")
@@ -146,9 +166,10 @@ def compare_experiment(root: Path) -> dict[str, Any]:
     }
     curve_gate_passed = all(curve_criteria.values())
 
-    broad_reports = {
-        arm: _read(root / "broad-evaluation" / f"{arm}.json") for arm in ARMS
-    }
+    broad_directory = root / "broad-evaluation"
+    if control_attempt:
+        broad_directory /= control_attempt
+    broad_reports = {arm: _read(broad_directory / f"{arm}.json") for arm in ARMS}
     broad = {
         arm: None if report is None else _without_results(report["trained"])
         for arm, report in broad_reports.items()
@@ -213,6 +234,7 @@ def compare_experiment(root: Path) -> dict[str, Any]:
         "schema_version": 1,
         "created_at": datetime.now(UTC).isoformat(),
         "training_seed": 36_001,
+        "control_attempt": control_attempt or "original",
         "curve_evaluation_seeds": list(range(45_001, 45_017)),
         "broad_evaluation_seeds": list(range(46_001, 46_031)),
         "curves": curves,
@@ -231,10 +253,16 @@ def compare_experiment(root: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compare A2/A8 controls and gameplay")
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--control-attempt")
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
-    report = compare_experiment(arguments.root)
-    output = arguments.output or arguments.root / "comparison.json"
+    report = compare_experiment(arguments.root, control_attempt=arguments.control_attempt)
+    default_name = (
+        f"comparison-{arguments.control_attempt}.json"
+        if arguments.control_attempt
+        else "comparison.json"
+    )
+    output = arguments.output or arguments.root / default_name
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.tmp")
     temporary.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
