@@ -734,11 +734,14 @@ local function emitTurn()
     if CurrentLevel.isLoading() or CurrentLevel.isLobby() then
         return
     end
-    local bridgeCommand = Bridge.consumeCompletedCommand()
-    if activeRunID ~= "" and not bridgeCommand then
+    -- Establish the new run before consuming RESET. GameSession can emit a
+    -- final old-run turn after accepting RESET; that turn must not steal the
+    -- acknowledgement intended for the new floor-1 observation.
+    local newRun = beginRunIfNeeded()
+    local bridgeCommand = Bridge.consumeCompletedCommand(newRun)
+    if not newRun and not bridgeCommand then
         return
     end
-    local newRun = beginRunIfNeeded()
     local observation = buildObservation()
     local context = currentContext()
     local kind = newRun and "reset" or "turn"

@@ -507,3 +507,14 @@ def test_lua_inventory_uses_the_gameplay_cooldown_component() -> None:
     ).read_text(encoding="utf-8")
     assert "spellCooldownTime.remainingTurns" in source
     assert "itemHUDCooldown.remainingTurns" not in source
+
+
+def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
+    root = Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts"
+    telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")
+    bridge = (root / "Bridge.lua").read_text(encoding="utf-8")
+    emit_turn = telemetry.index("local function emitTurn")
+    begin = telemetry.index("local newRun = beginRunIfNeeded()", emit_turn)
+    consume = telemetry.index("Bridge.consumeCompletedCommand(newRun)", begin)
+    assert begin < consume
+    assert 'completed.kind == "RESET" and not allowReset' in bridge

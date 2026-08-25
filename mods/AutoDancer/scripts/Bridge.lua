@@ -346,7 +346,10 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
     end
 end)
 
-function Bridge.consumeCompletedCommand()
+function Bridge.consumeCompletedCommand(allowReset)
+    if completed and completed.kind == "RESET" and not allowReset then
+        return nil
+    end
     local result = completed
     completed = nil
     return result
