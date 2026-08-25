@@ -20,7 +20,7 @@ from torch import Tensor
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
-from autodancer.training.action_contract import ACTION_CONTRACTS, apply_action_contract
+from autodancer.training.action_contract import ACTION_CONTRACTS
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import (
@@ -265,46 +265,23 @@ def evaluate_policy(
     action_contract: str = "current",
 ) -> dict[str, float]:
     """Evaluate deterministically on every worker, leaving all workers reset."""
+    from autodancer.training.baseline import _evaluate_deterministic_async
+
     rng = np.random.default_rng(seed)
-    observation, _ = environment.reset(
-        rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist()
+    episodes = _evaluate_deterministic_async(
+        environment,
+        model,
+        seeds=rng.integers(
+            0, 2**31, size=environment.num_envs, dtype=np.int64
+        ).tolist(),
+        max_steps=steps,
+        device=device,
+        dashboard_state=None,
+        action_contract=action_contract,
     )
-    observation = apply_action_contract(observation, action_contract)
-    hidden = model.initial_state(environment.num_envs, device=device)
-    previous_actions = np.full(environment.num_envs, START_ACTION, dtype=np.int64)
-    previous_rewards = np.zeros(environment.num_envs, dtype=np.float32)
-    returns = np.zeros(environment.num_envs, dtype=np.float64)
-    completed: list[float] = []
-    model.eval()
-    for _ in range(steps):
-        with torch.inference_mode():
-            policy_observation = tensor_observation(observation, device)
-            policy_observation["previous_action"] = torch.from_numpy(previous_actions).to(device)
-            policy_observation["previous_reward"] = torch.from_numpy(previous_rewards).to(device)
-            action, _, _, _, next_hidden = model.act(policy_observation, hidden, deterministic=True)
-        observation, reward, terminated, truncated, _ = environment.step(action.cpu().numpy())
-        observation = apply_action_contract(observation, action_contract)
-        returns += reward
-        done = terminated | truncated
-        done_indices = np.flatnonzero(done).tolist()
-        if done_indices:
-            completed.extend(returns[done_indices].tolist())
-            resets = environment.reset_at(
-                done_indices,
-                rng.integers(0, 2**31, size=len(done_indices), dtype=np.int64).tolist(),
-            )
-            replace_observation_rows(observation, done_indices, [item[0] for item in resets])
-            observation = apply_action_contract(observation, action_contract)
-            returns[done_indices] = 0.0
-        previous_actions = action.cpu().numpy().astype(np.int64, copy=True)
-        previous_rewards = reward.astype(np.float32, copy=True)
-        previous_actions[done] = START_ACTION
-        previous_rewards[done] = 0.0
-        hidden = next_hidden * torch.from_numpy(~done).to(device).float().reshape(-1, 1, 1)
-    environment.reset(rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist())
-    scores = completed if completed else returns.tolist()
+    scores = [float(episode["episode_return"]) for episode in episodes]
     return {
-        "evaluation_episodes": float(len(completed)),
+        "evaluation_episodes": float(len(episodes)),
         "evaluation_mean_return": float(np.mean(scores)),
     }
 
@@ -333,6 +310,7 @@ def train(arguments: argparse.Namespace) -> None:
         telemetry_transport=arguments.telemetry_transport,
         worker_profile=arguments.worker_profile,
         affinity_policy=arguments.affinity,
+        diagnostic_root=arguments.run_dir / "controller-diagnostics",
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -407,8 +385,10 @@ def train(arguments: argparse.Namespace) -> None:
                     telemetry_callback=telemetry_callback,
                     batch_delay=arguments.inference_batch_delay_ms / 1000.0,
                     action_contract=arguments.action_contract,
+                    initial_policy_version=algorithm.updates,
                 )
                 started = time.monotonic()
+                process_start_step = algorithm.global_step
                 metrics: dict[str, Any] = {
                     "global_step": algorithm.global_step,
                     "updates": algorithm.updates,
@@ -430,7 +410,9 @@ def train(arguments: argparse.Namespace) -> None:
                         "global_step": algorithm.global_step,
                         "updates": algorithm.updates,
                         "base_frozen": float(base_frozen),
-                        "steps_per_second": algorithm.global_step / elapsed,
+                        "steps_per_second": (
+                            algorithm.global_step - process_start_step
+                        ) / elapsed,
                         **update_metrics,
                         **collector.last_runtime_metrics,
                         **episode_metrics(collector.completed_episodes),
@@ -472,6 +454,8 @@ def train(arguments: argparse.Namespace) -> None:
                             seed=arguments.seed + algorithm.global_step,
                             telemetry_callback=telemetry_callback,
                             batch_delay=arguments.inference_batch_delay_ms / 1000.0,
+                            action_contract=arguments.action_contract,
+                            initial_policy_version=algorithm.updates,
                         )
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
@@ -500,15 +484,8 @@ def train(arguments: argparse.Namespace) -> None:
                             "ppo": asdict(ppo_config),
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
-                            "initialized_from": (
-                                str(arguments.initialize_from.resolve())
-                                if arguments.initialize_from is not None
-                                else None
-                            ),
-                            "fine_tuned_from": (
-                                str(arguments.fine_tune_from.resolve())
-                                if arguments.fine_tune_from is not None
-                                else None
+                            "initialized_from": algorithm.checkpoint_metadata.get(
+                                "initialization"
                             ),
                             "action_contract": arguments.action_contract,
                             "freeze_base_updates": arguments.freeze_base_updates,

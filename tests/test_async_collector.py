@@ -77,6 +77,7 @@ class AsyncEnvironment:
             "worker-0000": DelayedWorker(0, [0.0, 0.0, 0.0], self.timeline, lock),
             "worker-0001": DelayedWorker(1, [0.05, 0.0, 0.0], self.timeline, lock),
         }
+        self.infrastructure_events: list[dict] = []
 
     def reset(self, seeds: list[int]):
         results = [
@@ -88,7 +89,13 @@ class AsyncEnvironment:
             [result[1] for result in results],
         )
 
-    def recover(self, index: int, seed: int):
+    def _failure(self, index: int, error: BaseException, **details):
+        value = {"index": index, "error": str(error), **details}
+        self.infrastructure_events.append(value)
+        return value
+
+    def recover(self, index: int, seed: int, *, failure=None):
+        del failure
         return self.environments[self.worker_ids[index]].reset(seed=seed)
 
 
@@ -173,7 +180,8 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     original.step = fail_once  # type: ignore[method-assign]
     original_recover = environment.recover
 
-    def recover(index: int, seed: int):
+    def recover(index: int, seed: int, *, failure=None):
+        del failure
         recoveries.append(index)
         return original_recover(index, seed)
 
@@ -201,3 +209,48 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     assert collector.last_runtime_metrics["collector_recoveries"] == 1
     assert collector.last_runtime_metrics["collector_recovery_timeouterror"] == 1
     assert "worker disconnected" in collector.last_runtime_metrics["last_recovery_error"]
+
+
+def test_stochastic_actions_are_independent_of_worker_timing() -> None:
+    torch.manual_seed(17)
+    first_model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    second_model = RecurrentActorCritic(first_model.config)
+    second_model.load_state_dict(first_model.state_dict())
+    first_environment = AsyncEnvironment()
+    second_environment = AsyncEnvironment()
+    first_environment.environments["worker-0000"].delays = [0.05, 0.0, 0.0]
+    first_environment.environments["worker-0001"].delays = [0.0, 0.0, 0.0]
+    second_environment.environments["worker-0000"].delays = [0.0, 0.0, 0.0]
+    second_environment.environments["worker-0001"].delays = [0.05, 0.0, 0.0]
+    first = VersionedAsyncRolloutCollector(
+        first_environment,
+        first_model,
+        device=torch.device("cpu"),
+        seed=91,
+        batch_delay=0.001,
+        initial_policy_version=7,
+    )
+    second = VersionedAsyncRolloutCollector(
+        second_environment,
+        second_model,
+        device=torch.device("cpu"),
+        seed=91,
+        batch_delay=0.001,
+        initial_policy_version=7,
+    )
+    try:
+        first_rollout = first.collect(3)
+        second_rollout = second.collect(3)
+    finally:
+        first.close()
+        second.close()
+    np.testing.assert_array_equal(first_rollout.actions, second_rollout.actions)

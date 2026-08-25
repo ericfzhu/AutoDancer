@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,10 +17,12 @@ from torch import Tensor
 
 from autodancer.constants import ACTION_COUNT, Action, GridChannel, PlayerFeature, Terrain
 from autodancer.envs.vector import AutoDancerVectorEnv
-from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD
+from autodancer.live.native_pipe import NativePipeError
+from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
 from autodancer.training.action_contract import ACTION_CONTRACTS, apply_action_contract
+from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
@@ -387,6 +390,16 @@ def evaluate_live_policy(
         raise ValueError("At least one evaluation seed is required")
     if max_steps <= 0:
         raise ValueError("max_steps must be positive")
+    if model is not None:
+        return _evaluate_deterministic_async(
+            environment,
+            model,
+            seeds=seeds,
+            max_steps=max_steps,
+            device=device,
+            dashboard_state=dashboard_state,
+            action_contract=action_contract,
+        )
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
     parking_seed = 2_000_000_000
@@ -499,6 +512,132 @@ def evaluate_live_policy(
     return results
 
 
+def _evaluate_deterministic_async(
+    environment: AutoDancerVectorEnv,
+    model: PolicyModel,
+    *,
+    seeds: list[int],
+    max_steps: int,
+    device: torch.device,
+    dashboard_state: DashboardState | None,
+    action_contract: str,
+) -> list[dict[str, Any]]:
+    """Evaluate independent slots without a per-turn worker barrier."""
+    results: list[dict[str, Any]] = []
+    parking_seed = 2_100_000_000
+    model.eval()
+    for start in range(0, len(seeds), environment.num_envs):
+        wave_seeds = seeds[start : start + environment.num_envs]
+        padding = environment.num_envs - len(wave_seeds)
+        reset_seeds = [*wave_seeds, *range(parking_seed, parking_seed + padding)]
+        parking_seed += padding
+        observations, infos = environment.reset(reset_seeds)
+        observations = apply_action_contract(observations, action_contract)
+        scheduler = InferenceScheduler(
+            model,
+            device=device,
+            max_batch=max(len(wave_seeds), 1),
+            batch_delay=0.002,
+            deterministic=True,
+        )
+
+        def run_slot(
+            index: int,
+            wave_seeds: list[int] = wave_seeds,
+            observations: dict[str, np.ndarray] = observations,
+            infos: list[dict[str, Any]] = infos,
+            scheduler: InferenceScheduler = scheduler,
+        ) -> dict[str, Any]:
+            seed = wave_seeds[index]
+            worker_id = environment.worker_ids[index]
+            observation = {key: value[index].copy() for key, value in observations.items()}
+            info = dict(infos[index])
+            hidden = model.initial_state(1, device=device)
+            previous_action = START_ACTION
+            previous_reward = 0.0
+            attempts = 0
+            while True:
+                accumulator = EpisodeAccumulator(
+                    seed=int(info.get("seed") if info.get("seed") is not None else seed),
+                    worker_id=worker_id,
+                    run_id=str(info.get("run_id", "")),
+                    furthest_zone=int(info.get("zone") or 0),
+                    furthest_floor=int(info.get("floor") or 0),
+                    max_gold=int(observation["player"][PlayerFeature.GOLD]),
+                )
+                accumulator.initialize(observation, info)
+                try:
+                    while accumulator.turns < max_steps:
+                        action, _, _, next_hidden = scheduler.infer(
+                            observation,
+                            previous_action,
+                            previous_reward,
+                            hidden,
+                            0.0,
+                        )
+                        next_observation, reward, terminated, truncated, step_info = (
+                            environment.environments[worker_id].step(action)
+                        )
+                        expanded = {
+                            key: value[np.newaxis, ...]
+                            for key, value in next_observation.items()
+                        }
+                        next_observation = apply_action_contract(expanded, action_contract)
+                        next_observation = {
+                            key: value[0] for key, value in next_observation.items()
+                        }
+                        if dashboard_state is not None:
+                            dashboard_state.update_worker(
+                                index,
+                                worker_id,
+                                next_observation,
+                                step_info,
+                                action=action,
+                                reward=float(reward),
+                            )
+                        accumulator.observe(
+                            next_observation, float(reward), step_info, int(action)
+                        )
+                        observation = next_observation
+                        info = step_info
+                        hidden = next_hidden
+                        previous_action = action
+                        previous_reward = float(reward)
+                        if terminated or truncated:
+                            return accumulator.finish(
+                                str(step_info.get("episode_status", "aborted"))
+                            )
+                    return accumulator.finish("step_limit")
+                except (TimeoutError, NativePipeError, ProtocolError) as error:
+                    attempts += 1
+                    failure = environment._failure(
+                        index,
+                        error,
+                        operation="deterministic_evaluation",
+                        context={"seed": seed, "attempt": attempts},
+                    )
+                    if attempts >= 3:
+                        raise
+                    observation, info = environment.recover(
+                        index, seed, failure=failure
+                    )
+                    observation = apply_action_contract(
+                        {key: value[np.newaxis, ...] for key, value in observation.items()},
+                        action_contract,
+                    )
+                    observation = {key: value[0] for key, value in observation.items()}
+                    hidden = model.initial_state(1, device=device)
+                    previous_action = START_ACTION
+                    previous_reward = 0.0
+
+        try:
+            with ThreadPoolExecutor(max_workers=max(len(wave_seeds), 1)) as executor:
+                results.extend(executor.map(run_slot, range(len(wave_seeds))))
+        finally:
+            scheduler.close()
+    return results
+
+
 def _checkpoint_hash(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -528,6 +667,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         max_turns=max(arguments.max_steps + 1, 2),
         reward_config=reward_config,
         affinity_policy=arguments.affinity,
+        diagnostic_root=arguments.output.parent / "controller-diagnostics",
     )
     dashboard_state = DashboardState() if arguments.dashboard is not None else None
     dashboard_server = (
@@ -575,6 +715,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     action_contract=arguments.action_contract,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
+                infrastructure_events = list(environment.infrastructure_events)
             finally:
                 environment.close()
     finally:
@@ -609,6 +750,8 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "policy_seed": arguments.policy_seed,
         "action_contract": arguments.action_contract,
         "worker_restarts": restarts,
+        "controller_valid": restarts == 0 and not infrastructure_events,
+        "infrastructure_events": infrastructure_events,
         "reference": reference,
         "trained": trained,
         "trained_minus_reference": (

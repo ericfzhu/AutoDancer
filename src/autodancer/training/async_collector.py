@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import torch
 from torch import Tensor
+from torch.distributions import Categorical
 
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
@@ -57,6 +58,7 @@ class _InferenceRequest:
     previous_action: int
     previous_reward: float
     hidden: Tensor
+    sample: float
     future: Future[tuple[int, Tensor, Tensor, Tensor]]
 
 
@@ -70,11 +72,13 @@ class InferenceScheduler:
         device: torch.device,
         max_batch: int,
         batch_delay: float,
+        deterministic: bool = False,
     ) -> None:
         self.model = model
         self.device = device
         self.max_batch = max_batch
         self.batch_delay = batch_delay
+        self.deterministic = deterministic
         self._queue: queue.Queue[_InferenceRequest | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="policy-inference", daemon=True)
         self._thread.start()
@@ -85,11 +89,17 @@ class InferenceScheduler:
         previous_action: int,
         previous_reward: float,
         hidden: Tensor,
+        sample: float,
     ) -> tuple[int, Tensor, Tensor, Tensor]:
         future: Future[tuple[int, Tensor, Tensor, Tensor]] = Future()
         self._queue.put(
             _InferenceRequest(
-                observation, previous_action, previous_reward, hidden.detach(), future
+                observation,
+                previous_action,
+                previous_reward,
+                hidden.detach(),
+                sample,
+                future,
             )
         )
         return future.result()
@@ -137,7 +147,21 @@ class InferenceScheduler:
                 )
                 hidden = torch.cat([request.hidden for request in batch]).to(self.device)
                 with torch.inference_mode():
-                    actions, log_probs, _, values, next_hidden = self.model.act(observation, hidden)
+                    logits, values, next_hidden = self.model.step(observation, hidden)
+                    distribution = Categorical(logits=logits)
+                    probabilities = torch.softmax(logits, dim=-1)
+                    if self.deterministic:
+                        actions = logits.argmax(dim=-1)
+                    else:
+                        samples = torch.tensor(
+                            [request.sample for request in batch],
+                            dtype=probabilities.dtype,
+                            device=self.device,
+                        )
+                        actions = (
+                            probabilities.cumsum(dim=-1) < samples.unsqueeze(-1)
+                        ).sum(dim=-1).clamp_max(probabilities.shape[-1] - 1)
+                    log_probs = distribution.log_prob(actions)
                 for index, request in enumerate(batch):
                     request.future.set_result(
                         (
@@ -165,6 +189,7 @@ class VersionedAsyncRolloutCollector:
         batch_delay: float = 0.002,
         telemetry_callback: Any | None = None,
         action_contract: str = "current",
+        initial_policy_version: int = 0,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -172,6 +197,7 @@ class VersionedAsyncRolloutCollector:
         self.batch_delay = batch_delay
         self.telemetry_callback = telemetry_callback
         self.action_contract = action_contract
+        self.base_seed = int(seed)
         seed_sequence = np.random.SeedSequence(seed)
         self.rngs = [
             np.random.default_rng(item) for item in seed_sequence.spawn(environment.num_envs)
@@ -192,7 +218,7 @@ class VersionedAsyncRolloutCollector:
         self.completed_episodes: list[dict[str, Any]] = []
         self.last_reward_components: dict[str, float] = {}
         self.last_runtime_metrics: dict[str, Any] = {}
-        self.policy_version = 0
+        self.policy_version = int(initial_policy_version)
         self._recovery_lock = threading.Lock()
         self._recovery_counts: dict[str, int] = {}
         self._recovery_total = 0
@@ -304,7 +330,28 @@ class VersionedAsyncRolloutCollector:
                     self._recovery_total += 1
                     self._recovery_counts[reason] = self._recovery_counts.get(reason, 0) + 1
                     self._last_recovery_error = f"{type(error).__name__}: {error}"
-                observation, info = self.environment.recover(index, self._seed(index))
+                state = self.states[index]
+                failure = self.environment._failure(
+                    index,
+                    error,
+                    operation="async_collect",
+                    context={
+                        "policy_version": self.policy_version,
+                        "run_id": state.info.get("run_id"),
+                        "seed": state.info.get("seed"),
+                        "sequence": state.info.get("sequence"),
+                        "previous_action": state.previous_action,
+                        "observation_summary": {
+                            "player": state.observation["player"].tolist(),
+                            "legal_actions": np.flatnonzero(
+                                state.observation["action_mask"]
+                            ).tolist(),
+                        },
+                    },
+                )
+                observation, info = self.environment.recover(
+                    index, self._seed(index), failure=failure
+                )
                 observation = apply_action_contract(observation, self.action_contract)
                 self.states[index] = ActorState(
                     observation,
@@ -336,7 +383,7 @@ class VersionedAsyncRolloutCollector:
         inference_wait = 0.0
         environment_wait = 0.0
         started = time.monotonic()
-        for _ in range(length):
+        for fragment_step in range(length):
             for key, value in state.observation.items():
                 observations[key].append(torch.from_numpy(value.copy()))
             observations["previous_action"].append(torch.tensor(state.previous_action))
@@ -349,6 +396,13 @@ class VersionedAsyncRolloutCollector:
                 state.previous_action,
                 state.previous_reward,
                 state.hidden,
+                float(
+                    np.random.default_rng(
+                        np.random.SeedSequence(
+                            [self.base_seed, index, self.policy_version, fragment_step]
+                        )
+                    ).random()
+                ),
             )
             inference_wait += time.monotonic() - inference_started
             environment_started = time.monotonic()
@@ -364,6 +418,9 @@ class VersionedAsyncRolloutCollector:
                 acknowledgement = info.get("bridge") or {}
                 handle.last_acknowledged_command = int(
                     acknowledgement.get("command_id", handle.last_acknowledged_command)
+                )
+                handle.max_frame_bytes = max(
+                    handle.max_frame_bytes, int(info.get("max_frame_bytes", 0))
                 )
             done = bool(terminated or truncated)
             reward = float(reward)

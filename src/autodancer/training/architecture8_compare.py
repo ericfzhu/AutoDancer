@@ -128,6 +128,11 @@ def compare_experiment(
     candidate = _final_curve(curves, "a8")
     curve_criteria = {
         "complete_curves": all(len(curves[arm]) == len(CURVE_STEPS) for arm in ARMS),
+        "valid_controller_evaluations": all(
+            item["worker_restarts"] == 0
+            for arm in ARMS
+            for item in curves[arm]
+        ),
         "healthy_training": all(value.get("valid", False) for value in health.values()),
         "warmup_representation_material": bool(
             warmup_representation and warmup_representation["all_new_groups_material"]
