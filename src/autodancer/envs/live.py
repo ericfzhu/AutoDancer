@@ -292,6 +292,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             "completed": int(status == "won"),
             "deaths": int(status == "dead"),
             "raw_events": [dict(event) for event in record.get("events", [])],
+            "frame_bytes": int(getattr(self._source, "last_frame_bytes", 0)),
+            "max_frame_bytes": int(getattr(self._source, "max_frame_bytes", 0)),
             **record.get("metrics", {}),
         }
         return observation, info

@@ -499,3 +499,11 @@ def test_transition_rejects_floor_metadata_that_disagrees_with_observation() -> 
     payload["floor"] = 2
     with pytest.raises(ProtocolError, match="zone/floor"):
         validate_record(payload)
+
+
+def test_lua_inventory_uses_the_gameplay_cooldown_component() -> None:
+    source = (
+        Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "AutoDancer.lua"
+    ).read_text(encoding="utf-8")
+    assert "spellCooldownTime.remainingTurns" in source
+    assert "itemHUDCooldown.remainingTurns" not in source

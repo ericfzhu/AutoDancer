@@ -403,7 +403,28 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             worker = environment.environments[worker_id]
             rng = np.random.default_rng(51_000 + index)
             seed = int(rng.integers(0, 2**31))
-            observation, info = worker.reset(seed=seed)
+            reset_latencies: list[float] = []
+
+            def reset_live(selected_seed: int, transition: int) -> tuple[dict, dict]:
+                started = time.monotonic()
+                try:
+                    result = worker.reset(seed=selected_seed)
+                except (TimeoutError, NativePipeError, ProtocolError) as error:
+                    stop.set()
+                    failure = environment._failure(
+                        index,
+                        error,
+                        operation="qualification_natural_soak_reset",
+                        context={"transition": transition, "seed": selected_seed},
+                    )
+                    supervisor.replace_worker(worker_id, failure=failure)
+                    raise QualificationFailure(
+                        f"Natural reset failure in {worker_id} at transition {transition}"
+                    ) from error
+                reset_latencies.append(time.monotonic() - started)
+                return result
+
+            observation, info = reset_live(seed, 0)
             explorer = LiveExplorer()
             latencies: list[float] = []
             memory: list[int] = []
@@ -412,6 +433,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             previous_zone = int(info.get("zone") or 0)
             previous_floor = int(info.get("floor") or 0)
             trace_path = trace_root / f"{worker_id}.jsonl"
+            trace_path.write_text("", encoding="utf-8")
             for transition in range(arguments.transitions_per_worker):
                 if stop.is_set():
                     return {
@@ -479,7 +501,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                     if step_info.get("episode_status") == "dead":
                         mechanics.add("death")
                     seed = int(rng.integers(0, 2**31))
-                    observation, info = worker.reset(seed=seed)
+                    observation, info = reset_live(seed, transition + 1)
                     explorer.reset_level()
                     previous_zone = int(info.get("zone") or 0)
                     previous_floor = int(info.get("floor") or 0)
@@ -500,6 +522,12 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                                     ),
                                     "working_set_bytes": memory[-1],
                                     "max_frame_bytes": int(info.get("max_frame_bytes", 0)),
+                                    "frame_bytes": int(info.get("frame_bytes", 0)),
+                                    "outstanding_command_age_seconds": (
+                                        supervisor.health()[worker_id].get(
+                                            "outstanding_command_age_seconds"
+                                        )
+                                    ),
                                 },
                                 sort_keys=True,
                             )
@@ -513,6 +541,14 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 "latency_p50_ms": float(np.percentile(latencies, 50) * 1000),
                 "latency_p99_ms": float(np.percentile(latencies, 99) * 1000),
                 "max_latency_seconds": max(latencies),
+                "reset_latency_p50_ms": float(
+                    np.percentile(reset_latencies, 50) * 1000
+                ),
+                "reset_latency_p99_ms": float(
+                    np.percentile(reset_latencies, 99) * 1000
+                ),
+                "last_frame_bytes": int(info.get("frame_bytes", 0)),
+                "max_frame_bytes": int(info.get("max_frame_bytes", 0)),
                 "memory_growth_second_half": growth,
                 "mechanics": sorted(mechanics),
             }
@@ -535,6 +571,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
         workers.sort(key=lambda worker: worker["worker_id"])
         elapsed = time.monotonic() - started
         restarts = sum(handle.restart_count for handle in supervisor.workers.values())
+        owned_identities = list(supervisor._owned_processes.items())
         criteria = {
             "exact_transitions": all(
                 worker["transitions"] == arguments.transitions_per_worker
@@ -559,7 +596,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             "exact_capacity": len(supervisor._worker_processes) == arguments.num_instances,
         }
         report = {
-            "passed": all(criteria.values()),
+            "passed": False,
             "elapsed_seconds": elapsed,
             "transitions": sum(worker["transitions"] for worker in workers),
             "transitions_per_second": sum(worker["transitions"] for worker in workers)
@@ -571,6 +608,17 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             "workers": workers,
         }
         environment.close()
+    remaining_owned: list[int] = []
+    for pid, create_time in owned_identities:
+        try:
+            process = psutil.Process(pid)
+            if process.create_time() == create_time:
+                remaining_owned.append(pid)
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            continue
+    report["remaining_owned_processes"] = remaining_owned
+    report["criteria"]["complete_cleanup"] = not remaining_owned
+    report["passed"] = all(report["criteria"].values())
     if not report["passed"]:
         raise QualificationFailure(f"Natural soak failed: {report['criteria']}")
     return report

@@ -637,6 +637,7 @@ class NativePipeTurnSource(_SequenceTracker):
         self.launch_id = launch_id
         self.status_callback = status_callback
         self.last_status: dict[str, Any] | None = None
+        self.last_frame_bytes = 0
         self.max_frame_bytes = 0
         self._lifecycle_key: tuple[str, int] | None = None
         self._lifecycle_phase: str | None = None
@@ -686,6 +687,7 @@ class NativePipeTurnSource(_SequenceTracker):
                     f"No AutoDancer transition arrived within {timeout:.1f} seconds"
                 )
             payload = self.receiver.receive(remaining, max_bytes=262144)
+            self.last_frame_bytes = len(payload)
             self.max_frame_bytes = max(self.max_frame_bytes, len(payload))
             message = decode_pipe_message(payload)
             message_type = message["message_type"]

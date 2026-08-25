@@ -127,6 +127,8 @@ class InstanceHandle:
         default_factory=lambda: deque(maxlen=128)
     )
     last_heartbeat: dict[str, Any] | None = None
+    outstanding_command_since: float | None = None
+    last_frame_bytes: int = 0
     max_frame_bytes: int = 0
     failure_history: list[dict[str, Any]] = field(default_factory=list)
 
@@ -354,6 +356,11 @@ class AutoDancerSupervisor:
 
         def record_status(status: dict[str, Any]) -> None:
             handle.command_lifecycle.append(status)
+            phase = status.get("phase")
+            if phase == "received":
+                handle.outstanding_command_since = time.monotonic()
+            elif phase in {"telemetry_sent", "command_error"}:
+                handle.outstanding_command_since = None
             if status.get("phase") == "heartbeat":
                 handle.last_heartbeat = status
 
@@ -367,6 +374,7 @@ class AutoDancerSupervisor:
             handle.max_frame_bytes = max(
                 handle.max_frame_bytes, int(info.get("max_frame_bytes", 0))
             )
+            handle.last_frame_bytes = int(info.get("frame_bytes", 0))
 
         source = NativePipeTurnSource(
             handle.transport,
@@ -487,6 +495,13 @@ class AutoDancerSupervisor:
             "process": process_state,
             "last_acknowledged_command": handle.last_acknowledged_command,
             "last_heartbeat": handle.last_heartbeat,
+            "outstanding_command_age_seconds": (
+                None
+                if handle.outstanding_command_since is None
+                else time.monotonic() - handle.outstanding_command_since
+            ),
+            "last_frame_bytes": handle.last_frame_bytes,
+            "max_frame_bytes": handle.max_frame_bytes,
             "command_lifecycle": list(handle.command_lifecycle),
             "failure": failure,
             "log_path": str(handle.log_path),
@@ -528,6 +543,12 @@ class AutoDancerSupervisor:
                 "episode_status": handle.episode_status,
                 "last_acknowledged_command": handle.last_acknowledged_command,
                 "last_heartbeat": handle.last_heartbeat,
+                "outstanding_command_age_seconds": (
+                    None
+                    if handle.outstanding_command_since is None
+                    else time.monotonic() - handle.outstanding_command_since
+                ),
+                "last_frame_bytes": handle.last_frame_bytes,
                 "max_frame_bytes": handle.max_frame_bytes,
                 "failure_count": len(handle.failure_history),
                 **process_metrics,

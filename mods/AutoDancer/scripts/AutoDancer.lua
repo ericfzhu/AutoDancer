@@ -382,8 +382,10 @@ local function encodeInventoryItem(inventory, row, entityID)
     inventory[row][2] = typeID(item.name)
     inventory[row][3] = hasComponent(item, "itemStack") and item.itemStack.quantity or 1
     inventory[row][4] = hasComponent(item, "weapon") and item.weapon.damage or 0
-    inventory[row][5] = hasComponent(item, "itemHUDCooldown")
-        and math.max(0, item.itemHUDCooldown.remainingTurns or 0) or 0
+    -- itemHUDCooldown is only a HUD-opacity marker. The mutable turn counter
+    -- belongs to spellCooldownTime in the pinned game schema.
+    inventory[row][5] = hasComponent(item, "spellCooldownTime")
+        and math.max(0, item.spellCooldownTime.remainingTurns or 0) or 0
     inventory[row][6] = hasComponent(item, "spellCooldownKills")
         and math.max(0, item.spellCooldownKills.remainingKills or 0) or 0
     inventory[row][7] = inventory[row][5] == 0 and inventory[row][6] == 0 and 1 or 0
