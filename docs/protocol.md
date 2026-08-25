@@ -33,11 +33,20 @@ Each command is one ASCII line:
 ```text
 RESET <session_id> <command_id> <seed>
 ACTION <session_id> <command_id> <logical_action>
+GOTO <session_id> <command_id> <next_sequential_level>
 ```
 
 `RESET` starts Bard in normal All Zones mode using the exact requested seed.
 Logical actions are integers `0..10`. Process creation and replacement are
 owned directly by the Python supervisor; no coordinator game process exists.
+
+`GOTO` is qualification-only. The supervisor enables it solely for the
+single-worker conformance phase, it advances only to the immediately next
+level in the active All Zones sequence, and Lua rejects it in training,
+evaluation, benchmark, and soak workers. It validates boss/zone boundaries and
+the first post-transition observation without requiring an untrained policy to
+beat a zone. Its acknowledgement is attached only after the real engine loads
+the requested level; it never fabricates a gameplay transition.
 
 The logical action order is `up`, `right`, `down`, `left`, `wait`, `bomb`,
 `item 1`, `item 2`, `throw`, `spell 1`, and `spell 2`. In a running Bard

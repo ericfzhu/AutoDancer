@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from autodancer.constants import DIRECTION_DELTAS, Action, GridChannel, Terrain
+from autodancer.constants import DIRECTION_DELTAS, Action, GridChannel, PlayerFeature, Terrain
 from autodancer.envs.live import AutoDancerLiveEnv
 
 _ACTIONS = (Action.UP, Action.RIGHT, Action.DOWN, Action.LEFT)
@@ -48,20 +48,31 @@ class LiveExplorer:
         previous_position = self.previous_position
         self.previous_position = player
         enemies = self._visible_enemies(observation)
+        danger = enemies | {
+            neighbor
+            for enemy in enemies
+            for neighbor in self._neighbors(enemy)
+        }
         adjacent = self._adjacent_action(player, enemies)
         if adjacent is not None:
             self.last_reason = "adjacent_enemy"
             return adjacent
 
-        action = self._route(player, enemies, allow_final_unknown=False)
-        if action is not None:
-            self.last_reason = "visible_enemy"
-            return action
+        if int(observation["player"][PlayerFeature.FLOOR]) >= 4:
+            action = self._route(player, enemies, allow_final_unknown=False)
+            if action is not None:
+                self.last_reason = "boss_enemy"
+                return action
 
         stairs = {
             position for position, terrain in self.terrain.items() if terrain == Terrain.STAIRS
         }
-        action = self._route(player, stairs, allow_final_unknown=False)
+        action = self._route(
+            player,
+            stairs,
+            allow_final_unknown=False,
+            blocked=danger - stairs - {player},
+        )
         if action is not None:
             self.last_reason = "stairs"
             return action
@@ -99,7 +110,12 @@ class LiveExplorer:
                 ),
             )
             for target in ordered_frontiers:
-                action = self._route(player, {target}, allow_final_unknown=False)
+                action = self._route(
+                    player,
+                    {target},
+                    allow_final_unknown=False,
+                    blocked=danger - {target, player},
+                )
                 if action is not None:
                     if self._action_target(player, action) == previous_position:
                         self.retired_frontiers.add(target)
@@ -108,7 +124,12 @@ class LiveExplorer:
                     self.last_reason = "frontier"
                     return action
         else:
-            action = self._route(player, {self.frontier_target}, allow_final_unknown=False)
+            action = self._route(
+                player,
+                {self.frontier_target},
+                allow_final_unknown=False,
+                blocked=danger - {self.frontier_target, player},
+            )
             if action is not None:
                 if self._action_target(player, action) != previous_position:
                     self.last_reason = "frontier"
@@ -123,7 +144,12 @@ class LiveExplorer:
             and position not in self.attempted_dig
             and any(neighbor not in self.terrain for neighbor in self._neighbors(position))
         }
-        action = self._route(player, dig_targets, allow_final_unknown=True)
+        action = self._route(
+            player,
+            dig_targets,
+            allow_final_unknown=True,
+            blocked=danger - dig_targets - {player},
+        )
         if action is not None:
             dx, dy = DIRECTION_DELTAS[action]
             adjacent = player[0] + dx, player[1] + dy
@@ -162,6 +188,7 @@ class LiveExplorer:
         goals: set[tuple[int, int]],
         *,
         allow_final_unknown: bool,
+        blocked: set[tuple[int, int]] | None = None,
     ) -> Action | None:
         if not goals or start in goals:
             return None
@@ -171,6 +198,8 @@ class LiveExplorer:
             position, first_action = queue.popleft()
             for action, neighbor in self._action_neighbors(position):
                 if neighbor in visited:
+                    continue
+                if blocked and neighbor in blocked:
                     continue
                 is_goal = neighbor in goals
                 terrain = self.terrain.get(neighbor, Terrain.UNKNOWN)

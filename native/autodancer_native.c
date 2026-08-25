@@ -14,6 +14,7 @@ typedef void (__cdecl *lua_pushlstring_fn)(lua_State *state, const char *value, 
 typedef void (__cdecl *lua_createtable_fn)(lua_State *state, int array_size, int record_size);
 typedef const char *(__cdecl *luaL_checklstring_fn)(lua_State *state, int index, size_t *length);
 typedef void (__cdecl *luaL_register_fn)(lua_State *state, const char *name, const void *functions);
+typedef int (__cdecl *lua_gc_fn)(lua_State *state, int what, int data);
 
 typedef struct luaL_Reg {
     const char *name;
@@ -26,6 +27,7 @@ static lua_pushlstring_fn lua_pushlstring_ptr;
 static lua_createtable_fn lua_createtable_ptr;
 static luaL_checklstring_fn luaL_checklstring_ptr;
 static luaL_register_fn luaL_register_ptr;
+static lua_gc_fn lua_gc_ptr;
 static HANDLE pipe_handle = INVALID_HANDLE_VALUE;
 static const DWORD IO_TIMEOUT_MS = 5000;
 
@@ -41,9 +43,10 @@ static int resolve_lua_api(void) {
     RESOLVE(lua_createtable);
     RESOLVE(luaL_checklstring);
     RESOLVE(luaL_register);
+    RESOLVE(lua_gc);
 #undef RESOLVE
     return lua_pushnil_ptr && lua_pushboolean_ptr && lua_pushlstring_ptr && lua_createtable_ptr
-        && luaL_checklstring_ptr && luaL_register_ptr;
+        && luaL_checklstring_ptr && luaL_register_ptr && lua_gc_ptr;
 }
 
 static int connect_pipe(void) {
@@ -240,6 +243,22 @@ static int native_send(lua_State *state) {
     return 1;
 }
 
+static int native_collect(lua_State *state) {
+    /* LUA_GCCOLLECT is stable at value 2 in the pinned Lua 5.1 ABI. */
+    lua_gc_ptr(state, 2, 0);
+    lua_pushboolean_ptr(state, 1);
+    return 1;
+}
+
+static int native_is_qualification(lua_State *state) {
+    char value[8] = {0};
+    DWORD length = GetEnvironmentVariableA(
+        "AUTODANCER_QUALIFICATION", value, (DWORD)sizeof(value)
+    );
+    lua_pushboolean_ptr(state, length == 1 && value[0] == '1');
+    return 1;
+}
+
 static int native_close(lua_State *state) {
     (void)state;
     autodancer_close();
@@ -253,6 +272,8 @@ __declspec(dllexport) int __cdecl luaopen_autodancer_native(lua_State *state) {
         {"getSupervisorSession", native_get_supervisor_session},
         {"poll", native_poll},
         {"send", native_send},
+        {"collect", native_collect},
+        {"isQualification", native_is_qualification},
         {"close", native_close},
         {NULL, NULL},
     };

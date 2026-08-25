@@ -717,6 +717,14 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
         },
     }
     assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
+    -- Telemetry allocates a large, short-lived observation table and JSON string
+    -- every turn.  The game normally lets Lua's collector choose when to return
+    -- that memory, which can look like sustained worker growth during long,
+    -- headless runs.  Bound the retained Lua heap without changing any game
+    -- state or protocol content.
+    if kind == "initial" then
+        assert(Native.collect(), "AutoDancer telemetry garbage collection failed")
+    end
     if bridgeCommand then
         Bridge.markTelemetrySent(bridgeCommand)
     end

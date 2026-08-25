@@ -85,6 +85,7 @@ class SupervisorConfig:
     telemetry_transport: str = "native-pipe"
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
+    qualification_mode: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "game_dir", Path(self.game_dir).resolve())
@@ -213,6 +214,9 @@ class AutoDancerSupervisor:
         environment["AUTODANCER_LAUNCH_ID"] = launch_id
         environment["AUTODANCER_SUPERVISOR_SESSION"] = self.session_id
         environment["AUTODANCER_PIPE"] = transport.name
+        environment["AUTODANCER_QUALIFICATION"] = (
+            "1" if self.config.qualification_mode else "0"
+        )
         return subprocess.Popen(
             [str(self.config.executable), *arguments],
             cwd=self.config.game_dir,

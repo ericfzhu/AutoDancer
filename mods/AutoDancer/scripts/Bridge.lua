@@ -33,6 +33,7 @@ local launchID = tostring(Native.getLaunchID() or "launch-unknown")
 launchID = string.gsub(launchID, "[^%w%-_]", "_")
 local supervisorSession = tostring(Native.getSupervisorSession() or "session-unknown")
 supervisorSession = string.gsub(supervisorSession, "[^%w%-_]", "_")
+local qualificationMode = Native.isQualification() == true
 
 local LOGICAL_TO_ENGINE = {
     [0] = Action.Direction.UP,
@@ -271,6 +272,26 @@ local function acceptCommand(command)
         sendCommandStatus(command, "reset_started")
         startAllZonesBard(seed)
         return true
+    elseif command.kind == "GOTO" then
+        local targetLevel = tonumber(command.argument)
+        local reason = not qualificationMode and "qualification_disabled"
+            or (not targetLevel or targetLevel < 1) and "invalid_level"
+            or targetLevel ~= CurrentLevel.getSequentialNumber() + 1
+                and "nonsequential_qualification_level"
+            or playableReason()
+        if reason then
+            return false, reason
+        end
+        completed = {
+            kind = "GOTO",
+            session_id = command.session_id,
+            command_id = command.command_id,
+            target_level = targetLevel,
+        }
+        sendCommandStatus(command, "accepted")
+        sendCommandStatus(command, "reset_started")
+        GameSession.nextLevel(0)
+        return true
     end
     return false, "unsupported_command"
 end
@@ -348,6 +369,10 @@ end)
 
 function Bridge.consumeCompletedCommand(allowReset)
     if completed and completed.kind == "RESET" and not allowReset then
+        return nil
+    end
+    if completed and completed.kind == "GOTO"
+        and CurrentLevel.getSequentialNumber() ~= completed.target_level then
         return nil
     end
     local result = completed

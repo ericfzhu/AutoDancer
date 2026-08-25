@@ -29,12 +29,15 @@ def test_native_pipe_bridge_routes_commands_without_files() -> None:
 
     action = bridge.send_action(Action.LEFT)
     reset = bridge.reset(11001)
+    goto = bridge.goto_level(4)
 
     assert action.instance_id == "worker-0007"
     assert reset.seed == 11001
+    assert goto.target_level == 4
     assert transport.messages == [
         (b"ACTION session-native 1 3\n", 2.5),
         (b"RESET session-native 2 11001\n", 2.5),
+        (b"GOTO session-native 3 4\n", 2.5),
     ]
 
 
@@ -57,6 +60,13 @@ def test_file_bridge_publishes_seeded_reset(tmp_path: Path) -> None:
     assert command.action is None
     assert command.seed == 12345
     assert path.read_text(encoding="ascii") == "RESET session-2 1 12345\n"
+
+
+def test_file_bridge_publishes_qualification_level_transition(tmp_path: Path) -> None:
+    path = tmp_path / "bridge-command.txt"
+    command = FileCommandBridge(path, session_id="session-2").goto_level(5)
+    assert command.target_level == 5
+    assert path.read_text(encoding="ascii") == "GOTO session-2 1 5\n"
 
 
 def test_file_bridge_publishes_all_zones_bard_start(tmp_path: Path) -> None:

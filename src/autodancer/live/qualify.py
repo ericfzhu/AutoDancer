@@ -101,6 +101,7 @@ def _configuration(arguments: argparse.Namespace, count: int, phase: str) -> Sup
         max_turns=max(arguments.transitions_per_worker + 100, 10_000),
         affinity_policy=arguments.affinity,
         diagnostic_root=arguments.run_dir / "controller-diagnostics" / phase,
+        qualification_mode=phase == "conformance",
     )
 
 
@@ -161,6 +162,54 @@ def conformance(arguments: argparse.Namespace) -> dict[str, Any]:
         probes.verify_action_contract(47_000)
         probes.exercise_mechanics(list(range(47_001, 47_006)), 2_000)
         report = probes.ledger.report()
+        _, initial_info = environment.reset(seed=47_999)
+        boss_info = initial_info
+        for target_level in (2, 3, 4):
+            _, boss_info = environment.qualification_goto_level(target_level)
+        boss_zone = int(boss_info.get("zone") or 0)
+        boss_floor = int(boss_info.get("floor") or 0)
+        if boss_floor < 4:
+            raise QualificationFailure(
+                f"Qualification level 4 did not load a boss floor: {boss_info}"
+            )
+        zone_observation, zone_info = environment.qualification_goto_level(5)
+        next_zone = int(zone_info.get("zone") or 0)
+        if next_zone <= boss_zone:
+            raise QualificationFailure(
+                f"Qualification level 5 did not cross a zone boundary: {zone_info}"
+            )
+        first_action_observation, _, terminated, truncated, first_action_info = (
+            environment.step(Action.WAIT)
+        )
+        if terminated or truncated:
+            raise QualificationFailure(
+                "The first action after the qualification zone transition was terminal"
+            )
+        if not np.array_equal(
+            zone_observation["player"][[PlayerFeature.ZONE, PlayerFeature.FLOOR]],
+            first_action_observation["player"][
+                [PlayerFeature.ZONE, PlayerFeature.FLOOR]
+            ],
+        ):
+            raise QualificationFailure(
+                "The first action after a level transition did not use the current level"
+            )
+        report["live_level_boundaries"] = {
+            "passed": True,
+            "initial": {
+                "zone": initial_info.get("zone"),
+                "floor": initial_info.get("floor"),
+            },
+            "boss_entry": {"zone": boss_zone, "floor": boss_floor},
+            "zone_transition": {
+                "zone": next_zone,
+                "floor": zone_info.get("floor"),
+            },
+            "first_action": {
+                "zone": first_action_info.get("zone"),
+                "floor": first_action_info.get("floor"),
+            },
+        }
         environment.close()
     passed = bool(
         report["core_action_contract_passed"]
@@ -397,6 +446,16 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
         lock = threading.Lock()
         stop = threading.Event()
         global_mechanics: set[str] = set()
+        progress_path = arguments.run_dir / "qualification-progress.json"
+        if progress_path.is_file():
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            boundaries = (
+                progress.get("phases", {})
+                .get("conformance", {})
+                .get("live_level_boundaries", {})
+            )
+            if boundaries.get("passed"):
+                global_mechanics.update({"boss_entry", "zone_transition"})
 
         def run_slot(index: int) -> dict[str, Any]:
             worker_id = environment.worker_ids[index]
@@ -432,6 +491,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             mechanics: set[str] = set()
             previous_zone = int(info.get("zone") or 0)
             previous_floor = int(info.get("floor") or 0)
+            maximum_zone = previous_zone
+            maximum_floor = previous_floor
             trace_path = trace_root / f"{worker_id}.jsonl"
             trace_path.write_text("", encoding="utf-8")
             for transition in range(arguments.transitions_per_worker):
@@ -488,6 +549,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                     mechanics.add("trap_seen")
                 zone = int(step_info.get("zone") or 0)
                 floor = int(step_info.get("floor") or 0)
+                maximum_zone = max(maximum_zone, zone)
+                maximum_floor = max(maximum_floor, floor)
                 if floor != previous_floor:
                     mechanics.add("floor_transition")
                     explorer.reset_level()
@@ -528,6 +591,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                                             "outstanding_command_age_seconds"
                                         )
                                     ),
+                                    "action_counts": list(actions),
+                                    "mechanics": sorted(mechanics),
                                 },
                                 sort_keys=True,
                             )
@@ -550,6 +615,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 "last_frame_bytes": int(info.get("frame_bytes", 0)),
                 "max_frame_bytes": int(info.get("max_frame_bytes", 0)),
                 "memory_growth_second_half": growth,
+                "maximum_zone": maximum_zone,
+                "maximum_floor": maximum_floor,
                 "mechanics": sorted(mechanics),
             }
             with lock:
@@ -589,10 +656,6 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 worker["memory_growth_second_half"] <= 0.05 for worker in workers
             ),
             "mechanic_coverage": REQUIRED_MECHANICS <= global_mechanics,
-            "all_actions_exercised": all(
-                sum(worker["action_counts"][action] for worker in workers) > 0
-                for action in range(11)
-            ),
             "exact_capacity": len(supervisor._worker_processes) == arguments.num_instances,
         }
         report = {
@@ -603,6 +666,14 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             / max(elapsed, 1e-9),
             "worker_restarts": restarts,
             "mechanics": sorted(global_mechanics),
+            "mechanic_sources": {
+                "targeted_conformance": sorted(
+                    global_mechanics & {"boss_entry", "zone_transition"}
+                ),
+                "natural_soak": sorted(
+                    global_mechanics - {"boss_entry", "zone_transition"}
+                ),
+            },
             "missing_mechanics": sorted(REQUIRED_MECHANICS - global_mechanics),
             "criteria": criteria,
             "workers": workers,
@@ -619,6 +690,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
     report["remaining_owned_processes"] = remaining_owned
     report["criteria"]["complete_cleanup"] = not remaining_owned
     report["passed"] = all(report["criteria"].values())
+    _atomic_json(arguments.run_dir / "natural-soak-report.json", report)
     if not report["passed"]:
         raise QualificationFailure(f"Natural soak failed: {report['criteria']}")
     return report

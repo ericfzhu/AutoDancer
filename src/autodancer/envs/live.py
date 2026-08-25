@@ -206,6 +206,24 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             self.progress_callback(info)
         return observation, reward, terminated, truncated, info
 
+    def qualification_goto_level(
+        self, level: int
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Load a real run-sequence level for qualification-only boundary checks."""
+        if self._episode_done or self._run_id is None or self._episode_seed is None:
+            raise RuntimeError("qualification_goto_level() requires an active reset run")
+        source, bridge = self._dependencies()
+        command = bridge.goto_level(level)
+        record = source.read(self.reset_timeout)
+        validate_record(record)
+        self._verify_acknowledgement(record, command)
+        if str(record.get("run_id")) != self._run_id:
+            raise ProtocolError("Run ID changed during a qualification level transition")
+        if int(record.get("seed", -1)) != self._episode_seed:
+            raise ProtocolError("Seed changed during a qualification level transition")
+        observation, info = self._accept_record(record)
+        return observation, info
+
     @staticmethod
     def _verify_acknowledgement(record: dict[str, Any], command: BridgeCommand) -> None:
         acknowledgement = record.get("bridge")
@@ -231,6 +249,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             expected.append(command.seed)
             received.append(record.get("seed"))
             expected.append(command.seed)
+        elif command.kind == "GOTO":
+            received.append(acknowledgement.get("target_level"))
+            expected.append(command.target_level)
         if received != expected:
             raise ProtocolError(
                 f"Bridge acknowledgement mismatch: expected {expected}, received {received}"

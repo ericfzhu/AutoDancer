@@ -142,7 +142,7 @@ def validate_command_status(
     validate_envelope_identity(
         message, instance_id=instance_id, session_id=session_id, launch_id=launch_id
     )
-    if message.get("command_kind") not in {"ACTION", "RESET"}:
+    if message.get("command_kind") not in {"ACTION", "RESET", "GOTO"}:
         raise ProtocolError("command_status has an unsupported command kind")
     _integer(message.get("command_id"), "command_id", minimum=1)
     command_session = _identifier(
@@ -487,8 +487,12 @@ def validate_record(record: Mapping[str, Any]) -> None:
                 raise ProtocolError("Bridge observed action does not match injected engine action")
         elif bridge_kind == "RESET":
             _integer(bridge.get("seed"), "bridge seed", minimum=0)
+        elif bridge_kind == "GOTO":
+            _integer(bridge.get("target_level"), "bridge target_level", minimum=1)
         else:
-            raise ProtocolError("Bridge acknowledgement kind must be ACTION or RESET")
+            raise ProtocolError(
+                "Bridge acknowledgement kind must be ACTION, RESET, or GOTO"
+            )
 
 
 class TurnSource(Protocol):
@@ -673,9 +677,9 @@ class NativePipeTurnSource(_SequenceTracker):
                 f"Invalid lifecycle order for {key}: {previous!r} -> {phase!r}"
             )
         if phase == "input_observed" and key[0] != "ACTION":
-            raise ProtocolError("RESET cannot emit input_observed")
-        if phase == "reset_started" and key[0] != "RESET":
-            raise ProtocolError("ACTION cannot emit reset_started")
+            raise ProtocolError("Only ACTION can emit input_observed")
+        if phase == "reset_started" and key[0] not in {"RESET", "GOTO"}:
+            raise ProtocolError("Only RESET or GOTO can emit reset_started")
         self._lifecycle_phase = phase
 
     def read(self, timeout: float = 5.0) -> dict[str, Any]:

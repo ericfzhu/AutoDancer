@@ -20,12 +20,15 @@ class BridgeCommand:
     kind: str
     instance_id: str
     seed: int | None = None
+    target_level: int | None = None
 
 
 class ActionBridge(Protocol):
     def send_action(self, action: Action) -> BridgeCommand: ...
 
     def reset(self, seed: int) -> BridgeCommand: ...
+
+    def goto_level(self, level: int) -> BridgeCommand: ...
 
     def restart(self) -> BridgeCommand: ...
 
@@ -52,7 +55,13 @@ class NativePipeCommandBridge:
         self._next_command_id = 1
 
     def _publish(
-        self, kind: str, action: Action | None, *, argument: int, seed: int | None = None
+        self,
+        kind: str,
+        action: Action | None,
+        *,
+        argument: int,
+        seed: int | None = None,
+        target_level: int | None = None,
     ) -> BridgeCommand:
         command = BridgeCommand(
             session_id=self.session_id,
@@ -61,6 +70,7 @@ class NativePipeCommandBridge:
             kind=kind,
             instance_id=self.instance_id,
             seed=seed,
+            target_level=target_level,
         )
         self._next_command_id += 1
         payload = f"{kind} {command.session_id} {command.command_id} {argument}\n".encode("ascii")
@@ -76,6 +86,12 @@ class NativePipeCommandBridge:
         if not 0 <= seed <= 2**31 - 1:
             raise ValueError("seed must be in 0..2147483647")
         return self._publish("RESET", None, argument=seed, seed=seed)
+
+    def goto_level(self, level: int) -> BridgeCommand:
+        level = int(level)
+        if level < 1:
+            raise ValueError("level must be positive")
+        return self._publish("GOTO", None, argument=level, target_level=level)
 
     def restart(self) -> BridgeCommand:
         return self.reset(secrets.randbelow(2**31))
@@ -101,7 +117,13 @@ class FileCommandBridge:
         self._next_command_id = 1
 
     def _publish(
-        self, kind: str, action: Action | None, *, argument: int, seed: int | None = None
+        self,
+        kind: str,
+        action: Action | None,
+        *,
+        argument: int,
+        seed: int | None = None,
+        target_level: int | None = None,
     ) -> BridgeCommand:
         command = BridgeCommand(
             session_id=self.session_id,
@@ -110,6 +132,7 @@ class FileCommandBridge:
             kind=kind,
             instance_id=self.instance_id,
             seed=seed,
+            target_level=target_level,
         )
         self._next_command_id += 1
         payload = f"{kind} {command.session_id} {command.command_id} {argument}\n"
@@ -125,6 +148,12 @@ class FileCommandBridge:
         if not 0 <= seed <= 2**31 - 1:
             raise ValueError("seed must be in 0..2147483647")
         return self._publish("RESET", None, argument=seed, seed=seed)
+
+    def goto_level(self, level: int) -> BridgeCommand:
+        level = int(level)
+        if level < 1:
+            raise ValueError("level must be positive")
+        return self._publish("GOTO", None, argument=level, target_level=level)
 
     def restart(self) -> BridgeCommand:
         return self.reset(secrets.randbelow(2**31))
