@@ -24,6 +24,7 @@ local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
 local SCHEMA_VERSION = 10
+local TELEMETRY_COLLECTION_INTERVAL = 10000
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -41,6 +42,7 @@ local lastContext = nil
 local mapOriginX = nil
 local mapOriginY = nil
 local mapLevelIdentity = ""
+local recordsSinceCollection = 0
 
 local function isLocalPlayer(entity)
     local player = Player.getPlayerEntity(1)
@@ -717,16 +719,19 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
         },
     }
     assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
+    if bridgeCommand then
+        Bridge.markTelemetrySent(bridgeCommand)
+    end
     -- Telemetry allocates a large, short-lived observation table and JSON string
     -- every turn.  The game normally lets Lua's collector choose when to return
     -- that memory, which can look like sustained worker growth during long,
-    -- headless runs.  Bound the retained Lua heap without changing any game
-    -- state or protocol content.
-    if kind == "initial" then
+    -- headless runs.  Collect on reset and at a sparse fixed cadence so a worker
+    -- with an unusually long episode is bounded too.  The cadence is far below
+    -- the p99 sample rate and does not change game state or protocol content.
+    recordsSinceCollection = recordsSinceCollection + 1
+    if kind == "initial" or recordsSinceCollection >= TELEMETRY_COLLECTION_INTERVAL then
         assert(Native.collect(), "AutoDancer telemetry garbage collection failed")
-    end
-    if bridgeCommand then
-        Bridge.markTelemetrySent(bridgeCommand)
+        recordsSinceCollection = 0
     end
     lastObservation = record.observation
     lastContext = clone(context)
