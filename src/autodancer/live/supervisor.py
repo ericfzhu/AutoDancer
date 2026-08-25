@@ -86,6 +86,7 @@ class SupervisorConfig:
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
     qualification_mode: bool = False
+    qualification_startup_fault_slot: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "game_dir", Path(self.game_dir).resolve())
@@ -102,6 +103,11 @@ class SupervisorConfig:
             raise ValueError("the supported worker profile is 'symbolic'")
         if self.affinity_policy not in {"auto", "none", "spread"}:
             raise ValueError("affinity_policy must be auto, none, or spread")
+        if (
+            self.qualification_startup_fault_slot is not None
+            and not 0 <= self.qualification_startup_fault_slot < self.num_instances
+        ):
+            raise ValueError("qualification_startup_fault_slot is outside worker capacity")
 
     @property
     def executable(self) -> Path:
@@ -152,7 +158,19 @@ class AutoDancerSupervisor:
         self._refuse_existing_processes()
         try:
             for worker_id in self.worker_ids:
-                self._spawn_worker(worker_id, restart_count=0)
+                try:
+                    self._spawn_worker(worker_id, restart_count=0)
+                except Exception as error:
+                    if worker_id not in self.workers:
+                        raise
+                    self.replace_worker(
+                        worker_id,
+                        failure={
+                            "operation": "worker_startup",
+                            "error_type": type(error).__name__,
+                            "error": str(error),
+                        },
+                    )
         except Exception:
             self.close()
             raise
@@ -341,6 +359,13 @@ class AutoDancerSupervisor:
             restart_count=restart_count,
         )
         self.workers[worker_id] = handle
+        if (
+            self.config.qualification_startup_fault_slot
+            == self.worker_ids.index(worker_id)
+            and restart_count == 0
+        ):
+            self._terminate_process(process)
+            transport.close()
         self._wait_for_hello(worker_id, launch_id, transport)
         return handle
 

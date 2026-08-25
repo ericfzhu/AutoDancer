@@ -102,6 +102,7 @@ def _configuration(arguments: argparse.Namespace, count: int, phase: str) -> Sup
         affinity_policy=arguments.affinity,
         diagnostic_root=arguments.run_dir / "controller-diagnostics" / phase,
         qualification_mode=phase == "conformance",
+        qualification_startup_fault_slot=0 if phase == "forced-recovery" else None,
     )
 
 
@@ -340,36 +341,200 @@ def forced_recovery(arguments: argparse.Namespace) -> dict[str, Any]:
     ) as supervisor:
         environment = AutoDancerVectorEnv(supervisor)
         try:
-            environment.reset([49_000 + index for index in range(arguments.num_instances)])
-            worker_id = environment.worker_ids[0]
-            original = supervisor.workers[worker_id]
-            process = supervisor._worker_processes[worker_id]
-            process.terminate()
-            process.wait(timeout=5)
-            try:
-                environment.environments[worker_id].step(int(Action.WAIT))
-            except (TimeoutError, NativePipeError, ProtocolError) as error:
+            stages: list[dict[str, Any]] = []
+
+            def terminate(index: int) -> tuple[str, int | None]:
+                worker_id = environment.worker_ids[index]
+                process = supervisor._worker_processes[worker_id]
+                old_pid = process.pid
+                process.terminate()
+                process.wait(timeout=5)
+                return worker_id, old_pid
+
+            def recover_after_failure(
+                index: int,
+                seed: int,
+                error: BaseException,
+                *,
+                stage: str,
+                old_pid: int | None,
+            ) -> None:
                 failure = environment._failure(
-                    0,
+                    index,
                     error,
-                    operation="qualification_forced_termination",
-                    context={"expected": True},
+                    operation=f"qualification_forced_{stage}",
+                    context={"expected": True, "stage": stage},
                 )
-                environment.recover(0, 49_999, failure=failure)
+                environment.recover(index, seed, failure=failure)
+                worker_id = environment.worker_ids[index]
+                replacement = supervisor.workers[worker_id]
+                if replacement.pid == old_pid:
+                    raise QualificationFailure(
+                        f"Forced {stage} replacement reused the terminated PID"
+                    )
+                stages.append(
+                    {
+                        "stage": stage,
+                        "worker_id": worker_id,
+                        "old_pid": old_pid,
+                        "new_pid": replacement.pid,
+                        "restart_count": replacement.restart_count,
+                        "failure_bundle": replacement.failure_history[-1].get(
+                            "bundle_path"
+                        ),
+                    }
+                )
+
+            startup = supervisor.workers[environment.worker_ids[0]]
+            if startup.restart_count != 1 or not startup.failure_history:
+                raise QualificationFailure(
+                    "Forced startup termination did not replace exactly one worker"
+                )
+            stages.append(
+                {
+                    "stage": "startup",
+                    "worker_id": startup.instance_id,
+                    "new_pid": startup.pid,
+                    "restart_count": startup.restart_count,
+                    "failure_bundle": startup.failure_history[-1].get("bundle_path"),
+                }
+            )
+
+            reset_index = 1
+            reset_worker_id = environment.worker_ids[reset_index]
+            reset_worker = environment.environments[reset_worker_id]
+            _, reset_bridge = reset_worker._dependencies()
+            reset_bridge.reset(49_101)
+            _, old_pid = terminate(reset_index)
+            try:
+                reset_worker._source.read(2.0)  # type: ignore[union-attr]
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                recover_after_failure(
+                    reset_index,
+                    49_101,
+                    error,
+                    stage="reset",
+                    old_pid=old_pid,
+                )
             else:
-                raise QualificationFailure("Terminated worker unexpectedly acknowledged an action")
-            replacement = supervisor.workers[worker_id]
-            if replacement.pid == original.pid or replacement.restart_count != 1:
-                raise QualificationFailure("Forced worker replacement identity is incorrect")
+                raise QualificationFailure("Reset-stage termination produced telemetry")
+
+            action_index = 2
+            action_worker_id = environment.worker_ids[action_index]
+            action_worker = environment.environments[action_worker_id]
+            action_worker.reset(seed=49_202)
+            _, action_bridge = action_worker._dependencies()
+            action_bridge.send_action(Action.WAIT)
+            _, old_pid = terminate(action_index)
+            try:
+                action_worker._source.read(2.0)  # type: ignore[union-attr]
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                recover_after_failure(
+                    action_index,
+                    49_202,
+                    error,
+                    stage="pending_action",
+                    old_pid=old_pid,
+                )
+            else:
+                raise QualificationFailure("Pending-action termination produced telemetry")
+
+            telemetry_index = 3
+            telemetry_worker_id = environment.worker_ids[telemetry_index]
+            telemetry_worker = environment.environments[telemetry_worker_id]
+            telemetry_worker.reset(seed=49_303)
+            telemetry_worker.step(int(Action.WAIT))
+            _, old_pid = terminate(telemetry_index)
+            try:
+                telemetry_worker.step(int(Action.WAIT))
+            except (TimeoutError, NativePipeError, ProtocolError) as error:
+                recover_after_failure(
+                    telemetry_index,
+                    49_303,
+                    error,
+                    stage="telemetry_boundary",
+                    old_pid=old_pid,
+                )
+            else:
+                raise QualificationFailure("Telemetry-boundary termination was not detected")
+
+            evaluation_index = 4
+            evaluation_worker_id = environment.worker_ids[evaluation_index]
+            model = RecurrentActorCritic(
+                ModelConfig(
+                    cell_size=16,
+                    spatial_size=32,
+                    hidden_size=16,
+                    entity_limit=8,
+                    attention_layers=1,
+                    attention_heads=4,
+                )
+            ).to(resolve_device(arguments.device))
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                evaluation = executor.submit(
+                    _evaluate_deterministic_async,
+                    environment,
+                    model,
+                    seeds=[49_400 + index for index in range(arguments.num_instances)],
+                    max_steps=64,
+                    device=resolve_device(arguments.device),
+                    dashboard_state=None,
+                    action_contract="current",
+                )
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    lifecycle = supervisor.workers[evaluation_worker_id].command_lifecycle
+                    if any(
+                        status.get("command_kind") == "ACTION"
+                        and status.get("phase") in {"received", "accepted", "input_observed"}
+                        for status in lifecycle
+                    ):
+                        break
+                    time.sleep(0.001)
+                else:
+                    raise QualificationFailure(
+                        "Evaluation did not issue an action before the fault deadline"
+                    )
+                _, evaluation_old_pid = terminate(evaluation_index)
+                episodes = evaluation.result(timeout=180)
+            evaluation_replacement = supervisor.workers[evaluation_worker_id]
+            if evaluation_replacement.pid == evaluation_old_pid:
+                raise QualificationFailure("Evaluation fault did not replace its worker")
+            if len(episodes) != arguments.num_instances:
+                raise QualificationFailure("Evaluation fault retry lost an evaluation seed")
+            stages.append(
+                {
+                    "stage": "evaluation",
+                    "worker_id": evaluation_worker_id,
+                    "old_pid": evaluation_old_pid,
+                    "new_pid": evaluation_replacement.pid,
+                    "restart_count": evaluation_replacement.restart_count,
+                    "failure_bundle": evaluation_replacement.failure_history[-1].get(
+                        "bundle_path"
+                    ),
+                    "episodes": len(episodes),
+                }
+            )
+
+            expected_restarts = {
+                environment.worker_ids[index]: int(index < 5)
+                for index in range(arguments.num_instances)
+            }
+            actual_restarts = {
+                worker_id: supervisor.workers[worker_id].restart_count
+                for worker_id in environment.worker_ids
+            }
+            if actual_restarts != expected_restarts:
+                raise QualificationFailure(
+                    f"Forced fault matrix replaced the wrong capacity: {actual_restarts}"
+                )
             if len(supervisor._worker_processes) != arguments.num_instances:
                 raise QualificationFailure("Forced recovery did not restore exact capacity")
             return {
                 "passed": True,
-                "worker_id": worker_id,
-                "old_pid": original.pid,
-                "new_pid": replacement.pid,
-                "restart_count": replacement.restart_count,
-                "failure_bundle": replacement.failure_history[-1].get("bundle_path"),
+                "stages": stages,
+                "restart_counts": actual_restarts,
+                "capacity": len(supervisor._worker_processes),
             }
         finally:
             environment.close()
