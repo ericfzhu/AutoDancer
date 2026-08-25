@@ -98,7 +98,10 @@ def _configuration(arguments: argparse.Namespace, count: int, phase: str) -> Sup
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
         reset_timeout=arguments.reset_timeout,
-        max_turns=max(arguments.transitions_per_worker + 100, 10_000),
+        # Match the production training contract.  Letting a qualification
+        # episode run for the entire soak bypasses the normal controller turn
+        # cap and permits the game's per-run/replay state to grow indefinitely.
+        max_turns=10_000,
         affinity_policy=arguments.affinity,
         diagnostic_root=arguments.run_dir / "controller-diagnostics" / phase,
         qualification_mode=phase == "conformance",
@@ -658,6 +661,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             previous_floor = int(info.get("floor") or 0)
             maximum_zone = previous_zone
             maximum_floor = previous_floor
+            turn_limit_resets = 0
             trace_path = trace_root / f"{worker_id}.jsonl"
             trace_path.write_text("", encoding="utf-8")
             for transition in range(arguments.transitions_per_worker):
@@ -728,6 +732,14 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 if terminated or truncated:
                     if step_info.get("episode_status") == "dead":
                         mechanics.add("death")
+                    if truncated:
+                        if step_info.get("client_turn_limit") != environment.environments[
+                            worker_id
+                        ].max_turns:
+                            raise QualificationFailure(
+                                f"{worker_id} produced an unexplained gameplay truncation"
+                            )
+                        turn_limit_resets += 1
                     seed = int(rng.integers(0, 2**31))
                     observation, info = reset_live(seed, transition + 1)
                     explorer.reset_level()
@@ -780,6 +792,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 "last_frame_bytes": int(info.get("frame_bytes", 0)),
                 "max_frame_bytes": int(info.get("max_frame_bytes", 0)),
                 "memory_growth_second_half": growth,
+                "turn_limit_resets": turn_limit_resets,
                 "maximum_zone": maximum_zone,
                 "maximum_floor": maximum_floor,
                 "mechanics": sorted(mechanics),
@@ -830,6 +843,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             "transitions_per_second": sum(worker["transitions"] for worker in workers)
             / max(elapsed, 1e-9),
             "worker_restarts": restarts,
+            "episode_turn_cap": 10_000,
             "mechanics": sorted(global_mechanics),
             "mechanic_sources": {
                 "targeted_conformance": sorted(
