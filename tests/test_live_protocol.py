@@ -507,6 +507,8 @@ def test_lua_inventory_uses_the_gameplay_cooldown_component() -> None:
     ).read_text(encoding="utf-8")
     assert "spellCooldownTime.remainingTurns" in source
     assert "itemHUDCooldown.remainingTurns" not in source
+    assert "priceTagCostHealth.cost or 0" in source
+    assert "priceTagCostHealth.costMultiplier" not in source
 
 
 def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:

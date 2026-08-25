@@ -491,7 +491,7 @@ local function encodeVisibleEntities(x, y, cell)
             end
             if hasComponent(entity, "priceTagCostHealth") then
                 cell[25] = math.max(0, math.min(32767,
-                    math.floor((entity.priceTagCostHealth.costMultiplier or 0) * 10000 + 0.5)))
+                    entity.priceTagCostHealth.cost or 0))
             end
             cell[26] = math.max(cell[26],
                 animationDeciseconds(entity, "trapActivationAnimation", "trapActivationAnimation"))

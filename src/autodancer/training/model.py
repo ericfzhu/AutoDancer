@@ -303,7 +303,7 @@ class RecurrentActorCritic(nn.Module):
                     torch.stack(
                         (
                             self._scale(grid[..., int(GridChannel.PRICE_AMOUNT)]),
-                            self._scale(grid[..., int(GridChannel.PRICE_HEALTH_BP)]),
+                self._scale(grid[..., int(GridChannel.PRICE_HEALTH_COST)]),
                             self._scale(grid[..., int(GridChannel.TRAP_ACTIVATION_DS)]),
                             self._scale(grid[..., int(GridChannel.TRAP_FAILURE_DS)]),
                             self._scale(grid[..., int(GridChannel.TELL_ANIMATION_DS)]),

@@ -257,7 +257,7 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
         GridChannel.INTERACTION_FLAGS: (0, 31),
         GridChannel.PRICE_CURRENCY: (0, 4095),
         GridChannel.PRICE_AMOUNT: (0, 32767),
-        GridChannel.PRICE_HEALTH_BP: (0, 32767),
+        GridChannel.PRICE_HEALTH_COST: (0, 32767),
         GridChannel.TRAP_ACTIVATION_DS: (0, 32767),
         GridChannel.TRAP_FAILURE_DS: (0, 32767),
         GridChannel.TELL_ANIMATION_DS: (0, 32767),

@@ -101,7 +101,7 @@ These are raw visible cues rather than engine decisions or AI targets. Exact
 types use a deterministic 12-bit hash with zero reserved for absence; the
 coarse classes remain available so the policy can generalize across related
 enemies and items. Ten additional channels describe visible object class/type,
-interaction flags, price currency and amount, health-cost multiplier, trap
+interaction flags, price currency and amount, visible health cost, trap
 activation/failure animation time, attack-tell animation time, and explosive
 state. Interaction flags distinguish interactable, locked, active-shrine,
 active-sale, and shopliftable state. Hidden container and shrine contents are

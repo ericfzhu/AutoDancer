@@ -55,7 +55,8 @@ class GridChannel(IntEnum):
     INTERACTION_FLAGS = 21
     PRICE_CURRENCY = 22
     PRICE_AMOUNT = 23
-    PRICE_HEALTH_BP = 24
+    PRICE_HEALTH_COST = 24
+    PRICE_HEALTH_BP = 24  # Compatibility alias for schema-9 checkpoints.
     TRAP_ACTIVATION_DS = 25
     TRAP_FAILURE_DS = 26
     TELL_ANIMATION_DS = 27
