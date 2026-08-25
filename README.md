@@ -156,6 +156,22 @@ on resume. See [`docs/rewards.md`](docs/rewards.md) for the current defaults and
 [`docs/reward-history.md`](docs/reward-history.md) for the experiment history,
 observations, and next reward hypothesis.
 
-See [`docs/protocol.md`](docs/protocol.md) for the schema-9 wire contract.
+See [`docs/protocol.md`](docs/protocol.md) for the schema-10 live-controller contract.
 The first measured live-training reference is recorded in
 [`docs/baseline.md`](docs/baseline.md).
+
+Before changing rewards or architecture, qualify the complete live controller:
+
+```powershell
+uv run autodancer-qualify `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --mod-dir ".\mods\AutoDancer" `
+  --num-instances 8 `
+  --transitions-per-worker 125000 `
+  --run-dir ".\runs\controller-qualification" `
+  --device cuda
+```
+
+The gate requires 125,000 valid transitions from every worker with no natural
+controller fault. Pre-soak phases can be resumed with `--resume`; the natural
+soak always starts from zero after a failure.

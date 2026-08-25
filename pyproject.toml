@@ -36,6 +36,7 @@ autodancer-benchmark = "autodancer.training.benchmark:main"
 autodancer-diagnose = "autodancer.live.diagnose:main"
 autodancer-representation = "autodancer.training.representation:main"
 autodancer-reward-compare = "autodancer.training.reward_compare:main"
+autodancer-qualify = "autodancer.live.qualify:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]
