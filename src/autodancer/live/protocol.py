@@ -30,16 +30,133 @@ from autodancer.constants import (
 )
 
 LOG_MARKER = "AUTODANCER_JSON:"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 SUPPORTED_GAME_VERSION = "v4.2.1-b5713"
 SUPPORTED_STEAM_BUILD = "22938426"
 EPISODE_STATUSES = frozenset({"running", "won", "dead", "aborted"})
 RECORD_KINDS = frozenset({"reset", "turn", "terminal"})
+MESSAGE_TYPES = frozenset({"hello", "command_status", "transition"})
+COMMAND_PHASES = frozenset(
+    {
+        "received",
+        "deferred",
+        "accepted",
+        "input_observed",
+        "turn_completed",
+        "reset_started",
+        "telemetry_sent",
+        "heartbeat",
+        "command_error",
+    }
+)
 _JSON_DECODER = json.JSONDecoder()
 
 
 class ProtocolError(RuntimeError):
     pass
+
+
+class CommandLifecycleError(ProtocolError):
+    def __init__(self, status: Mapping[str, Any]) -> None:
+        self.status = dict(status)
+        super().__init__(
+            "Lua command failed: "
+            f"{status.get('command_kind')} {status.get('command_id')} "
+            f"({status.get('reason') or 'unspecified'})"
+        )
+
+
+def _identifier(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ProtocolError(f"{label} must be a non-empty string")
+    if not all(character.isalnum() or character in "-_" for character in value):
+        raise ProtocolError(f"{label} contains unsupported characters")
+    return value
+
+
+def decode_pipe_message(payload: bytes) -> dict[str, Any]:
+    try:
+        message = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ProtocolError("An AutoDancer pipe message contains invalid JSON") from error
+    if not isinstance(message, dict):
+        raise ProtocolError("An AutoDancer pipe message must be a JSON object")
+    if _integer(message.get("schema_version"), "schema_version") != SCHEMA_VERSION:
+        raise ProtocolError(
+            f"Unsupported protocol schema {message.get('schema_version')!r}; "
+            f"expected {SCHEMA_VERSION}"
+        )
+    if message.get("message_type") not in MESSAGE_TYPES:
+        raise ProtocolError(f"Unknown pipe message type {message.get('message_type')!r}")
+    return message
+
+
+def validate_envelope_identity(
+    message: Mapping[str, Any],
+    *,
+    instance_id: str | None = None,
+    session_id: str | None = None,
+    launch_id: str | None = None,
+) -> None:
+    received_instance = _identifier(message.get("instance_id"), "instance_id")
+    received_session = _identifier(message.get("session_id"), "session_id")
+    received_launch = _identifier(message.get("launch_id"), "launch_id")
+    if instance_id is not None and received_instance != instance_id:
+        raise ProtocolError(
+            f"Expected worker {instance_id!r}, received {received_instance!r}"
+        )
+    if session_id is not None and received_session != session_id:
+        raise ProtocolError(
+            f"Expected supervisor session {session_id!r}, received {received_session!r}"
+        )
+    if launch_id is not None and received_launch != launch_id:
+        raise ProtocolError(f"Expected launch {launch_id!r}, received {received_launch!r}")
+
+
+def validate_hello(
+    message: Mapping[str, Any], *, instance_id: str, session_id: str, launch_id: str
+) -> None:
+    if message.get("message_type") != "hello" or message.get("role") != "worker":
+        raise ProtocolError("Worker readiness must be a worker HELLO message")
+    validate_envelope_identity(
+        message, instance_id=instance_id, session_id=session_id, launch_id=launch_id
+    )
+    if (
+        message.get("game_version") != SUPPORTED_GAME_VERSION
+        or str(message.get("steam_build")) != SUPPORTED_STEAM_BUILD
+    ):
+        raise ProtocolError("Worker HELLO reported an unsupported game build")
+    if not isinstance(message.get("engine_state"), Mapping):
+        raise ProtocolError("Worker HELLO requires engine_state")
+
+
+def validate_command_status(
+    message: Mapping[str, Any],
+    *,
+    instance_id: str | None = None,
+    session_id: str | None = None,
+    launch_id: str | None = None,
+) -> None:
+    if message.get("message_type") != "command_status":
+        raise ProtocolError("Expected command_status message")
+    validate_envelope_identity(
+        message, instance_id=instance_id, session_id=session_id, launch_id=launch_id
+    )
+    if message.get("command_kind") not in {"ACTION", "RESET"}:
+        raise ProtocolError("command_status has an unsupported command kind")
+    _integer(message.get("command_id"), "command_id", minimum=1)
+    command_session = _identifier(
+        message.get("command_session_id"), "command_session_id"
+    )
+    if session_id is not None and command_session != session_id:
+        raise ProtocolError(
+            f"Command session {command_session!r} does not match supervisor session "
+            f"{session_id!r}"
+        )
+    if message.get("phase") not in COMMAND_PHASES:
+        raise ProtocolError(f"Unknown command lifecycle phase {message.get('phase')!r}")
+    if not isinstance(message.get("engine_state"), Mapping):
+        raise ProtocolError("command_status requires engine_state")
 
 
 def _decode_record_line(line: str, marker_index: int) -> dict[str, Any]:
@@ -255,15 +372,13 @@ def validate_record(record: Mapping[str, Any]) -> None:
             "Unsupported protocol schema "
             f"{record.get('schema_version')!r}; expected {SCHEMA_VERSION}"
         )
+    if record.get("message_type") != "transition":
+        raise ProtocolError("Turn telemetry must have message_type 'transition'")
+    validate_envelope_identity(record)
 
     run_id = record.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ProtocolError("Each record must contain a non-empty run_id")
-    instance_id = record.get("instance_id")
-    if not isinstance(instance_id, str) or not instance_id.strip():
-        raise ProtocolError("Each record must contain a non-empty instance_id")
-    if not all(character.isalnum() or character in "-_" for character in instance_id):
-        raise ProtocolError("instance_id contains unsupported characters")
     if record.get("role") != "worker":
         raise ProtocolError("Turn telemetry must have role 'worker'")
     sequence = _integer(record.get("sequence"), "sequence", minimum=0)
@@ -315,6 +430,11 @@ def validate_record(record: Mapping[str, Any]) -> None:
     if status == "running" and (zone < 1 or floor < 1):
         raise ProtocolError("Running records must have positive zone and floor")
     observation = decode_observation(record.get("observation", {}))
+    if status == "running" and (
+        int(observation["player"][PlayerFeature.ZONE]) != zone
+        or int(observation["player"][PlayerFeature.FLOOR]) != floor
+    ):
+        raise ProtocolError("Observation zone/floor does not match transition metadata")
     decode_revealed_map(record.get("observation", {}).get("revealed_map"))
     decode_map_bounds(record.get("observation", {}).get("map_bounds"))
     if status == "running":
@@ -380,7 +500,7 @@ class TurnSource(Protocol):
 
 
 class MessageReceiver(Protocol):
-    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes: ...
+    def receive(self, timeout: float = 10.0, *, max_bytes: int = 262144) -> bytes: ...
 
 
 class _SequenceTracker:
@@ -499,21 +619,99 @@ class JsonlTurnSource(_SequenceTracker):
 
 
 class NativePipeTurnSource(_SequenceTracker):
-    """Read schema-9 JSON messages directly from a worker's duplex pipe."""
+    """Read schema-10 JSON messages directly from a worker's duplex pipe."""
 
-    def __init__(self, receiver: MessageReceiver) -> None:
+    def __init__(
+        self,
+        receiver: MessageReceiver,
+        *,
+        instance_id: str | None = None,
+        session_id: str | None = None,
+        launch_id: str | None = None,
+        status_callback: Any | None = None,
+    ) -> None:
         super().__init__()
         self.receiver = receiver
+        self.instance_id = instance_id
+        self.session_id = session_id
+        self.launch_id = launch_id
+        self.status_callback = status_callback
+        self.last_status: dict[str, Any] | None = None
+        self.max_frame_bytes = 0
+        self._lifecycle_key: tuple[str, int] | None = None
+        self._lifecycle_phase: str | None = None
+
+    def _accept_lifecycle(self, message: Mapping[str, Any]) -> None:
+        key = (str(message["command_kind"]), int(message["command_id"]))
+        phase = str(message["phase"])
+        previous = self._lifecycle_phase
+        if phase == "received":
+            if previous not in {None, "telemetry_sent", "command_error"}:
+                raise ProtocolError(
+                    f"Command {key} was received while {self._lifecycle_key} was {previous}"
+                )
+            self._lifecycle_key = key
+            self._lifecycle_phase = phase
+            return
+        if key != self._lifecycle_key:
+            raise ProtocolError(
+                f"Lifecycle phase {phase!r} belongs to unexpected command {key}"
+            )
+        if phase == "heartbeat":
+            return
+        allowed_previous = {
+            "deferred": {"received", "deferred"},
+            "accepted": {"received", "deferred"},
+            "input_observed": {"accepted"},
+            "turn_completed": {"input_observed"},
+            "reset_started": {"accepted"},
+            "telemetry_sent": {"turn_completed", "reset_started"},
+        }
+        if phase != "command_error" and previous not in allowed_previous.get(phase, set()):
+            raise ProtocolError(
+                f"Invalid lifecycle order for {key}: {previous!r} -> {phase!r}"
+            )
+        if phase == "input_observed" and key[0] != "ACTION":
+            raise ProtocolError("RESET cannot emit input_observed")
+        if phase == "reset_started" and key[0] != "RESET":
+            raise ProtocolError("ACTION cannot emit reset_started")
+        self._lifecycle_phase = phase
 
     def read(self, timeout: float = 5.0) -> dict[str, Any]:
-        payload = self.receiver.receive(timeout, max_bytes=65536)
-        try:
-            record = json.loads(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ProtocolError("An AutoDancer pipe record contains invalid JSON") from error
-        if not isinstance(record, dict):
-            raise ProtocolError("An AutoDancer pipe record must be a JSON object")
-        return self.accept(record)
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"No AutoDancer transition arrived within {timeout:.1f} seconds"
+                )
+            payload = self.receiver.receive(remaining, max_bytes=262144)
+            self.max_frame_bytes = max(self.max_frame_bytes, len(payload))
+            message = decode_pipe_message(payload)
+            message_type = message["message_type"]
+            if message_type == "command_status":
+                validate_command_status(
+                    message,
+                    instance_id=self.instance_id,
+                    session_id=self.session_id,
+                    launch_id=self.launch_id,
+                )
+                self._accept_lifecycle(message)
+                self.last_status = dict(message)
+                if self.status_callback is not None:
+                    self.status_callback(dict(message))
+                if message.get("phase") == "command_error":
+                    raise CommandLifecycleError(message)
+                continue
+            if message_type == "hello":
+                raise ProtocolError("A duplicate worker HELLO arrived during gameplay")
+            validate_envelope_identity(
+                message,
+                instance_id=self.instance_id,
+                session_id=self.session_id,
+                launch_id=self.launch_id,
+            )
+            return self.accept(message)
 
     def read_latest(self, timeout: float = 5.0) -> dict[str, Any]:
         record = self.read(timeout)

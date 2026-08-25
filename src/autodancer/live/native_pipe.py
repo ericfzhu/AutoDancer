@@ -13,6 +13,9 @@ class NativePipeError(RuntimeError):
     """Raised when the native transport cannot be created or used."""
 
 
+MAX_PIPE_MESSAGE_BYTES = 262144
+
+
 if os.name == "nt":
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
@@ -22,6 +25,15 @@ if os.name == "nt":
             ("nLength", wintypes.DWORD),
             ("lpSecurityDescriptor", wintypes.LPVOID),
             ("bInheritHandle", wintypes.BOOL),
+        ]
+
+    class _Overlapped(ctypes.Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_size_t),
+            ("InternalHigh", ctypes.c_size_t),
+            ("Offset", wintypes.DWORD),
+            ("OffsetHigh", wintypes.DWORD),
+            ("hEvent", wintypes.HANDLE),
         ]
 
     _kernel32.CreateNamedPipeW.argtypes = [
@@ -35,7 +47,7 @@ if os.name == "nt":
         ctypes.POINTER(_SecurityAttributes),
     ]
     _kernel32.CreateNamedPipeW.restype = wintypes.HANDLE
-    _kernel32.ConnectNamedPipe.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+    _kernel32.ConnectNamedPipe.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Overlapped)]
     _kernel32.ConnectNamedPipe.restype = wintypes.BOOL
     _kernel32.WriteFile.argtypes = [
         wintypes.HANDLE,
@@ -63,6 +75,22 @@ if os.name == "nt":
     ]
     _kernel32.PeekNamedPipe.restype = wintypes.BOOL
     _kernel32.CancelIoEx.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+    _kernel32.GetOverlappedResult.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_Overlapped),
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.BOOL,
+    ]
+    _kernel32.GetOverlappedResult.restype = wintypes.BOOL
+    _kernel32.CreateEventW.argtypes = [
+        wintypes.LPVOID,
+        wintypes.BOOL,
+        wintypes.BOOL,
+        wintypes.LPCWSTR,
+    ]
+    _kernel32.CreateEventW.restype = wintypes.HANDLE
+    _kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _kernel32.WaitForSingleObject.restype = wintypes.DWORD
     _kernel32.DisconnectNamedPipe.argtypes = [wintypes.HANDLE]
     _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     _advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
@@ -76,12 +104,50 @@ if os.name == "nt":
     _INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
     _PIPE_ACCESS_DUPLEX = 0x00000003
     _FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
+    _FILE_FLAG_OVERLAPPED = 0x40000000
     _PIPE_TYPE_MESSAGE = 0x00000004
     _PIPE_READMODE_MESSAGE = 0x00000002
     _PIPE_WAIT = 0x00000000
     _PIPE_UNLIMITED_INSTANCES = 255
     _ERROR_PIPE_CONNECTED = 535
-    _PIPE_BUFFER_BYTES = 65536
+    _ERROR_IO_PENDING = 997
+    _WAIT_OBJECT_0 = 0
+    _WAIT_TIMEOUT = 258
+    _PIPE_BUFFER_BYTES = MAX_PIPE_MESSAGE_BYTES
+
+
+def _milliseconds(timeout: float) -> int:
+    return max(1, min(int(timeout * 1000), 0xFFFFFFFE))
+
+
+def _new_overlapped() -> tuple[_Overlapped, int]:
+    event = _kernel32.CreateEventW(None, True, False, None)
+    if not event:
+        raise NativePipeError(f"CreateEventW failed: {ctypes.get_last_error()}")
+    overlapped = _Overlapped()
+    overlapped.hEvent = event
+    return overlapped, event
+
+
+def _finish_overlapped(
+    handle: int,
+    overlapped: _Overlapped,
+    event: int,
+    timeout: float,
+    operation: str,
+) -> int:
+    result = _kernel32.WaitForSingleObject(event, _milliseconds(timeout))
+    if result == _WAIT_TIMEOUT:
+        _kernel32.CancelIoEx(handle, ctypes.byref(overlapped))
+        raise NativePipeError(f"{operation} timed out after {timeout:.1f} seconds")
+    if result != _WAIT_OBJECT_0:
+        raise NativePipeError(f"{operation} wait failed: {ctypes.get_last_error()}")
+    transferred = wintypes.DWORD()
+    if not _kernel32.GetOverlappedResult(
+        handle, ctypes.byref(overlapped), ctypes.byref(transferred), False
+    ):
+        raise NativePipeError(f"{operation} failed: {ctypes.get_last_error()}")
+    return int(transferred.value)
 
 
 def pipe_name(session_id: str, instance_id: str) -> str:
@@ -112,7 +178,7 @@ class NativePipeServer:
         try:
             self._handle = _kernel32.CreateNamedPipeW(
                 name,
-                _PIPE_ACCESS_DUPLEX | _FILE_FLAG_FIRST_PIPE_INSTANCE,
+                _PIPE_ACCESS_DUPLEX | _FILE_FLAG_FIRST_PIPE_INSTANCE | _FILE_FLAG_OVERLAPPED,
                 _PIPE_TYPE_MESSAGE | _PIPE_READMODE_MESSAGE | _PIPE_WAIT,
                 _PIPE_UNLIMITED_INSTANCES,
                 _PIPE_BUFFER_BYTES,
@@ -130,9 +196,18 @@ class NativePipeServer:
         self._connect_thread.start()
 
     def _connect(self) -> None:
-        ok = _kernel32.ConnectNamedPipe(self._handle, None)
-        if ok or ctypes.get_last_error() == _ERROR_PIPE_CONNECTED:
-            self._connected.set()
+        overlapped, event = _new_overlapped()
+        try:
+            ok = _kernel32.ConnectNamedPipe(self._handle, ctypes.byref(overlapped))
+            error = ctypes.get_last_error()
+            if ok or error == _ERROR_PIPE_CONNECTED:
+                self._connected.set()
+            elif error == _ERROR_IO_PENDING:
+                result = _kernel32.WaitForSingleObject(event, 0xFFFFFFFF)
+                if result == _WAIT_OBJECT_0 and not self._closed:
+                    self._connected.set()
+        finally:
+            _kernel32.CloseHandle(event)
 
     def send(self, payload: bytes, timeout: float = 10.0) -> None:
         if self._closed:
@@ -141,47 +216,94 @@ class NativePipeServer:
             raise ValueError("pipe messages must contain 1..4096 bytes")
         if not self._connected.wait(timeout):
             raise NativePipeError(f"timed out waiting for game pipe {self.name}")
-        sent = wintypes.DWORD()
         buffer = ctypes.create_string_buffer(payload)
         with self._write_lock:
-            ok = _kernel32.WriteFile(self._handle, buffer, len(payload), ctypes.byref(sent), None)
-        if not ok or sent.value != len(payload):
-            raise NativePipeError(f"WriteFile failed: {ctypes.get_last_error()}")
+            overlapped, event = _new_overlapped()
+            try:
+                sent = wintypes.DWORD()
+                ok = _kernel32.WriteFile(
+                    self._handle,
+                    buffer,
+                    len(payload),
+                    ctypes.byref(sent),
+                    ctypes.byref(overlapped),
+                )
+                if ok:
+                    count = int(sent.value)
+                elif ctypes.get_last_error() == _ERROR_IO_PENDING:
+                    count = _finish_overlapped(
+                        self._handle, overlapped, event, timeout, "named-pipe write"
+                    )
+                else:
+                    raise NativePipeError(f"WriteFile failed: {ctypes.get_last_error()}")
+            finally:
+                _kernel32.CloseHandle(event)
+        if count != len(payload):
+            raise NativePipeError(f"WriteFile sent {count} of {len(payload)} bytes")
 
-    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes:
+    def receive(
+        self, timeout: float = 10.0, *, max_bytes: int = MAX_PIPE_MESSAGE_BYTES
+    ) -> bytes:
         """Receive one complete game-to-Python message without polling the filesystem."""
         if self._closed:
             raise NativePipeError("named pipe is closed")
-        if not 0 < max_bytes <= _PIPE_BUFFER_BYTES:
-            raise ValueError(f"max_bytes must be in 1..{_PIPE_BUFFER_BYTES}")
+        if not 0 < max_bytes <= MAX_PIPE_MESSAGE_BYTES:
+            raise ValueError(f"max_bytes must be in 1..{MAX_PIPE_MESSAGE_BYTES}")
         if not self._connected.wait(timeout):
             raise NativePipeError(f"timed out waiting for game pipe {self.name}")
         deadline = time.monotonic() + timeout
         with self._read_lock:
             while True:
                 available = wintypes.DWORD()
+                message_bytes = wintypes.DWORD()
                 ok = _kernel32.PeekNamedPipe(
-                    self._handle, None, 0, None, ctypes.byref(available), None
+                    self._handle,
+                    None,
+                    0,
+                    None,
+                    ctypes.byref(available),
+                    ctypes.byref(message_bytes),
                 )
                 if not ok:
                     raise NativePipeError(f"PeekNamedPipe failed: {ctypes.get_last_error()}")
-                if available.value:
-                    if available.value > max_bytes:
+                if message_bytes.value:
+                    if message_bytes.value > max_bytes:
                         raise NativePipeError(
-                            f"game pipe message is {available.value} bytes; limit is {max_bytes}"
+                            f"game pipe message is {message_bytes.value} bytes; "
+                            f"limit is {max_bytes}"
                         )
-                    buffer = ctypes.create_string_buffer(available.value)
-                    received = wintypes.DWORD()
-                    ok = _kernel32.ReadFile(
-                        self._handle,
-                        buffer,
-                        available.value,
-                        ctypes.byref(received),
-                        None,
-                    )
-                    if not ok or received.value != available.value:
-                        raise NativePipeError(f"ReadFile failed: {ctypes.get_last_error()}")
-                    return buffer.raw[: received.value]
+                    buffer = ctypes.create_string_buffer(message_bytes.value)
+                    overlapped, event = _new_overlapped()
+                    try:
+                        received = wintypes.DWORD()
+                        ok = _kernel32.ReadFile(
+                            self._handle,
+                            buffer,
+                            message_bytes.value,
+                            ctypes.byref(received),
+                            ctypes.byref(overlapped),
+                        )
+                        if ok:
+                            count = int(received.value)
+                        elif ctypes.get_last_error() == _ERROR_IO_PENDING:
+                            count = _finish_overlapped(
+                                self._handle,
+                                overlapped,
+                                event,
+                                max(deadline - time.monotonic(), 0.001),
+                                "named-pipe read",
+                            )
+                        else:
+                            raise NativePipeError(
+                                f"ReadFile failed: {ctypes.get_last_error()}"
+                            )
+                    finally:
+                        _kernel32.CloseHandle(event)
+                    if count != message_bytes.value:
+                        raise NativePipeError(
+                            f"ReadFile received {count} of {message_bytes.value} bytes"
+                        )
+                    return buffer.raw[:count]
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(

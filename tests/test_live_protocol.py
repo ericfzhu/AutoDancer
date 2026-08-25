@@ -20,6 +20,8 @@ from autodancer.envs.live import AutoDancerLiveEnv
 from autodancer.live.bridge import BridgeCommand
 from autodancer.live.protocol import (
     LOG_MARKER,
+    SCHEMA_VERSION,
+    CommandLifecycleError,
     JsonlTurnSource,
     NativePipeTurnSource,
     ProtocolError,
@@ -32,7 +34,7 @@ class FakeReceiver:
     def __init__(self, payloads: list[bytes]) -> None:
         self.payloads = payloads
 
-    def receive(self, timeout: float = 10.0, *, max_bytes: int = 65536) -> bytes:
+    def receive(self, timeout: float = 10.0, *, max_bytes: int = 262144) -> bytes:
         del timeout
         payload = self.payloads.pop(0)
         assert len(payload) <= max_bytes
@@ -79,9 +81,12 @@ def record(
     player[PlayerFeature.WON] = int(status == "won")
     player[PlayerFeature.DEAD] = int(status == "dead")
     return {
-        "schema_version": 9,
+        "message_type": "transition",
+        "schema_version": SCHEMA_VERSION,
         "instance_id": "worker-0000",
         "role": "worker",
+        "session_id": "test-session",
+        "launch_id": "test-launch",
         "run_id": run_id,
         "sequence": sequence,
         "kind": kind,
@@ -122,7 +127,7 @@ def record(
     }
 
 
-def test_native_pipe_source_accepts_large_schema9_records_without_log_markers() -> None:
+def test_native_pipe_source_accepts_large_schema10_records_without_log_markers() -> None:
     reset = record(0, "reset")
     turn = record(1, "turn", requested_action=Action.UP)
     encoded = [json.dumps(item).encode("utf-8") for item in (reset, turn)]
@@ -300,7 +305,7 @@ def test_live_environment_uses_shared_schema_and_reward_mapping() -> None:
     observation, info = environment.reset(seed=7)
     assert environment.observation_space.contains(observation)
     assert sender.restarts == 1
-    assert info["protocol_schema_version"] == 9
+    assert info["protocol_schema_version"] == SCHEMA_VERSION
     _, reward, terminated, truncated, info = environment.step(Action.RIGHT)
     assert sender.actions == [Action.RIGHT]
     assert reward == pytest.approx(0.01)
@@ -407,3 +412,90 @@ def test_protocol_rejects_cross_worker_and_mismatched_seed() -> None:
     environment = AutoDancerLiveEnv(turn_source=QueueTurnSource([payload]), bridge=FakeBridge())
     with pytest.raises(ProtocolError, match="acknowledgement mismatch"):
         environment.reset(seed=7)
+
+
+def command_status(*, phase: str = "received", launch_id: str = "test-launch") -> dict:
+    return {
+        "message_type": "command_status",
+        "schema_version": SCHEMA_VERSION,
+        "instance_id": "worker-0000",
+        "role": "worker",
+        "session_id": "test-session",
+        "launch_id": launch_id,
+        "command_kind": "ACTION",
+        "command_id": 2,
+        "command_session_id": "test-session",
+        "phase": phase,
+        "reason": "accepted_action_no_turn" if phase == "command_error" else "",
+        "requested_action": 0,
+        "engine_state": {"tick": 10, "loading": False},
+    }
+
+
+def test_pipe_source_filters_lifecycle_messages_without_advancing_sequence() -> None:
+    payloads = [
+        json.dumps(command_status()).encode(),
+        json.dumps(command_status(phase="accepted")).encode(),
+        json.dumps(command_status(phase="input_observed")).encode(),
+        json.dumps(command_status(phase="turn_completed")).encode(),
+        json.dumps(record(0, "reset")).encode(),
+    ]
+    statuses: list[dict] = []
+    source = NativePipeTurnSource(
+        FakeReceiver(payloads),
+        instance_id="worker-0000",
+        session_id="test-session",
+        launch_id="test-launch",
+        status_callback=statuses.append,
+    )
+    assert source.read(1)["kind"] == "reset"
+    assert [item["phase"] for item in statuses] == [
+        "received",
+        "accepted",
+        "input_observed",
+        "turn_completed",
+    ]
+    assert source.max_frame_bytes > 0
+
+
+def test_pipe_source_rejects_stale_launch_and_structured_command_error() -> None:
+    stale = NativePipeTurnSource(
+        FakeReceiver([json.dumps(command_status(launch_id="old-launch")).encode()]),
+        instance_id="worker-0000",
+        session_id="test-session",
+        launch_id="new-launch",
+    )
+    with pytest.raises(ProtocolError, match="Expected launch"):
+        stale.read(1)
+
+    failed = NativePipeTurnSource(
+        FakeReceiver(
+            [
+                json.dumps(command_status()).encode(),
+                json.dumps(command_status(phase="command_error")).encode(),
+            ]
+        ),
+        instance_id="worker-0000",
+        session_id="test-session",
+        launch_id="test-launch",
+    )
+    with pytest.raises(CommandLifecycleError, match="accepted_action_no_turn"):
+        failed.read(1)
+
+
+def test_pipe_source_rejects_out_of_order_command_lifecycle() -> None:
+    source = NativePipeTurnSource(
+        FakeReceiver([json.dumps(command_status(phase="turn_completed")).encode()]),
+        instance_id="worker-0000",
+        session_id="test-session",
+        launch_id="test-launch",
+    )
+    with pytest.raises(ProtocolError, match="unexpected command"):
+        source.read(1)
+
+
+def test_transition_rejects_floor_metadata_that_disagrees_with_observation() -> None:
+    payload = record(1, "turn")
+    payload["floor"] = 2
+    with pytest.raises(ProtocolError, match="zone/floor"):
+        validate_record(payload)

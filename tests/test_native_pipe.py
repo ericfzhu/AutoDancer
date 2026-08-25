@@ -34,6 +34,25 @@ def _client(name: str, outbound: bytes, received: queue.Queue[bytes | BaseExcept
         kernel32.CloseHandle(handle)
 
 
+def _multi_client(
+    name: str, outbound: list[bytes], received: queue.Queue[bytes | BaseException]
+) -> None:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    handle = kernel32.CreateFileW(name, 0xC0000000, 0, None, 3, 0, None)
+    try:
+        for message in outbound:
+            sent = wintypes.DWORD()
+            payload = ctypes.create_string_buffer(message)
+            if not kernel32.WriteFile(handle, payload, len(message), ctypes.byref(sent), None):
+                raise OSError(ctypes.get_last_error())
+        received.put(b"ok")
+    except BaseException as error:
+        received.put(error)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def test_native_pipe_is_duplex_and_accepts_messages_larger_than_4k() -> None:
     server = NativePipeServer(pipe_name(uuid.uuid4().hex, "worker-0000"))
     replies: queue.Queue[bytes | BaseException] = queue.Queue()
@@ -58,4 +77,21 @@ def test_native_pipe_connection_timeout_is_bounded() -> None:
         with pytest.raises(NativePipeError, match="timed out waiting"):
             server.receive(0.01)
     finally:
+        server.close()
+
+
+def test_native_pipe_preserves_adjacent_large_message_boundaries() -> None:
+    server = NativePipeServer(pipe_name(uuid.uuid4().hex, "worker-0000"))
+    results: queue.Queue[bytes | BaseException] = queue.Queue()
+    messages = [b"a" * 200_000, b"b" * 50_000]
+    client = threading.Thread(target=_multi_client, args=(server.name, messages, results))
+    client.start()
+    try:
+        assert server.receive(2) == messages[0]
+        assert server.receive(2) == messages[1]
+        result = results.get(timeout=2)
+        if isinstance(result, BaseException):
+            raise result
+    finally:
+        client.join(timeout=2)
         server.close()

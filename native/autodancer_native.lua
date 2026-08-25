@@ -4,6 +4,8 @@ local ffi = ...
 
 ffi.cdef [[
 const char *autodancer_get_instance_id(void);
+const char *autodancer_get_launch_id(void);
+const char *autodancer_get_supervisor_session(void);
 int autodancer_poll(char *message, int capacity);
 int autodancer_send(const char *message, int length);
 void autodancer_close(void);
@@ -15,6 +17,14 @@ local module = {}
 
 function module.getInstanceID()
     return ffi.string(native.autodancer_get_instance_id())
+end
+
+function module.getLaunchID()
+    return ffi.string(native.autodancer_get_launch_id())
+end
+
+function module.getSupervisorSession()
+    return ffi.string(native.autodancer_get_supervisor_session())
 end
 
 function module.poll()

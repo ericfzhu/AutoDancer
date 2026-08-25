@@ -23,7 +23,7 @@ local PLAYER_FEATURES = 21
 local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
-local SCHEMA_VERSION = 9
+local SCHEMA_VERSION = 10
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -685,9 +685,12 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
     local terminated = status == "won" or status == "dead"
     local truncated = status == "aborted"
     local record = {
+        message_type = "transition",
         schema_version = SCHEMA_VERSION,
         instance_id = Bridge.getInstanceID(),
         role = Bridge.getRole(),
+        session_id = Bridge.getSupervisorSession(),
+        launch_id = Bridge.getLaunchID(),
         run_id = activeRunID,
         sequence = sequence,
         kind = kind,
@@ -712,6 +715,9 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
         },
     }
     assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
+    if bridgeCommand then
+        Bridge.markTelemetrySent(bridgeCommand)
+    end
     lastObservation = record.observation
     lastContext = clone(context)
     pendingEvents = {}
