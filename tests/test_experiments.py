@@ -11,7 +11,12 @@ from autodancer.experiments.schema import (
     atomic_yaml,
     validate_spec,
 )
-from autodancer.experiments.tracking import ExperimentTracker, LineageConfig
+from autodancer.experiments.tracking import (
+    ExperimentTracker,
+    LineageConfig,
+    validate_qualification_freshness,
+)
+from autodancer.live.protocol import SCHEMA_VERSION
 
 
 def _experiment_store(root: Path) -> tuple[ExperimentStore, Path]:
@@ -216,6 +221,31 @@ def test_tracker_requires_passed_controller_qualification(tmp_path: Path) -> Non
             device="cpu",
             parameters={},
         )
+
+
+def test_qualification_freshness_binds_current_mod_hashes(tmp_path: Path) -> None:
+    game_dir = tmp_path / "game"
+    mod_dir = tmp_path / "mod"
+    game_dir.mkdir()
+    (mod_dir / "scripts").mkdir(parents=True)
+    script = mod_dir / "scripts" / "Bridge.lua"
+    script.write_text("qualified", encoding="utf-8")
+    import hashlib
+
+    digest = hashlib.sha256(script.read_bytes()).hexdigest()
+    report = {
+        "configuration": {"game_dir": str(game_dir), "mod_dir": str(mod_dir)},
+        "phases": {
+            "preflight": {
+                "schema_version": SCHEMA_VERSION,
+                "mod_files": {"scripts\\Bridge.lua": digest},
+            }
+        },
+    }
+    validate_qualification_freshness(report, game_dir=game_dir, mod_dir=mod_dir)
+    script.write_text("changed", encoding="utf-8")
+    with pytest.raises(ExperimentError, match="stale.*Bridge.lua"):
+        validate_qualification_freshness(report, game_dir=game_dir, mod_dir=mod_dir)
 
 
 def test_new_attempt_preserves_previous_manifest(tmp_path: Path) -> None:

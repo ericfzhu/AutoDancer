@@ -19,6 +19,7 @@ from autodancer.experiments.provenance import (
     sha256_file,
 )
 from autodancer.experiments.schema import STAGES, ExperimentError, ExperimentStore, atomic_json
+from autodancer.live.protocol import SCHEMA_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,34 @@ def _flatten(prefix: str, value: Any, result: dict[str, str]) -> None:
         result[prefix] = str(value)
 
 
+def validate_qualification_freshness(
+    report: dict[str, Any], *, game_dir: Path, mod_dir: Path
+) -> None:
+    """Reject a passed report that qualifies different controller artifacts."""
+    configuration = report.get("configuration") or {}
+    preflight = (report.get("phases") or {}).get("preflight") or {}
+    if int(preflight.get("schema_version", -1)) != SCHEMA_VERSION:
+        raise ExperimentError("Controller qualification protocol schema is stale")
+    recorded_game_dir = configuration.get("game_dir")
+    recorded_mod_dir = configuration.get("mod_dir")
+    if recorded_game_dir is None or Path(recorded_game_dir).resolve() != game_dir.resolve():
+        raise ExperimentError("Controller qualification targets a different game directory")
+    if recorded_mod_dir is None or Path(recorded_mod_dir).resolve() != mod_dir.resolve():
+        raise ExperimentError("Controller qualification targets a different mod directory")
+    recorded_files = preflight.get("mod_files")
+    if not isinstance(recorded_files, dict) or not recorded_files:
+        raise ExperimentError("Controller qualification does not bind mod file hashes")
+    mismatches = [
+        relative
+        for relative, expected in recorded_files.items()
+        if sha256_file(mod_dir / Path(str(relative).replace("\\", "/"))) != expected
+    ]
+    if mismatches:
+        raise ExperimentError(
+            "Controller qualification is stale for mod files: " + ", ".join(mismatches)
+        )
+
+
 class ExperimentTracker:
     """Own one MLflow child run and an atomic local run manifest."""
 
@@ -109,6 +138,9 @@ class ExperimentTracker:
                 raise ExperimentError(
                     "Tracked experiments require a passed controller qualification"
                 )
+            validate_qualification_freshness(
+                qualification, game_dir=game_dir, mod_dir=mod_dir
+            )
         self.tracking_uri = config.tracking_uri or default_tracking_uri()
         self.client = _mlflow_client(self.tracking_uri)
         experiment = self.client.get_experiment_by_name("AutoDancer")
