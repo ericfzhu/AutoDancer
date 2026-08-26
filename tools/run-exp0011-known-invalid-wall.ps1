@@ -113,4 +113,6 @@ foreach ($arm in $expArms) {
     }
 }
 
+& $expPython -m autodancer.training.action_contract_compare --root $expRoot
+if ($LASTEXITCODE -ne 0) { throw "EXP-0011 comparison failed" }
 Write-ExperimentStatus "reports-complete"
