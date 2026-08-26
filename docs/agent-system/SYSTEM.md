@@ -2,7 +2,7 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 10 routed · 25 resolved**._
+_Question status: **0 open · 11 routed · 25 resolved**._
 
 ## One paragraph
 
@@ -248,7 +248,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **Questions.**
 
 - **Q-T1** How much does the trained policy rely on its LSTM? → _Run hidden-state ablations and delayed-information probes on fixed seeds without changing rewards._
-- ~~**Q-T2** Should the map be left to the LSTM instead?~~ ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
+- **Q-T2** Does a persistent hidden state provide unlimited learnable memory? → _No. State persists during play, but 32-step truncated BPTT biases gradients toward local dependencies. Compare 32/64/128-step chunks on fixed recurrent batches before changing the recurrent architecture._
+- ~~**Q-T3** Should the map be left to the LSTM instead?~~ ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
 
 #### R · Reward shaping
 
@@ -550,7 +551,8 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-P1**~~ (P) ✓ The A6 pilot does not support that conclusion: it changed the latent interface and had only 51,200 new transitions versus A2’s 250,880. Capacity was not isolated (2026-08-24).
 - **Q-P2** (P) Would simply scaling parameter count solve progression? → _Establish a stable, behavior-preserving architecture and learning curve before running controlled width/depth scaling experiments._
 - **Q-T1** (T) How much does the trained policy rely on its LSTM? → _Run hidden-state ablations and delayed-information probes on fixed seeds without changing rewards._
-- ~~**Q-T2**~~ (T) ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
+- **Q-T2** (T) Does a persistent hidden state provide unlimited learnable memory? → _No. State persists during play, but 32-step truncated BPTT biases gradients toward local dependencies. Compare 32/64/128-step chunks on fixed recurrent batches before changing the recurrent architecture._
+- ~~**Q-T3**~~ (T) ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
 - ~~**Q-R1**~~ (R) ✓ Not yet: A6’s unchanged-position turns were directional inputs and may include attacks or digging. Classify outcomes first (2026-08-24).
 - **Q-R2** (R) What is Reward V5? → _Defer its design until blocked-action behavior and function-preserving A7 transfer are tested._
 - ~~**Q-C1**~~ (C) ✓ No; fragments never mix policy versions. Fast workers wait after completing their contribution (2026-08-24).

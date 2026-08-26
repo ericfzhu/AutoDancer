@@ -114,6 +114,29 @@ explicitly versioned objective/optimization block. A floor curriculum shortens
 the experienced distance to each milestone without first taking on the variance
 of an almost-undiscounted full-run critic.
 
+### 8. A 32-turn recurrent gradient window cannot teach arbitrary long memory
+
+The policy carries its LSTM state continuously and stores the correct initial
+state for every recurrent PPO chunk, but gradients are truncated at the
+32-transition chunk boundary. This is not equivalent to forgetting every 32
+turns—the hidden state still persists during play—but it biases learning toward
+dependencies that can be improved through short local gradients. Truncated BPTT
+is computationally practical precisely because it cuts longer gradient paths;
+the resulting estimator is biased toward short-term dependencies
+([Tallec and Ollivier, 2017](https://arxiv.org/abs/1705.08209)) and adaptive
+truncation work explicitly treats length as a gradient-bias control
+([Aicher et al., 2020](https://proceedings.mlr.press/v115/aicher20a.html)).
+
+This is a risk, not yet a demonstrated root cause. A8's explicit floor map
+already removes the need for the LSTM to remember visited coordinates across
+thousands of turns, and most combat timing is local. Before enlarging the LSTM
+or replacing it with a transformer, test sequence lengths `32`, `64`, and `128`
+on fixed logged recurrent batches and a delayed-information probe. Longer
+sequences should advance only if they measurably improve retained-information
+behavior or held-out progression at acceptable learner cost. Research on POMDPs
+also cautions that recurrence itself does not make long histories easy to learn
+([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
+
 ## Staged causal program
 
 1. **EXP-0009 — execution calibration:** frozen A2/A8 checkpoints, 24 unseen
