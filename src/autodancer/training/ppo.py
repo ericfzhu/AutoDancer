@@ -43,6 +43,8 @@ class RolloutBatch:
     old_log_probs: Tensor
     rewards: Tensor
     dones: Tensor
+    terminations: Tensor
+    truncation_values: Tensor
     episode_starts: Tensor
     values: Tensor
     hiddens: Tensor
@@ -55,16 +57,31 @@ def generalized_advantage_estimate(
     dones: Tensor,
     next_value: Tensor,
     *,
+    terminations: Tensor | None = None,
+    truncation_values: Tensor | None = None,
     gamma: float,
     gae_lambda: float,
 ) -> tuple[Tensor, Tensor]:
+    if terminations is None:
+        # Backward-compatible interpretation for isolated callers: every
+        # episode boundary is a true MDP termination.
+        terminations = dones
+    if truncation_values is None:
+        truncation_values = torch.zeros_like(rewards)
     advantages = torch.zeros_like(rewards)
     last_advantage = torch.zeros_like(next_value)
     future_value = next_value
     for step in reversed(range(rewards.shape[0])):
-        continuing = 1.0 - dones[step].float()
-        delta = rewards[step] + gamma * future_value * continuing - values[step]
-        last_advantage = delta + gamma * gae_lambda * continuing * last_advantage
+        boundary = dones[step].bool()
+        terminated = terminations[step].bool()
+        bootstrap_value = torch.where(
+            terminated,
+            torch.zeros_like(future_value),
+            torch.where(boundary, truncation_values[step], future_value),
+        )
+        delta = rewards[step] + gamma * bootstrap_value - values[step]
+        trace_continuing = 1.0 - boundary.float()
+        last_advantage = delta + gamma * gae_lambda * trace_continuing * last_advantage
         advantages[step] = last_advantage
         future_value = values[step]
     return advantages, advantages + values
@@ -94,10 +111,15 @@ class RecurrentPPO:
             rollout.values,
             rollout.dones,
             rollout.next_value,
+            terminations=rollout.terminations,
+            truncation_values=rollout.truncation_values,
             gamma=config.gamma,
             gae_lambda=config.gae_lambda,
         )
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1.0e-8)
+        raw_advantages = advantages
+        advantages = (raw_advantages - raw_advantages.mean()) / (
+            raw_advantages.std() + 1.0e-8
+        )
         time_steps, workers = rollout.actions.shape
         chunks = [
             (worker, start)
@@ -110,6 +132,7 @@ class RecurrentPPO:
             "entropy": [],
             "approx_kl": [],
             "clip_fraction": [],
+            "gradient_norm_preclip": [],
         }
         representation_gradients: dict[str, float] | None = None
         self.model.train()
@@ -158,7 +181,9 @@ class RecurrentPPO:
                 loss.backward()
                 if representation_gradients is None:
                     representation_gradients = current_representation_gradient_norms(self.model)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), config.max_grad_norm)
+                gradient_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), config.max_grad_norm
+                )
                 self.optimizer.step()
                 with torch.no_grad():
                     metrics["policy_loss"].append(float(policy_loss))
@@ -168,9 +193,33 @@ class RecurrentPPO:
                     metrics["clip_fraction"].append(
                         float((torch.abs(ratio - 1) > config.clip_range).float().mean())
                     )
+                    metrics["gradient_norm_preclip"].append(float(gradient_norm))
         self.global_step += time_steps * workers
         self.updates += 1
         result = {name: float(np.mean(values)) for name, values in metrics.items()}
+        with torch.no_grad():
+            target_variance = returns.var(unbiased=False)
+            explained_variance = torch.where(
+                target_variance > 1.0e-12,
+                1.0 - (returns - rollout.values).var(unbiased=False) / target_variance,
+                torch.zeros_like(target_variance),
+            )
+            diagnostics = {
+                "explained_variance": explained_variance,
+                "value_mean": rollout.values.mean(),
+                "value_std": rollout.values.std(unbiased=False),
+                "value_max_abs": rollout.values.abs().max(),
+                "return_mean": returns.mean(),
+                "return_std": returns.std(unbiased=False),
+                "return_max_abs": returns.abs().max(),
+                "advantage_raw_mean": raw_advantages.mean(),
+                "advantage_raw_std": raw_advantages.std(unbiased=False),
+                "advantage_raw_max_abs": raw_advantages.abs().max(),
+                "reward_mean": rollout.rewards.mean(),
+                "reward_std": rollout.rewards.std(unbiased=False),
+                "reward_max_abs": rollout.rewards.abs().max(),
+            }
+        result.update({name: float(value) for name, value in diagnostics.items()})
         result.update(
             {
                 f"gradient_{name}": value

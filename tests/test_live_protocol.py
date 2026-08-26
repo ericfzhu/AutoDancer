@@ -198,10 +198,40 @@ def test_live_environment_applies_client_turn_limit() -> None:
     environment.reset(seed=7)
     _, reward, terminated, truncated, info = environment.step(Action.UP)
     assert not terminated and truncated
-    assert info["episode_status"] == "aborted"
+    assert info["episode_status"] == "time_limit"
     assert info["client_turn_limit"] == 1
-    assert reward == pytest.approx(-1.0)
-    assert info["reward_components"]["aborted"] == -1.0
+    assert reward == pytest.approx(0.0)
+    assert "aborted" not in info["reward_components"]
+    assert not any(event.get("kind") == "failure" for event in info["raw_events"])
+
+
+def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> None:
+    reset_record = record(0, "reset")
+    turn_record = record(
+        1,
+        "turn",
+        requested_action=Action.UP,
+        events=[
+            {"kind": "player_damage", "amount": 999, "entity_id": 10},
+            {"kind": "player_damage", "amount": 2, "entity_id": 11},
+        ],
+    )
+    turn_record["observation"]["player"][PlayerFeature.HEALTH] = 2
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource([reset_record, turn_record]),
+        bridge=FakeBridge(),
+    )
+    environment.reset(seed=7)
+    _, reward, terminated, truncated, info = environment.step(Action.UP)
+    assert not terminated and not truncated
+    damage_events = [
+        event for event in info["raw_events"] if event.get("kind") == "player_damage"
+    ]
+    assert len(damage_events) == 1
+    assert damage_events[0]["amount"] == 4
+    assert damage_events[0]["data"] == {"raw_damage": 1001, "event_count": 2}
+    assert info["reward_components"]["player_damage"] == pytest.approx(-0.6)
+    assert reward == pytest.approx(-0.6)
 
 
 def test_terminal_record_may_mask_every_action() -> None:

@@ -15,6 +15,7 @@ from autodancer.constants import (
     GridChannel,
     PlayerFeature,
     Terrain,
+    TrapKind,
 )
 
 COMBAT_EVENTS = frozenset({"enemy_damage", "enemy_kill"})
@@ -29,7 +30,9 @@ class ActionOutcome:
     productive: bool
     target_terrain_before: int | None = None
     target_actor_before: int | None = None
+    target_trap_before: int | None = None
     target_terrain_after: int | None = None
+    descent_source: str | None = None
     event_kinds: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
@@ -74,18 +77,26 @@ def classify_action_outcome(
     )
     events = frozenset(event_kinds)
     target = _target_cell(before, action)
-    terrain_before = actor_before = terrain_after = None
+    terrain_before = actor_before = trap_before = terrain_after = None
     if target is not None:
         row, column = target
         terrain_before = int(before["grid"][row, column, GridChannel.TERRAIN_CLASS])
         actor_before = int(before["grid"][row, column, GridChannel.ACTOR_CLASS])
+        trap_before = int(before["grid"][row, column, GridChannel.TRAP])
         # This comparison is valid only when Bard remained centred on the same
         # world coordinate. If Bard moved, the after-grid target is a new cell.
         if not position_changed and not floor_changed:
             terrain_after = int(after["grid"][row, column, GridChannel.TERRAIN_CLASS])
 
+    descent_source = None
     if floor_changed:
         category = "floor_transition"
+        if trap_before == int(TrapKind.TRAPDOOR):
+            descent_source = "trapdoor"
+        elif terrain_before == int(Terrain.STAIRS):
+            descent_source = "stairs"
+        else:
+            descent_source = "unknown"
     elif events & COMBAT_EVENTS:
         category = "combat"
     elif events & INTERACTION_EVENTS:
@@ -114,6 +125,8 @@ def classify_action_outcome(
         productive=productive,
         target_terrain_before=terrain_before,
         target_actor_before=actor_before,
+        target_trap_before=trap_before,
         target_terrain_after=terrain_after,
+        descent_source=descent_source,
         event_kinds=event_kinds,
     )

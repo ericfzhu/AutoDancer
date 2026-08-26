@@ -304,7 +304,10 @@ class RewardTracker:
             else:
                 self.known_stairs.update(observed_stairs)
             distance = self._nearest_stair_distance((x, y), self.known_stairs, zone, floor)
-            next_potential = 0.0 if terminated or truncated else self._stair_potential(distance)
+            # Time-limit truncation is not a terminal MDP state. Retain the
+            # potential so truncating an episode cannot manufacture a shaping
+            # penalty; true death/victory still terminalizes it.
+            next_potential = 0.0 if terminated else self._stair_potential(distance)
             potential_reward = config.discount * next_potential - self.stair_potential
             if potential_reward:
                 components["stair_potential"] = potential_reward
@@ -326,7 +329,7 @@ class RewardTracker:
             components["victory"] = config.victory
         elif terminated and status == "dead":
             components["death"] = config.death
-        elif truncated:
+        elif truncated and status == "aborted":
             components["aborted"] = config.aborted
 
         return float(sum(components.values())), components

@@ -57,6 +57,8 @@ class EpisodeAccumulator:
     max_repeated_direction_streak: int = 0
     staircase_discoveries: int = 0
     staircase_exits: int = 0
+    trapdoor_descents: int = 0
+    unknown_descents: int = 0
     stair_discovery_to_exit_turns: list[int] = field(default_factory=list)
     _visited_positions: set[tuple[int, int, int, int]] = field(default_factory=set)
     _last_position: tuple[int, int, int, int] | None = None
@@ -123,9 +125,25 @@ class EpisodeAccumulator:
         position = self._position(observation, info)
         current_floor = position[:2]
         if current_floor != self._floor:
-            if self._pending_stair_turn is not None:
+            outcome = info.get("action_outcome") or {}
+            descent_source = outcome.get("descent_source")
+            if descent_source == "stairs":
                 self.staircase_exits += 1
-                self.stair_discovery_to_exit_turns.append(self.turns - self._pending_stair_turn)
+                if self._pending_stair_turn is not None:
+                    self.stair_discovery_to_exit_turns.append(
+                        self.turns - self._pending_stair_turn
+                    )
+            elif descent_source == "trapdoor":
+                self.trapdoor_descents += 1
+            elif descent_source == "unknown":
+                self.unknown_descents += 1
+            elif self._pending_stair_turn is not None:
+                # Backward compatibility for synthetic/legacy observations
+                # that predate action-outcome descent attribution.
+                self.staircase_exits += 1
+                self.stair_discovery_to_exit_turns.append(
+                    self.turns - self._pending_stair_turn
+                )
             self._floor = current_floor
             self._stairs_seen_on_floor = False
             self._pending_stair_turn = None
@@ -223,6 +241,8 @@ class EpisodeAccumulator:
             "unique_positions": len(self._visited_positions),
             "staircase_discoveries": self.staircase_discoveries,
             "staircase_exits": self.staircase_exits,
+            "trapdoor_descents": self.trapdoor_descents,
+            "unknown_descents": self.unknown_descents,
             "stair_discovery_to_exit_turns": self.stair_discovery_to_exit_turns,
             "status": status,
         }
@@ -260,6 +280,8 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         int(episode.get("staircase_discoveries", 0)) for episode in episodes
     )
     staircase_exits = sum(int(episode.get("staircase_exits", 0)) for episode in episodes)
+    trapdoor_descents = sum(int(episode.get("trapdoor_descents", 0)) for episode in episodes)
+    unknown_descents = sum(int(episode.get("unknown_descents", 0)) for episode in episodes)
     return {
         "policy": policy,
         "episodes": count,
@@ -327,6 +349,8 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         / count,
         "staircase_discoveries": staircase_discoveries,
         "staircase_exits": staircase_exits,
+        "trapdoor_descents": trapdoor_descents,
+        "unknown_descents": unknown_descents,
         "staircase_conversion_rate": staircase_exits / max(staircase_discoveries, 1),
         "mean_stair_discovery_to_exit_turns": (
             float(np.mean(stair_delays)) if stair_delays else None

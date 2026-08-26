@@ -570,6 +570,21 @@ def test_recurrent_gae_stops_at_episode_boundaries() -> None:
     assert torch.equal(returns, advantages)
 
 
+def test_recurrent_gae_bootstraps_time_limit_without_crossing_reset() -> None:
+    advantages, returns = generalized_advantage_estimate(
+        torch.tensor([[1.0], [10.0]]),
+        torch.zeros(2, 1),
+        torch.tensor([[True], [False]]),
+        torch.tensor([2.0]),
+        terminations=torch.tensor([[False], [False]]),
+        truncation_values=torch.tensor([[4.0], [0.0]]),
+        gamma=0.5,
+        gae_lambda=1.0,
+    )
+    assert torch.allclose(advantages, torch.tensor([[3.0], [11.0]]))
+    assert torch.equal(returns, advantages)
+
+
 def test_ppo_updates_parameters_and_checkpoint_resumes_exactly(tmp_path: Path) -> None:
     torch.manual_seed(4)
     config = PPOConfig(
@@ -586,6 +601,8 @@ def test_ppo_updates_parameters_and_checkpoint_resumes_exactly(tmp_path: Path) -
         old_log_probs=torch.full((2, 2), -1.3862944),
         rewards=torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
         dones=torch.tensor([[False, False], [True, True]]),
+        terminations=torch.tensor([[False, False], [True, True]]),
+        truncation_values=torch.zeros(2, 2),
         episode_starts=torch.tensor([[True, True], [False, False]]),
         values=torch.zeros(2, 2),
         hiddens=torch.zeros(2, 2, 2, 32),
@@ -594,6 +611,8 @@ def test_ppo_updates_parameters_and_checkpoint_resumes_exactly(tmp_path: Path) -
     before = {name: value.detach().clone() for name, value in model.state_dict().items()}
     metrics = algorithm.update(batch)
     assert all(np.isfinite(value) for value in metrics.values())
+    assert "explained_variance" in metrics
+    assert "gradient_norm_preclip" in metrics
     assert any(not torch.equal(before[name], value) for name, value in model.state_dict().items())
 
     checkpoint = tmp_path / "checkpoint.pt"

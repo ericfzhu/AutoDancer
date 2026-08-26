@@ -170,13 +170,16 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         observation, info = self._accept_record(record)
         self._episode_steps += 1
         events = [dict(event) for event in record.get("events", [])]
+        if previous_observation is not None:
+            events = self._normalize_player_damage(
+                events, previous_observation, observation
+            )
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
         truncated = status == "aborted"
         if not terminated and not truncated and self._episode_steps >= self.max_turns:
             truncated = True
-            status = "aborted"
-            events.append({"kind": "failure", "amount": 1, "data": {"reason": "client_turn_limit"}})
+            status = "time_limit"
             info["episode_status"] = status
             info["client_turn_limit"] = self.max_turns
         info["raw_events"] = events
@@ -205,6 +208,37 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self.progress_callback is not None:
             self.progress_callback(info)
         return observation, reward, terminated, truncated, info
+
+    @staticmethod
+    def _normalize_player_damage(
+        events: list[dict[str, Any]],
+        before: dict[str, np.ndarray],
+        after: dict[str, np.ndarray],
+    ) -> list[dict[str, Any]]:
+        """Score actual Bard health loss instead of unbounded attack magnitude."""
+        damage_indices = [
+            index for index, event in enumerate(events) if event.get("kind") == "player_damage"
+        ]
+        if not damage_indices:
+            return events
+        previous_health = max(int(before["player"][PlayerFeature.HEALTH]), 0)
+        current_health = max(int(after["player"][PlayerFeature.HEALTH]), 0)
+        actual_loss = min(max(previous_health - current_health, 0), previous_health)
+        raw_damage = sum(
+            max(int(events[index].get("amount", 0) or 0), 0)
+            for index in damage_indices
+        )
+        first_index = damage_indices[0]
+        normalized = dict(events[first_index])
+        normalized["amount"] = actual_loss
+        data = dict(normalized.get("data") or {})
+        data.update({"raw_damage": raw_damage, "event_count": len(damage_indices)})
+        normalized["data"] = data
+        return [
+            normalized if index == first_index else event
+            for index, event in enumerate(events)
+            if index == first_index or index not in damage_indices
+        ]
 
     def qualification_goto_level(
         self, level: int

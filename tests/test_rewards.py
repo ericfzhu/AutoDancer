@@ -266,6 +266,23 @@ def test_floor_transition_resets_stair_potential_without_cross_floor_credit() ->
     assert parts["stair_potential"] == pytest.approx(-0.475)
 
 
+def test_time_limit_retains_stair_potential_and_is_not_an_abort() -> None:
+    config = RewardConfig(turn=0, new_position=0, revisit=0, new_tile=0)
+    tracker = RewardTracker(config)
+    state = observation()
+    state["grid"][10, 12, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    tracker.reset(state, {"zone": 1, "floor": 1})
+    reward, parts = tracker.score(
+        state,
+        {"zone": 1, "floor": 1, "episode_status": "time_limit"},
+        [],
+        terminated=False,
+        truncated=True,
+    )
+    assert reward == pytest.approx(config.discount * 0.45 - 0.45)
+    assert "aborted" not in parts
+
+
 def test_shaping_budgets_reset_on_floor_transition() -> None:
     config = RewardConfig(
         new_position=0.1,

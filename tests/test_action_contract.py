@@ -17,6 +17,7 @@ from autodancer.constants import (
     GridChannel,
     PlayerFeature,
     Terrain,
+    TrapKind,
 )
 from autodancer.live.diagnose import ProbeLedger
 from autodancer.live.protocol import ProtocolError, validate_record
@@ -123,6 +124,14 @@ def test_outcomes_separate_move_wait_combat_wall_dig_and_floor_transition() -> N
 
     next_floor = _observation()
     next_floor["player"][PlayerFeature.FLOOR] = 2
-    result = classify_action_outcome(before, next_floor, Action.DOWN, {})
+    stairs = _observation()
+    stairs["grid"][11, 10, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    result = classify_action_outcome(stairs, next_floor, Action.DOWN, {})
     assert result.category == "floor_transition"
     assert result.floor_changed
+    assert result.descent_source == "stairs"
+
+    trapdoor = _observation()
+    trapdoor["grid"][11, 10, GridChannel.TRAP] = TrapKind.TRAPDOOR
+    result = classify_action_outcome(trapdoor, next_floor, Action.DOWN, {})
+    assert result.descent_source == "trapdoor"

@@ -127,6 +127,8 @@ class RolloutCollector:
         log_probs: list[Tensor] = []
         rewards: list[Tensor] = []
         dones: list[Tensor] = []
+        terminations: list[Tensor] = []
+        truncation_values: list[Tensor] = []
         episode_starts: list[Tensor] = []
         values: list[Tensor] = []
         hiddens: list[Tensor] = []
@@ -160,6 +162,23 @@ class RolloutCollector:
                     reward,
                 )
             done = terminated | truncated
+            terminal_bootstrap = torch.zeros(
+                self.environment.num_envs, dtype=torch.float32
+            )
+            bootstrap_indices = np.flatnonzero(truncated & ~terminated).tolist()
+            if bootstrap_indices:
+                with torch.inference_mode():
+                    terminal_observation = tensor_observation(next_observation, self.device)
+                    terminal_observation["previous_action"] = action.to(self.device)
+                    terminal_observation["previous_reward"] = torch.from_numpy(
+                        reward.astype(np.float32, copy=False)
+                    ).to(self.device)
+                    _, terminal_values, _ = self.model.step(
+                        terminal_observation, next_hidden
+                    )
+                terminal_bootstrap[bootstrap_indices] = terminal_values[
+                    bootstrap_indices
+                ].cpu()
             self.episode_returns += reward
             for index, info in enumerate(infos):
                 for name, component_value in info.get("reward_components", {}).items():
@@ -177,6 +196,8 @@ class RolloutCollector:
             log_probs.append(log_prob.cpu())
             rewards.append(torch.from_numpy(reward.copy()))
             dones.append(torch.from_numpy(done.copy()))
+            terminations.append(torch.from_numpy(terminated.copy()))
+            truncation_values.append(terminal_bootstrap)
             values.append(value.cpu())
             done_indices = np.flatnonzero(done).tolist()
             if done_indices:
@@ -226,6 +247,8 @@ class RolloutCollector:
             old_log_probs=torch.stack(log_probs),
             rewards=torch.stack(rewards),
             dones=torch.stack(dones),
+            terminations=torch.stack(terminations),
+            truncation_values=torch.stack(truncation_values),
             episode_starts=torch.stack(episode_starts),
             values=torch.stack(values),
             hiddens=torch.stack(hiddens),

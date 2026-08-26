@@ -72,6 +72,8 @@ def _rollout(model: AdapterActorCritic) -> RolloutBatch:
         old_log_probs=torch.zeros(time_steps, workers),
         rewards=torch.ones(time_steps, workers),
         dones=torch.zeros(time_steps, workers),
+        terminations=torch.zeros(time_steps, workers, dtype=torch.bool),
+        truncation_values=torch.zeros(time_steps, workers),
         episode_starts=torch.ones(time_steps, workers, dtype=torch.bool),
         values=torch.zeros(time_steps, workers),
         hiddens=torch.zeros(time_steps, workers, 2, model.hidden_size),

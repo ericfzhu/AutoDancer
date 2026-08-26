@@ -44,6 +44,8 @@ class ActorFragment:
     old_log_probs: Tensor
     rewards: Tensor
     dones: Tensor
+    terminations: Tensor
+    truncation_values: Tensor
     episode_starts: Tensor
     values: Tensor
     hiddens: Tensor
@@ -300,6 +302,8 @@ class VersionedAsyncRolloutCollector:
             "old_log_probs",
             "rewards",
             "dones",
+            "terminations",
+            "truncation_values",
             "episode_starts",
             "values",
             "hiddens",
@@ -375,6 +379,8 @@ class VersionedAsyncRolloutCollector:
         log_probs: list[Tensor] = []
         rewards: list[Tensor] = []
         dones: list[Tensor] = []
+        terminations: list[Tensor] = []
+        truncation_values: list[Tensor] = []
         starts: list[Tensor] = []
         values: list[Tensor] = []
         hiddens: list[Tensor] = []
@@ -424,6 +430,19 @@ class VersionedAsyncRolloutCollector:
                 )
             done = bool(terminated or truncated)
             reward = float(reward)
+            truncation_value = torch.tensor(0.0, dtype=torch.float32)
+            if truncated and not terminated:
+                # A client time limit is not an MDP terminal. Bootstrap the
+                # critic from the real final observation, then stop the GAE
+                # trace at the reset boundary.
+                _, _, terminal_value, _ = scheduler.infer(
+                    next_observation,
+                    action,
+                    reward,
+                    next_hidden,
+                    0.5,
+                )
+                truncation_value = terminal_value
             self._publish_telemetry(index, next_observation, info, action, reward)
             state.episode_return += reward
             state.episode_extrinsic_return += float(info.get("extrinsic_reward", 0.0))
@@ -437,6 +456,8 @@ class VersionedAsyncRolloutCollector:
             log_probs.append(log_prob)
             rewards.append(torch.tensor(reward, dtype=torch.float32))
             dones.append(torch.tensor(done))
+            terminations.append(torch.tensor(bool(terminated)))
+            truncation_values.append(truncation_value)
             values.append(value)
             if done:
                 episodes.append(
@@ -475,6 +496,8 @@ class VersionedAsyncRolloutCollector:
             old_log_probs=torch.stack(log_probs),
             rewards=torch.stack(rewards),
             dones=torch.stack(dones),
+            terminations=torch.stack(terminations),
+            truncation_values=torch.stack(truncation_values),
             episode_starts=torch.stack(starts),
             values=torch.stack(values),
             hiddens=torch.stack(hiddens),

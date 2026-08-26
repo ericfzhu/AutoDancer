@@ -163,6 +163,48 @@ def test_async_collector_publishes_each_worker_turn_live() -> None:
     assert all(action is not None and reward is not None for _, action, reward in updates[2:])
 
 
+def test_async_collector_bootstraps_truncation_from_terminal_observation() -> None:
+    environment = AsyncEnvironment()
+    worker = environment.environments["worker-0000"]
+
+    def truncate(_action: int):
+        return (
+            observation(0),
+            0.25,
+            False,
+            True,
+            {"episode_status": "time_limit", "zone": 1, "floor": 1},
+        )
+
+    worker.step = truncate  # type: ignore[method-assign]
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+        model.critic[-1].bias.fill_(2.0)
+    collector = VersionedAsyncRolloutCollector(
+        environment, model, device=torch.device("cpu"), seed=5, batch_delay=0.001
+    )
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+    assert rollout.dones[0, 0]
+    assert not rollout.terminations[0, 0]
+    assert rollout.truncation_values[0, 0] == 2.0
+    assert rollout.truncation_values[0, 1] == 0.0
+    assert collector.states[0].episode_start
+
+
 def test_async_collector_discards_only_failed_slot_fragment() -> None:
     environment = AsyncEnvironment()
     original = environment.environments["worker-0001"]
