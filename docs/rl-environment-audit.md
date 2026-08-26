@@ -137,6 +137,56 @@ behavior or held-out progression at acceptable learner cost. Research on POMDPs
 also cautions that recurrence itself does not make long histories easy to learn
 ([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
 
+### 9. Critic quality is presently unobservable, and A8 had extreme value-target shocks
+
+Training records value loss, but not explained variance, predicted-value mean or
+spread, return-target mean or spread, or pre-normalization advantage statistics.
+Value loss alone is scale-dependent: a small MSE does not establish that the
+critic explains useful variation, and a large MSE does not reveal whether the
+cause is a bad predictor or a corrupted/very large target.
+
+The existing files make this more than a theoretical concern. Across 245 V2
+updates, value loss had median `0.0203`, p95 `0.1762`, and maximum `0.9173`.
+Across 215 long-horizon A2 updates it had median `0.0330`, p95 `0.1847`, and
+maximum `0.3487`. Across the matched 215-update A8 continuation it had median
+`0.0399` and p95 `0.2412`, but two updates jumped to `183.30` and `190.00`.
+Those two batches also contained implausible `player_damage = -153` shaping
+totals. None of the three metric streams records explained variance or target
+scale, so the current evidence cannot tell how long the critic was useful after
+those shocks.
+
+Before changing gamma, value coefficient, architecture, or return scaling, log
+explained variance plus value, return, raw-advantage, and gradient-norm
+distributions. Adaptive target normalization such as PopArt is a candidate only
+if those diagnostics demonstrate a scale problem; adding it pre-emptively would
+change another causal factor. PopArt is designed to normalize changing targets
+while preserving the network's unnormalized outputs
+([van Hasselt et al., 2016](https://arxiv.org/abs/1602.07714)).
+
+### 10. Player-damage shaping uses attack damage rather than actual health lost
+
+The Lua bridge currently copies `ev.damage` from `objectDealDamage` directly
+into a `player_damage` event, and the Python reward tracker multiplies that raw
+amount by the configured per-point penalty. SYNCHRONY documents this field as
+the amount of damage dealt; it does not say that it is clamped to the victim's
+remaining health. A lethal attack can therefore report substantial overkill
+even though Bard could only lose the health that remained. See the
+[SYNCHRONY object event contract](https://vortexbuffer.com/synchrony/docs/events/object/#eventobjectdealdamage).
+
+The A8 continuation contains two independent 1,024-transition batches with
+exactly `-153` player-damage reward. At `-0.15` per point that means 1,020 raw
+damage points, despite only five or six deaths in each batch. This is impossible
+as actual health lost and proves reward contamination. It also explains the
+critic-loss spikes in the same updates.
+
+Player-damage shaping must be based on authoritative before/after health loss,
+bounded by the health available before the turn, not raw attack magnitude. The
+raw damage event can remain diagnostic metadata. Regression tests must cover
+ordinary damage, armor/suppression, healing in adjacent turns, lethal overkill,
+multiple damage events in one turn, death, and reset. Historical runs affected
+by this defect remain valid controller evidence but are not clean reward-policy
+comparisons.
+
 ## Staged causal program
 
 1. **EXP-0009 — execution calibration:** frozen A2/A8 checkpoints, 24 unseen
@@ -144,8 +194,9 @@ also cautions that recurrence itself does not make long histories easy to learn
    Zone 2 on at least three distinct seeds and two successes repeated across both
    stochastic streams.
 2. **Environment correction if EXP-0009 fails:** preserve bootstrapping on
-   time-limit truncation and remove infrastructure/client-horizon penalties from
-   gameplay reward. Add regression tests before retraining.
+   time-limit truncation, remove infrastructure/client-horizon penalties from
+   gameplay reward, score player damage from actual health loss, and add critic
+   target/quality diagnostics. Add regression tests before retraining.
 3. **Objective experiment:** make floor/zone milestones dominant; eliminate
    unbounded renewable penalties; keep task reward separate from bounded shaping.
    Use potential-based guidance where a valid potential exists.
