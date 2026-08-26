@@ -2,7 +2,7 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 13 routed · 25 resolved**._
+_Question status: **0 open · 14 routed · 25 resolved**._
 
 ## One paragraph
 
@@ -276,7 +276,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 - ~~**Q-R1** Should remaining stationary receive a generic penalty?~~ ✓ Not yet: A6’s unchanged-position turns were directional inputs and may include attacks or digging. Classify outcomes first (2026-08-24).
 - **Q-R2** How should player damage be measured? → _Use authoritative before/after health loss bounded by pre-turn health; retain raw attack magnitude only as diagnostic metadata. Historical A8 batches prove raw lethal overkill can create impossible reward and critic shocks._
-- **Q-R3** What is Reward V5? → _Define it only after truncation semantics, actual-health damage, and critic observability are corrected._
+- **Q-R3** Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
+- **Q-R4** What is Reward V5? → _Define it only after truncation semantics, actual-health damage, event semantics, and critic observability are corrected._
 
 ### Collecting and changing weights
 
@@ -361,7 +362,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **In one line.** Unseen-seed gameplay—not shaped return—decides whether a version advances.
 
-**What it does.** Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, items, movement, stairs, and runtime health.
+**What it does.** Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, movement, stairs, and runtime health. The current item_pickups field is misnamed: it counts currency pickup events rather than equipment.
 
 **How it's built.** **Version lineage.**
 `Baseline` compared checkpoint argmax play with masked random on held-out seeds.
@@ -557,7 +558,8 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-T3**~~ (T) ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
 - ~~**Q-R1**~~ (R) ✓ Not yet: A6’s unchanged-position turns were directional inputs and may include attacks or digging. Classify outcomes first (2026-08-24).
 - **Q-R2** (R) How should player damage be measured? → _Use authoritative before/after health loss bounded by pre-turn health; retain raw attack magnitude only as diagnostic metadata. Historical A8 batches prove raw lethal overkill can create impossible reward and critic shocks._
-- **Q-R3** (R) What is Reward V5? → _Define it only after truncation semantics, actual-health damage, and critic observability are corrected._
+- **Q-R3** (R) Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
+- **Q-R4** (R) What is Reward V5? → _Define it only after truncation semantics, actual-health damage, event semantics, and critic observability are corrected._
 - ~~**Q-C1**~~ (C) ✓ No; fragments never mix policy versions. Fast workers wait after completing their contribution (2026-08-24).
 - ~~**Q-C2**~~ (C) ✓ It removes the per-step barrier, but PPO still waits for one complete same-version fragment from every fixed-capacity slot (2026-08-24).
 - **Q-L1** (L) Is one update per 1,024 steps optimal at eight workers? → _Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed._

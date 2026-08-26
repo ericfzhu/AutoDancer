@@ -187,6 +187,27 @@ multiple damage events in one turn, death, and reset. Historical runs affected
 by this defect remain valid controller evidence but are not clean reward-policy
 comparisons.
 
+### 11. The evaluation `item_pickups` metric actually counts currency pickups
+
+The only Lua site that emits an `item_collected` event is the
+`objectCurrency` hook. It emits once when Bard picks up a currency entity and
+stores the currency difference as the event amount. The deterministic evaluator
+then increments `item_pickups` once for every such event and calls the amount
+`item_value`. No equipment-pickup event feeds that metric.
+
+Reward state does independently infer newly seen inventory type IDs, so the
+policy has received some equipment-related shaping. The evaluation outcome used
+by several historical promotion gates, however, measures coin-pile collection,
+not weapons, armor, consumables, or equipment competence. Those historical
+numbers must be relabeled rather than interpreted as general item pickups.
+
+The protocol should emit distinct `currency_collected` and `item_collected`
+events. Equipment collection must be observed after a successful inventory
+transaction, with stable type/slot metadata and without counting failed pickup
+attempts or slot swaps twice. Evaluation should report currency transactions,
+currency amount, equipment pickups, unique equipment types, and consumables
+separately. Until then, item-based promotion criteria are not trustworthy.
+
 ## Staged causal program
 
 1. **EXP-0009 — execution calibration:** frozen A2/A8 checkpoints, 24 unseen
@@ -195,8 +216,9 @@ comparisons.
    stochastic streams.
 2. **Environment correction if EXP-0009 fails:** preserve bootstrapping on
    time-limit truncation, remove infrastructure/client-horizon penalties from
-   gameplay reward, score player damage from actual health loss, and add critic
-   target/quality diagnostics. Add regression tests before retraining.
+   gameplay reward, score damage from actual health loss, separate item and
+   currency telemetry, and add critic target/quality diagnostics. Add regression
+   tests before retraining.
 3. **Objective experiment:** make floor/zone milestones dominant; eliminate
    unbounded renewable penalties; keep task reward separate from bounded shaping.
    Use potential-based guidance where a valid potential exists.
