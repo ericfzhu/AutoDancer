@@ -1,0 +1,51 @@
+schema_version: 1
+blocks:
+  reward:
+    versions:
+      V1: First stateful progress-first profile.
+      V2:
+        description: Stair-guided local-competence baseline.
+        config: configs/reward-v2.json
+        config_sha256: 84494b038f1d6c8e144d72e84dbca7227de2881f5ab8973b384758d7aff53b12
+      V3: Bounded progression-first profile, rejected.
+      V4A:
+        description: Competence restoration with weaker stair potential, rejected.
+        config: configs/reward-v4a.json
+        config_sha256: 42b373a1704151a4dab22abfb88e7df31d5052284a57351e4bb8ebd4a557fab7
+      V4B:
+        description: Competence restoration with doubled stair potential, rejected.
+        config: configs/reward-v4b.json
+        config_sha256: b733e501afcd177d8f90fc2fdeac9d00c7c2b317527ee0d066fe0ad59248457c
+  architecture:
+    versions:
+      A2: Entity-attention recurrent actor-critic baseline.
+      A6: Rich observation architecture, rejected.
+      A7: Function-preserving gated sensory adapter, rejected.
+      A8: Zero-projected staged residual, inconclusive.
+  observation:
+    versions:
+      legacy-A2: Local grid, player, inventory, entities, and action mask.
+      schema9-rich: Persistent floor memory and richer stacked cell semantics.
+  controller:
+    versions:
+      historical-live: Live bridge predating the schema-10 hard qualification.
+      schema10-qualified: Launch-bound duplex pipe controller qualified for one million turns.
+  action-contract:
+    versions:
+      legacy-11: Earlier eleven-action masking behavior.
+      current-11: Current qualified eleven-action contract.
+  algorithm:
+    versions:
+      recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
+  optimization-schedule:
+    versions:
+      default-ppo: All trainable parameters update from the first PPO update.
+      A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
+  runtime:
+    versions:
+      historical-sync: Earlier synchronous or partially synchronous live collection.
+      async-native-pipe-v1: Versioned asynchronous native-pipe actor collection.
+  evaluation:
+    versions:
+      heldout-live-v1: Deterministic held-out live-game episodes with gameplay metrics.
+      schema10-async-v1: Qualified asynchronous deterministic evaluation.

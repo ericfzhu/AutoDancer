@@ -1,0 +1,38 @@
+schema_version: 1
+experiments:
+  EXP-0001:
+    spec: experiments/EXP-0001/experiment.yaml
+    spec_sha256: aa2775b46f50560b714809c4b832337cc13993350be352858fb93c78bf8068d7
+    status: accepted
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0002:
+    spec: experiments/EXP-0002/experiment.yaml
+    spec_sha256: b5c0620b368749841f5fd1f9a90034ef2c0542004f8e86ab704fe46afb3c7749
+    status: rejected
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0003:
+    spec: experiments/EXP-0003/experiment.yaml
+    spec_sha256: f6e3118992a5418ca0286de97f6cf89a32559227fbbe50c05ce946336e260c7e
+    status: rejected
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0004:
+    spec: experiments/EXP-0004/experiment.yaml
+    spec_sha256: 3db3ddd254041e2412ae03dec16bba6867d328365f5dc8cd9a872d9f899bd6e4
+    status: rejected
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0005:
+    spec: experiments/EXP-0005/experiment.yaml
+    spec_sha256: b67dd5cd616de573b5f673861342e7712b0d25fcefb95524591e56b8b031bdba
+    status: rejected
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0006:
+    spec: experiments/EXP-0006/experiment.yaml
+    spec_sha256: 41ed1c1a40a3d39a2059c6f586563bad43743c586fce1bba9c9e915225e4e29a
+    status: inconclusive
+    historical: true
+    registered_at: '2026-08-26T00:00:00+00:00'

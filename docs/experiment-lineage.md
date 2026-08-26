@@ -1,0 +1,150 @@
+# Experiment lineage
+
+AutoDancer uses a hybrid lineage system because the scientific contract and the
+runtime evidence have different jobs:
+
+- Git stores immutable intent and durable decisions in `experiments/`.
+- MLflow stores parent/child run relationships, metrics, parameters, provenance,
+  and small artifacts under the ignored `.runtime/mlflow/` directory.
+- Every tracked run also writes an atomic `lineage.json` beside its checkpoint or
+  evaluation report. It contains the experiment/arm/trial identity, spec hash, Git
+  commit and dirty state, Python/PyTorch/CUDA and hardware identity, controller
+  schema/build/mod hashes, qualification-report hash, source-checkpoint hash, and
+  output hashes.
+
+MLflow is not in the controller path and lineage remains opt-in. Training or
+evaluation without experiment flags behaves as it did before.
+
+## Scientific hierarchy
+
+There is one MLflow Experiment named `AutoDancer`:
+
+```text
+AutoDancer
+└── EXP-0007 parent: one causal question and decision rule
+    ├── arm-a / seed-51001 / training
+    ├── arm-a / seed-51001 / evaluation
+    ├── arm-a / seed-51002 / training
+    ├── control / seed-51001 / training
+    └── aggregate / heldout-01 / comparison
+```
+
+An experiment changes one declared block or tightly coupled intervention. An
+arm is a treatment/control definition. A trial is a seed or repeat. A stage is
+training, evaluation, comparison, or diagnostic. Training and evaluation are
+siblings under the same parent rather than unrelated flat runs.
+
+## Install and inspect
+
+```powershell
+uv sync --extra train --extra lineage --extra test
+uv run autodancer-experiment validate
+uv run autodancer-experiment list
+```
+
+Start the local UI in a separate terminal:
+
+```powershell
+uv run autodancer-experiment ui --host 127.0.0.1 --port 5000
+```
+
+Then open <http://127.0.0.1:5000>. Set `AUTODANCER_MLFLOW_URI` or pass
+`--mlflow-tracking-uri` when using a different tracking server.
+
+## Declare before running
+
+Create the next numbered contract:
+
+```powershell
+uv run autodancer-experiment new `
+  --title "A9 memory ablation" `
+  --question "Does persistent map memory cause the navigation gain?" `
+  --hypothesis "Removing map memory will reduce held-out floor progress." `
+  --changed-block observation `
+  --component observation=schema9-rich `
+  --component reward=V2 `
+  --invariant reward-V2 `
+  --invariant controller-schema-10 `
+  --arm memory `
+  --arm no-memory `
+  --decision-rule "Select only if progress improves in 2/3 seeds without safety regression."
+```
+
+Fill in its exact training/evaluation protocol before committing it. Registration
+pins the canonical SHA-256; later edits fail validation. A changed hypothesis or
+protocol is a new experiment, not a silent edit to the old one.
+
+## Track training and evaluation
+
+Add these arguments to the normal training command:
+
+```powershell
+  --experiment-id EXP-0007 `
+  --experiment-arm memory `
+  --trial-id seed-51001 `
+  --reward-config .\configs\reward-v2.json `
+  --reward-lineage-version V2
+```
+
+The same flags work with `autodancer-baseline`; that invocation becomes an
+evaluation child run. The trial defaults to `seed-N` for training and the
+checkpoint stem for evaluation, but explicit labels are preferable.
+The reward lineage label is required for tracked training/evaluation and is
+checked against both the loaded profile version and the cataloged config hash.
+Architecture versions are inferred and checked automatically.
+
+Tracked checkpoints are content-addressed in `lineage.json`. MLflow uploads the
+spec, manifest, reports/configuration, and artifacts up to 32 MiB; large model
+files remain in the run directory and are represented by absolute path, size,
+and SHA-256 to avoid silently duplicating gigabytes.
+
+## Backfill and conclude
+
+Historical experiments EXP-0001 through EXP-0006 are registered as backfilled
+scientific history. Existing evidence can be attached without rerunning it:
+
+```powershell
+uv run autodancer-experiment backfill `
+  --experiment-id EXP-0001 `
+  --arm reward-v2-architecture-2 `
+  --trial historical-250k `
+  --stage training `
+  --run-dir .\runs\lineage-backfill\EXP-0001 `
+  --game-dir "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64" `
+  --mod-dir .\mods\AutoDancer `
+  --source-checkpoint .\runs\reward-v2-250k\final.pt `
+  --artifact .\runs\reward-v2-250k\config.json `
+  --notes "Historical run; MLflow metadata was reconstructed later."
+```
+
+After restoring or moving a local MLflow store, synchronize Git conclusions and
+baseline tags with `uv run autodancer-experiment sync`.
+
+Record a predeclared conclusion once:
+
+```powershell
+uv run autodancer-experiment decide `
+  --experiment-id EXP-0007 `
+  --outcome accepted `
+  --selected-arm memory `
+  --summary "Passed all held-out gameplay and health gates." `
+  --evidence .\runs\a9\comparison.json
+```
+
+Promotion is separate from acceptance and records a checkpoint hash:
+
+```powershell
+uv run autodancer-experiment promote `
+  --name bard-v2-a9 `
+  --experiment-id EXP-0007 `
+  --arm memory `
+  --checkpoint .\runs\a9\final.pt `
+  --mlflow-run-id RUN_ID_FROM_MLFLOW `
+  --architecture A9 `
+  --reward V2 `
+  --reason "Won the predeclared held-out comparison."
+```
+
+Commit experiment specifications, decisions, the registry, and baseline records.
+Do not commit `.runtime/`, `runs/`, MLflow databases, metrics streams, worker logs,
+or checkpoints.

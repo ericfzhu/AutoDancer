@@ -20,6 +20,10 @@ train = [
   "tensorboard>=2.17",
   "torch>=2.3",
 ]
+lineage = [
+  "mlflow>=3.5,<4",
+  "pyyaml>=6,<7",
+]
 test = [
   "pytest>=8.3",
   "ruff>=0.8",
@@ -37,6 +41,7 @@ autodancer-diagnose = "autodancer.live.diagnose:main"
 autodancer-representation = "autodancer.training.representation:main"
 autodancer-reward-compare = "autodancer.training.reward_compare:main"
 autodancer-qualify = "autodancer.live.qualify:main"
+autodancer-experiment = "autodancer.experiments.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autodancer"]

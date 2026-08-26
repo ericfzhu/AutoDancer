@@ -1,0 +1,21 @@
+schema_version: 1
+id: EXP-0002
+title: Reward V3 progression-first shaping
+question: Can renewable incentives be removed while making floor progression authoritative?
+hypothesis: Bounded exploration and potential shaping will reduce passive timeouts and increase held-out floor progress.
+changed_blocks: [reward]
+component_versions:
+  reward: V3
+  architecture: A2
+  observation: legacy-A2
+  controller: historical-live
+  algorithm: recurrent-ppo-v1
+  runtime: historical-sync
+  evaluation: heldout-live-v1
+invariants: [architecture-A2, controller-contract, Bard-All-Zones, recurrent-PPO]
+arms:
+  - id: reward-v3
+    description: Bounded progression-first Reward V3.
+training: {historical: true}
+evaluation: {historical: true, source: docs/reward-history.md}
+decision_rule: Select only on held-out unshaped gameplay progress, safety, kills, items, and idleness.

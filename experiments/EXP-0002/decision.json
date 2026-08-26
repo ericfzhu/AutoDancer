@@ -1,0 +1,1 @@
+{"decided_at":"2026-08-23T00:00:00+00:00","evidence":["docs/reward-history.md"],"experiment_id":"EXP-0002","mlflow_run_ids":["1a5b31af21b040b2833dd84fd0cd3512"],"outcome":"rejected","schema_version":1,"selected_arm":null,"summary":"V3 reduced passive timeouts but replaced them with unsafe, unproductive activity and no held-out progress gain."}

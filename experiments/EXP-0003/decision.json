@@ -1,0 +1,1 @@
+{"decided_at":"2026-08-23T00:00:00+00:00","evidence":["docs/reward-history.md"],"experiment_id":"EXP-0003","mlflow_run_ids":["83a591ba7de04b23999e2c73c1d06e5a"],"outcome":"rejected","schema_version":1,"selected_arm":null,"summary":"Neither V4 arm passed; both were safer but overwhelmingly passive and did not improve held-out progress over V2."}

@@ -1,0 +1,25 @@
+schema_version: 1
+id: EXP-0003
+title: Reward V4 competence restoration
+question: Can bounded combat and item shaping restore competence while preserving V3 progression incentives?
+hypothesis: Restored competence shaping will improve progress without V3's unsafe unproductive activity.
+changed_blocks: [reward]
+component_versions:
+  reward: [V4A, V4B]
+  architecture: A2
+  observation: legacy-A2
+  controller: historical-live
+  algorithm: recurrent-ppo-v1
+  runtime: async-native-pipe-v1
+  evaluation: heldout-live-v1
+invariants: [architecture-A2, controller-contract, Bard-All-Zones, recurrent-PPO, warm-start-V2]
+arms:
+  - id: v4a
+    description: Competence restoration with V3 navigation strength.
+    component_versions: {reward: V4A}
+  - id: v4b
+    description: V4A with doubled stair potential.
+    component_versions: {reward: V4B}
+training: {historical: true, seeds: [32001, 32002, 32003], transitions_per_trial: 51200}
+evaluation: {historical: true, seeds: 42001-42030, source: docs/reward-history.md}
+decision_rule: An arm must beat V2 progress while meeting predeclared death, kill, item, and idleness gates.

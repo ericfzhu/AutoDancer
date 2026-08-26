@@ -1,0 +1,1 @@
+{"decided_at":"2026-08-23T00:00:00+00:00","evidence":["docs/reward-history.md"],"experiment_id":"EXP-0001","mlflow_run_ids":["db7bc116ccb44a57ad5dd362ea7f4e6a"],"outcome":"accepted","schema_version":1,"selected_arm":"reward-v2-architecture-2","summary":"Reward V2 became the retained local-gameplay baseline, while progression remained an open problem."}

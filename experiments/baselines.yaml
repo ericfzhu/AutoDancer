@@ -1,0 +1,12 @@
+schema_version: 1
+baselines:
+  bard-v2-a2:
+    experiment_id: EXP-0001
+    arm: reward-v2-architecture-2
+    checkpoint: runs/reward-v2-250k/final.pt
+    checkpoint_sha256: 9fa39f242995555a8b9b3c9556253d0c7ab19945e9cb80292bf312388d6eda5d
+    mlflow_run_id: db7bc116ccb44a57ad5dd362ea7f4e6a
+    architecture: A2
+    reward: V2
+    reason: Historical promoted local-gameplay baseline retained after the V3/V4 and A6/A7/A8 experiments.
+    promoted_at: '2026-08-26T00:00:00+00:00'

@@ -1,0 +1,21 @@
+schema_version: 1
+id: EXP-0001
+title: Reward V2 local-competence baseline
+question: Can stair guidance and loop suppression improve progression without destroying local competence?
+hypothesis: Potential-based stair guidance plus bounded exploration and anti-loop shaping will improve progression over Reward V1.
+changed_blocks: [reward]
+component_versions:
+  reward: V2
+  architecture: A2
+  observation: legacy-A2
+  controller: historical-live
+  algorithm: recurrent-ppo-v1
+  runtime: historical-sync
+  evaluation: heldout-live-v1
+invariants: [architecture-A2, controller-contract, Bard-All-Zones, recurrent-PPO]
+arms:
+  - id: reward-v2-architecture-2
+    description: Reward V2 with Architecture 2.
+training: {historical: true, target_steps: 250000}
+evaluation: {historical: true, source: docs/reward-history.md}
+decision_rule: Retain only if gameplay progress improves without an unacceptable competence loss.

@@ -1,0 +1,21 @@
+schema_version: 1
+id: EXP-0005
+title: Architecture 7 function-preserving sensory adapter
+question: Can new sensory features become useful without initially perturbing the A2 policy?
+hypothesis: A function-preserving gated adapter will learn new information while retaining A2 competence.
+changed_blocks: [architecture, observation]
+component_versions:
+  reward: V2
+  architecture: A7
+  observation: schema9-rich
+  controller: historical-live
+  algorithm: recurrent-ppo-v1
+  runtime: async-native-pipe-v1
+  evaluation: heldout-live-v1
+invariants: [reward-V2, controller-contract, Bard-All-Zones, action-contract]
+arms:
+  - id: architecture-7
+    description: A2 base plus gated sensory adapter.
+training: {historical: true}
+evaluation: {historical: true, source: docs/reward-history.md}
+decision_rule: Require parity at initialization, material feature use, and predeclared held-out gameplay gates.

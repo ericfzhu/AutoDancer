@@ -1,0 +1,25 @@
+schema_version: 1
+id: EXP-0006
+title: Architecture 8 controlled residual learning
+question: Can a zero-projected residual learn rich observations while preserving the complete A2 policy?
+hypothesis: A staged zero-initialized residual will preserve A2, then acquire useful representation without competence collapse.
+changed_blocks: [architecture, observation, optimization-schedule]
+component_versions:
+  reward: V2
+  architecture: A8
+  observation: schema9-rich
+  controller: historical-live
+  action-contract: current-11
+  algorithm: recurrent-ppo-v1
+  optimization-schedule: A8-staged
+  runtime: async-native-pipe-v1
+  evaluation: heldout-live-v1
+invariants: [reward-V2, controller-contract, Bard-All-Zones, current-11-action-contract]
+arms:
+  - id: a8-candidate
+    description: Zero-projection A8 with staged base unfreezing.
+  - id: a8-zero-lr-control
+    description: Identical A8 setup with zero learning rate.
+training: {historical: true, source: docs/architecture8-controls.md}
+evaluation: {historical: true, source: docs/architecture8-controls.md}
+decision_rule: Continue only if representation and policy-change gates pass with a healthy fixed-A2 control.

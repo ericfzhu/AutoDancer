@@ -1,0 +1,1 @@
+{"decided_at":"2026-08-24T00:00:00+00:00","evidence":["docs/reward-history.md"],"experiment_id":"EXP-0004","mlflow_run_ids":["91a9f20d5d1f486992cc118482c69798"],"outcome":"rejected","schema_version":1,"selected_arm":null,"summary":"Architecture 6 failed to improve held-out gameplay and Architecture 2 with Reward V2 was retained."}

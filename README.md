@@ -175,3 +175,19 @@ uv run autodancer-qualify `
 The gate requires 125,000 valid transitions from every worker with no natural
 controller fault. Pre-soak phases can be resumed with `--resume`; the natural
 soak always starts from zero after a failure.
+
+## Experiment lineage
+
+Architecture and reward experiments use Git-tracked immutable contracts plus a
+local MLflow runtime store. Install the `lineage` extra, validate the registry,
+and launch the local UI with:
+
+```powershell
+uv sync --extra train --extra lineage --extra test
+uv run autodancer-experiment validate
+uv run autodancer-experiment ui
+```
+
+Training and baseline evaluation accept `--experiment-id`, `--experiment-arm`,
+and `--trial-id`. See [`docs/experiment-lineage.md`](docs/experiment-lineage.md)
+for declaration, backfill, decision, and baseline-promotion workflows.

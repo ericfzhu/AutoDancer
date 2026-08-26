@@ -1,0 +1,21 @@
+schema_version: 1
+id: EXP-0004
+title: Architecture 6 representation expansion
+question: Does exposing richer observations improve gameplay over Architecture 2 with Reward V2 fixed?
+hypothesis: Added map memory and object features will improve navigation after sufficient training.
+changed_blocks: [architecture, observation]
+component_versions:
+  reward: V2
+  architecture: A6
+  observation: schema9-rich
+  controller: historical-live
+  algorithm: recurrent-ppo-v1
+  runtime: async-native-pipe-v1
+  evaluation: heldout-live-v1
+invariants: [reward-V2, controller-contract, Bard-All-Zones, recurrent-PPO]
+arms:
+  - id: architecture-6
+    description: Architecture 6 representation with Reward V2.
+training: {historical: true}
+evaluation: {historical: true, source: docs/reward-history.md}
+decision_rule: Promote only on held-out gameplay outcomes, not shaped return.
