@@ -627,6 +627,40 @@ for all A8 curve points instead of only the shared step-zero point. The stored
 A8 reports were unaffected. The comparator and its regression test were fixed,
 and the decision above uses the corrected reports.
 
+### Architecture 8 qualified replication and horizon result
+
+EXP-0007 repeated the A8 comparison with the schema-10-qualified controller.
+A8 again proved exact A2 initialization parity and material use of all four
+rich observation groups, but its broad 30,720-transition result tied both A2
+controls on floor progress and missed the declared death gate. A2 remained the
+promoted baseline.
+
+EXP-0008 then isolated the remaining adaptation-horizon hypothesis by exactly
+resuming the qualified A2 and A8 states—including model, critic, optimizer,
+counters, and random state—to 250,880 transitions. Both training runs were
+finite and controller-valid. The final held-out results were:
+
+| Policy | Mean progress | Furthest floor | Death rate | Kills | Items |
+|---|---:|---:|---:|---:|---:|
+| Frozen A2 | 1.125 | 2 | 0.4375 | 42 | 33 |
+| Continued A2 | 1.000 | 1 | 0.4375 | 73 | 55 |
+| Continued A8 | 1.000 | 1 | 0.5000 | 38 | 28 |
+
+Longer adaptation therefore did not rescue A8. The new inputs remained
+material, but neither continued arm improved held-out progression, and A8 lost
+local combat and item competence relative to frozen A2. The predeclared result
+is `retain_a2_after_long_horizon`; architecture scale and observation richness
+are not the next isolated variables.
+
+One unresolved execution mismatch remains: PPO trains by sampling a categorical
+policy with an entropy bonus, while promotion evaluation has used per-state
+argmax. Stochastic training reached Zone 1 Floor 3, whereas deterministic
+held-out evaluation reached only Zone 1 Floor 2. EXP-0009 therefore freezes A2
+and A8 checkpoints and compares argmax with two turn-keyed, reproducible
+stochastic sample streams on the same 24 unseen game seeds. It passes only with
+repeatable Zone 2 progress across multiple seeds. The wider environment audit
+and next causal interventions are recorded in `docs/rl-environment-audit.md`.
+
 ## Rules for future entries
 
 Every new reward version must record:

@@ -384,20 +384,25 @@ def evaluate_live_policy(
     model: PolicyModel | None = None,
     dashboard_state: DashboardState | None = None,
     action_contract: str = "current",
+    policy_mode: str = "deterministic",
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
     if max_steps <= 0:
         raise ValueError("max_steps must be positive")
+    if policy_mode not in ("deterministic", "stochastic"):
+        raise ValueError("policy_mode must be deterministic or stochastic")
     if model is not None:
-        return _evaluate_deterministic_async(
+        return _evaluate_model_async(
             environment,
             model,
             seeds=seeds,
             max_steps=max_steps,
+            policy_seed=policy_seed,
             device=device,
             dashboard_state=dashboard_state,
             action_contract=action_contract,
+            deterministic=policy_mode == "deterministic",
         )
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
@@ -511,17 +516,19 @@ def evaluate_live_policy(
     return results
 
 
-def _evaluate_deterministic_async(
+def _evaluate_model_async(
     environment: AutoDancerVectorEnv,
     model: PolicyModel,
     *,
     seeds: list[int],
     max_steps: int,
+    policy_seed: int,
     device: torch.device,
     dashboard_state: DashboardState | None,
     action_contract: str,
+    deterministic: bool,
 ) -> list[dict[str, Any]]:
-    """Evaluate independent slots without a per-turn worker barrier."""
+    """Evaluate model slots without a barrier or timing-dependent action samples."""
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -537,7 +544,7 @@ def _evaluate_deterministic_async(
             device=device,
             max_batch=max(len(wave_seeds), 1),
             batch_delay=0.002,
-            deterministic=True,
+            deterministic=deterministic,
         )
 
         def run_slot(
@@ -556,6 +563,8 @@ def _evaluate_deterministic_async(
             previous_reward = 0.0
             attempts = 0
             while True:
+                # An infrastructure retry replays the same game seed and exact
+                # policy sample stream from turn zero.
                 accumulator = EpisodeAccumulator(
                     seed=int(info.get("seed") if info.get("seed") is not None else seed),
                     worker_id=worker_id,
@@ -572,7 +581,15 @@ def _evaluate_deterministic_async(
                             previous_action,
                             previous_reward,
                             hidden,
-                            0.0,
+                            (
+                                stochastic_policy_sample(
+                                    policy_seed,
+                                    seed,
+                                    accumulator.turns,
+                                )
+                                if not deterministic
+                                else 0.0
+                            ),
                         )
                         next_observation, reward, terminated, truncated, step_info = (
                             environment.environments[worker_id].step(action)
@@ -609,7 +626,11 @@ def _evaluate_deterministic_async(
                     failure = environment._failure(
                         index,
                         error,
-                        operation="deterministic_evaluation",
+                        operation=(
+                            "deterministic_evaluation"
+                            if deterministic
+                            else "stochastic_evaluation"
+                        ),
                         context={"seed": seed, "attempt": attempts},
                     )
                     if attempts >= 3:
@@ -630,6 +651,40 @@ def _evaluate_deterministic_async(
         finally:
             scheduler.close()
     return results
+
+
+def stochastic_policy_sample(policy_seed: int, game_seed: int, turn: int) -> float:
+    """Return a timing-independent categorical sample for one evaluation turn."""
+    if turn < 0:
+        raise ValueError("turn must be non-negative")
+    stream = np.random.default_rng(
+        np.random.SeedSequence([int(policy_seed), int(game_seed), int(turn)])
+    )
+    return float(stream.random())
+
+
+def _evaluate_deterministic_async(
+    environment: AutoDancerVectorEnv,
+    model: PolicyModel,
+    *,
+    seeds: list[int],
+    max_steps: int,
+    device: torch.device,
+    dashboard_state: DashboardState | None,
+    action_contract: str,
+) -> list[dict[str, Any]]:
+    """Compatibility entry point used by the controller qualification suite."""
+    return _evaluate_model_async(
+        environment,
+        model,
+        seeds=seeds,
+        max_steps=max_steps,
+        policy_seed=0,
+        device=device,
+        dashboard_state=dashboard_state,
+        action_contract=action_contract,
+        deterministic=True,
+    )
 
 
 def _checkpoint_hash(path: Path) -> str:
@@ -707,6 +762,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     model=model,
                     dashboard_state=dashboard_state,
                     action_contract=arguments.action_contract,
+                    policy_mode=arguments.policy_mode,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -721,7 +777,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     reference = (
         None if arguments.trained_only else summarize_episodes(random_results, "masked_random")
     )
-    trained = summarize_episodes(trained_results, "checkpoint_deterministic")
+    trained = summarize_episodes(trained_results, f"checkpoint_{arguments.policy_mode}")
     report = {
         "schema_version": 2,
         "created_at": datetime.now(UTC).isoformat(),
@@ -740,6 +796,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
         "policy_seed": arguments.policy_seed,
+        "policy_mode": arguments.policy_mode,
         "action_contract": arguments.action_contract,
         "worker_restarts": restarts,
         "controller_valid": restarts == 0 and not infrastructure_events,
@@ -784,6 +841,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "max_steps": arguments.max_steps,
                 "num_instances": arguments.num_instances,
                 "policy_seed": arguments.policy_seed,
+                "policy_mode": arguments.policy_mode,
                 "action_contract": arguments.action_contract,
                 "trained_only": arguments.trained_only,
                 "reward_lineage_version": arguments.reward_lineage_version,
@@ -864,6 +922,12 @@ def main() -> int:
     parser.add_argument("--seeds", type=_parse_seeds, required=True)
     parser.add_argument("--max-steps", type=int, default=256)
     parser.add_argument("--policy-seed", type=int, default=8675309)
+    parser.add_argument(
+        "--policy-mode",
+        choices=("deterministic", "stochastic"),
+        default="deterministic",
+        help="take argmax actions or reproducibly sample the checkpoint policy",
+    )
     parser.add_argument("--reward-config", type=Path)
     parser.add_argument(
         "--reward-lineage-version",

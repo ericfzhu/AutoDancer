@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 
 from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
@@ -9,6 +10,7 @@ from autodancer.training.baseline import (
     compare_summaries,
     evaluate_live_policy,
     masked_random_actions,
+    stochastic_policy_sample,
     summarize_episodes,
     zero_hidden_rows,
 )
@@ -111,6 +113,35 @@ def test_live_evaluation_uses_partial_final_wave_without_counting_padding() -> N
     )
     assert [result["seed"] for result in results] == [41_001, 41_002, 41_003]
     assert len(environment.reset_seeds) == environment.num_envs
+
+
+def test_live_evaluation_rejects_unknown_policy_mode() -> None:
+    with pytest.raises(ValueError, match="policy_mode"):
+        evaluate_live_policy(
+            OneStepEnvironment(),  # type: ignore[arg-type]
+            seeds=[41_001],
+            max_steps=10,
+            policy_seed=7,
+            device=torch.device("cpu"),
+            policy_mode="temperature-seven",
+        )
+
+
+def test_stochastic_policy_samples_are_turn_keyed_and_reproducible() -> None:
+    first = [stochastic_policy_sample(91_001, 57_001, turn) for turn in range(8)]
+    replay = [stochastic_policy_sample(91_001, 57_001, turn) for turn in range(8)]
+    other_policy = [stochastic_policy_sample(91_002, 57_001, turn) for turn in range(8)]
+    other_game = [stochastic_policy_sample(91_001, 57_002, turn) for turn in range(8)]
+
+    assert first == replay
+    assert first != other_policy
+    assert first != other_game
+    assert all(0.0 <= value < 1.0 for value in first)
+
+
+def test_stochastic_policy_sample_rejects_negative_turn() -> None:
+    with pytest.raises(ValueError, match="turn"):
+        stochastic_policy_sample(91_001, 57_001, -1)
 
 
 def test_episode_diagnostics_measure_idle_exploration_and_stair_conversion() -> None:

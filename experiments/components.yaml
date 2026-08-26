@@ -51,3 +51,4 @@ blocks:
     versions:
       heldout-live-v1: Deterministic held-out live-game episodes with gameplay metrics.
       schema10-async-v1: Qualified asynchronous deterministic evaluation.
+      schema10-stochastic-v1: Qualified asynchronous evaluation with timing-independent, seed-reproducible samples from the trained categorical policy alongside argmax control runs.

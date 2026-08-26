@@ -8,14 +8,14 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. Qualified EXP-0007 showed that A8 uses all four rich observation groups and preserves local competence, but its 30,720-transition checkpoint did not improve broad held-out progression. EXP-0008 now tests whether that was an adaptation-horizon limitation by continuing A2 and A8 to 250,880 transitions.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. EXP-0008 showed that extending both A2 and materially active A8 to 250,880 transitions did not produce held-out progress, so adaptation horizon is rejected. EXP-0009 now isolates whether argmax evaluation is suppressing useful behavior learned by the high-entropy sampled PPO policy.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
     'PPO replays 32-step recurrent chunks for four epochs. Dynamic inference waits at most 2 ms to batch whichever actors are ready.',
     'Architecture A2 has 5,953,167 trainable parameters; A6 has 6,478,798. The added capacity is mostly perception, not a larger 512-unit LSTM.',
   ],
-  deepDive: 'Experiment rationale and measured outcomes live in [reward-history.md](../reward-history.md). Action/mechanic evidence and representation gates live in [mechanic-diagnostics.md](../mechanic-diagnostics.md) and [representation-diagnostics.md](../representation-diagnostics.md). Protocol and performance details live in [protocol.md](../protocol.md) and [runtime-efficiency.md](../runtime-efficiency.md).',
+  deepDive: 'Experiment rationale and measured outcomes live in [reward-history.md](../reward-history.md). The Zone 2 environment audit lives in [rl-environment-audit.md](../rl-environment-audit.md). Action/mechanic evidence and representation gates live in [mechanic-diagnostics.md](../mechanic-diagnostics.md) and [representation-diagnostics.md](../representation-diagnostics.md). Protocol and performance details live in [protocol.md](../protocol.md) and [runtime-efficiency.md](../runtime-efficiency.md).',
   platformGives: 'NecroDancer supplies authoritative mechanics, level generation, entities, events, Bard timing, and SYNCHRONY duplicate-instance support. The mod runtime supplies Lua hooks; the native library supplies duplex named pipes.',
   weOwn: 'Worker lifecycle, identity and sequence validation, observations, player-visible map memory, legal-action masking, reward state, policy/value networks, recurrent rollout collection, PPO updates, checkpoints, evaluation gates, and the symbolic dashboard.',
   filesystem: `mods/AutoDancer/scripts/
@@ -35,7 +35,8 @@ src/autodancer/
     architecture8_horizon_compare.py  long-horizon A8 gates
     async_collector.py  versioned actor scheduler
     ppo.py              recurrent PPO and checkpoints
-    baseline.py         deterministic evaluation
+    baseline.py         deterministic/stochastic evaluation
+    stochastic_policy_compare.py  Zone 2 execution-mode gate
     dashboard.py        local symbolic telemetry
 docs/agent-system/
   atlas/data.mjs        authored system definition
@@ -56,7 +57,8 @@ export const DECISIONS = [
   { axis: 'A8 experiment', decision: 'Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass.', adr: '[A8 controls](../architecture8-controls.md)' },
   { axis: 'A8 curve outcome', decision: 'A8 passed representation and candidate gameplay criteria, but both A2 controls restarted once; stop before broad gameplay and retain A2 pending clean control retries.', adr: '[A8 result](../architecture8-controls.md#result)' },
   { axis: 'Qualified A8 outcome', decision: 'EXP-0007 passed parity, representation, controller, and early-curve gates, but A8 tied both controls on broad floor progress and missed the death gate; retain A2 at the 30,720-transition screening budget.', adr: '[Experiment contract](../../../experiments/EXP-0007/experiment.yaml)' },
-  { axis: 'A8 horizon test', decision: 'EXP-0008 exactly resumes the qualified A2 and A8 states to 250,880 transitions; only repeated held-out advantage can advance A8 to multiseed confirmation.', adr: '[Experiment contract](../../../experiments/EXP-0008/experiment.yaml)' },
+  { axis: 'A8 horizon outcome', decision: 'Reject adaptation horizon as the explanation: at 250,880 transitions neither continued A2 nor A8 improved held-out progress, while frozen A2 remained the only arm to reach Floor 2.', adr: '[Decision](../../../experiments/EXP-0008/decision.json)' },
+  { axis: 'Policy execution diagnostic', decision: 'EXP-0009 freezes all checkpoints and compares argmax with two reproducible stochastic sample streams; promotion requires repeatable Zone 2 progress across multiple unseen game seeds.', adr: '[Experiment contract](../../../experiments/EXP-0009/experiment.yaml)' },
 ];
 
 export const GROUPS = [
@@ -167,10 +169,10 @@ export const NODES = [
   },
   {
     id: 'E', code: 'E', name: 'Evaluation and selection', short: 'EVALUATION', group: 'evidence', gx: 1, gy: 20.5, w: 3.5, d: 3, h: 48, kind: 'gate',
-    one: 'Deterministic unseen-seed gameplay decides whether a version advances.',
+    one: 'Unseen-seed gameplay—not shaped return—decides whether a version advances.',
     what: 'Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, items, movement, stairs, and runtime health.',
-    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>A6 gate</code> rejected the disruptive warm-start.<br><code>A7 gameplay gate</code> measured exact initial parity and classified stationary outcomes.<br><code>Current representation gate</code> perturbs one input group at a time and measures output sensitivity plus encoder gradients. A supported path below 1% of established-input medians is trace, not material.`,
-    steps: [['Predeclare', 'Write hypotheses, seeds, budgets, metrics, and pass/fail gates before training.'], ['Probe representation', 'Require material counterfactual sensitivity and gradient reach before broad training.'], ['Evaluate', 'Run deterministic argmax policy on ordered unseen seeds.'], ['Aggregate', 'Preserve per-checkpoint direction as well as arm-level means.'], ['Decide', 'Promote, continue, or reject using gameplay-ranked rules.'], ['Record', 'Append rationale and results to reward-history.md.']],
+    how: `<strong>Version lineage.</strong><br><code>Baseline</code> compared checkpoint argmax play with masked random on held-out seeds.<br><code>Reward pilots</code> added paired multi-checkpoint gates and separated task, shaping, and gameplay metrics.<br><code>A6/A7/A8 gates</code> added transfer, representation, and long-horizon controls.<br><code>EXP-0009</code> tests argmax against turn-keyed stochastic samples because PPO trained a high-entropy sampled policy and stochastic collection progressed farther than deterministic evaluation.<br><code>Representation gate</code> perturbs one input group at a time and measures output sensitivity plus encoder gradients. A supported path below 1% of established-input medians is trace, not material.`,
+    steps: [['Predeclare', 'Write hypotheses, seeds, budgets, metrics, and pass/fail gates before training.'], ['Probe representation', 'Require material counterfactual sensitivity and gradient reach before broad training.'], ['Calibrate execution', 'When policy entropy is material, compare argmax with reproducible stochastic sampling before attributing failure to learning.'], ['Evaluate', 'Play ordered unseen game seeds with fresh recurrent state.'], ['Aggregate', 'Preserve per-seed outcomes, repeated policy samples, and arm-level summaries.'], ['Decide', 'Promote, continue, or reject using gameplay-ranked rules.'], ['Record', 'Store the immutable experiment decision and supporting artifacts.']],
     cond: [{ q: 'Why was A6 rejected even though it has more information?', r: 'It failed the predeclared gameplay gate and produced worse local competence and more stationary outcomes within the pilot budget (2026-08-24).' }, { q: 'Does the A6 result prove explicit map memory is harmful?', r: 'No; the warm start randomly reinitialized the expanded fusion interface, so representation and transfer disruption were confounded (2026-08-24).' }],
   },
   {
@@ -191,11 +193,11 @@ export const NODES = [
   },
   {
     id: 'H', code: 'H', name: 'Architecture A8 controls', short: 'A8 CONTROLS', group: 'future', gx: 14.5, gy: 20.5, w: 3.5, d: 3, h: 68, kind: 'tall',
-    one: 'A8 uses the rich inputs, but its first qualified checkpoint improved activity rather than progression.',
-    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output 512×512 matrix projection. EXP-0007 proved exact initialization parity, material influence from all four new groups, clean training, and valid broad evaluation. A8 retained combat and items and reduced unchanged-position behavior, but did not discover stairs or improve floor progress at 30,720 transitions.',
-    how: `<strong>Qualified EXP-0007.</strong><br><code>A2 frozen</code>: broad progress 1.00, death 0.30, 44 kills, 37 items, unchanged position 0.913.<br><code>A2 fine-tuned</code>: progress 1.00, death 0.033, 15 kills, 14 items, unchanged position 0.984.<br><code>A8</code>: progress 1.00, death 0.20, 43 kills, 38 items, unchanged position 0.587.<br><code>Interpretation</code>: the adapter changed behavior and preserved local competence, but produced local motion rather than strategic navigation.<br><code>EXP-0008</code>: exactly resume both trainable checkpoints from 30,720 to 250,880 transitions and test for repeated held-out progress advantage.`,
+    one: 'A8 uses the rich inputs, but longer training still did not improve held-out progression.',
+    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output 512×512 matrix projection. EXP-0007 proved exact initialization parity and material influence from all four new groups. EXP-0008 then continued A2 and A8 exactly to 250,880 transitions; neither improved final held-out progress, and A8 lost local combat and item competence relative to frozen A2.',
+    how: `<strong>Qualified EXP-0007.</strong><br><code>A2 frozen</code>: broad progress 1.00, death 0.30, 44 kills, 37 items, unchanged position 0.913.<br><code>A8</code>: progress 1.00, death 0.20, 43 kills, 38 items, unchanged position 0.587.<br><strong>EXP-0008 final.</strong><br><code>A2 frozen</code>: progress 1.125 and Floor 2.<br><code>A2 continuation</code>: progress 1.00, 73 kills, 55 items.<br><code>A8 continuation</code>: progress 1.00, 38 kills, 28 items.<br><code>Interpretation</code>: added information and 250,880 transitions did not solve strategic navigation.`,
     steps: [['Prove parity', 'Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.'], ['Open projection', 'Freeze A2 for ten updates while the full residual matrix receives the first gradients.'], ['Qualify broadly', 'Use the schema-10 controller and fresh held-out seeds to separate activity from gameplay progress.'], ['Continue exactly', 'Resume A2 and A8 model, critic, optimizer, counters, and RNG state to 250,880 transitions.'], ['Test emergence', 'Require A8 to beat continued A2 at two consecutive checkpoints including the final checkpoint.']],
-    cond: [{ q: 'Does A8 already replace A2?', r: 'No. In qualified EXP-0007 it tied both A2 controls on broad floor progress and missed the death gate at 30,720 transitions (2026-08-26).' }, { q: 'Did A8 solve A7’s gradient starvation?', r: 'Yes: all four new observation groups were material at warmup and final, with exact A2 behavior at initialization (2026-08-26).' }, { q: 'Could A8 simply need more training?', to: 'EXP-0008 resumes the exact qualified A2 and A8 states to 250,880 transitions and measures the same held-out curve at 30,720, 61,440, 122,880, and 250,880.' }],
+    cond: [{ q: 'Does A8 replace A2?', r: 'No. EXP-0008 found no final held-out progress advantage at 250,880 transitions and worse local competence than frozen A2 (2026-08-26).' }, { q: 'Did A8 solve A7’s gradient starvation?', r: 'Yes: all four new observation groups were material at warmup and final, with exact A2 behavior at initialization (2026-08-26).' }, { q: 'Did A8 merely need more of the same training?', r: 'No evidence supports that explanation: the exact continuation to 250,880 transitions did not improve held-out floor progress (2026-08-26).' }],
   },
 ];
 
@@ -223,7 +225,7 @@ export const FLOWS = [
   ] },
   { id: 'evaluate', name: 'Choose a version', hops: [
     ['K', 'E', 'candidate checkpoints', { candidates: ['A2', 'A6-1', 'A6-2', 'A6-3'] }, 'xy'],
-    ['E', 'W', 'ordered unseen seeds', { seeds: '43001–43030', deterministic: true }, 'yx'],
+    ['E', 'W', 'ordered unseen seeds', { seeds: '57001–57024', execution: 'argmax + seeded samples' }, 'yx'],
     ['W', 'E', 'gameplay outcomes', { progress: 1.011, deaths: 0.322 }, 'xy'],
     ['E', 'D', 'report and diagnostics', { decision: 'retain A2' }, 'yx'],
   ] },
@@ -295,14 +297,14 @@ export const CH = [
   {
     id: 'evidence', title: 'Keeping experiments honest', reveal: ['E', 'D'],
     lede: 'Representation gates admit candidates; held-out gameplay decides promotion.',
-    story: `<p>A candidate must first prove that its new inputs can influence outputs and receive gradients materially. Evaluation then uses deterministic actions, unseen ordered seeds, and predeclared gameplay gates. The dashboard is operational visibility—not an input.</p>`,
+    story: `<p>A candidate must first prove that its new inputs can influence outputs and receive gradients materially. Evaluation uses unseen ordered game seeds and predeclared gameplay gates. EXP-0009 additionally calibrates deterministic argmax against reproducible stochastic execution because PPO trained a sampled policy. The dashboard is operational visibility—not an input.</p>`,
     flow: [['K', 'E', 'candidate', { architecture: 6 }], ['E', 'W', 'unseen seeds', { count: 30 }], ['W', 'E', 'outcomes', { mean_floor_progress: 1.011 }], ['E', 'D', 'decision', { retain: 'A2' }]],
   },
   {
-    id: 'next', title: 'From A7 to the A8 horizon test', reveal: ['F', 'H'],
-    lede: 'A8 solved gradient starvation and changed behavior, but the qualified short run did not improve progression.',
-    story: `<p>EXP-0007 proved that A8 kept A2’s exact starting behavior, learned material use of all four new input groups, and preserved local competence. Broad evaluation found much less stationary behavior but no staircase discovery or floor-progress gain. <mark>EXP-0008 tests the remaining horizon hypothesis by exactly continuing A2 and A8 to 250,880 transitions.</mark></p>`,
-    flow: [['P', 'F', 'exact A2 path', { error: 0 }], ['F', 'H', 'replace scalar bottleneck', { projection: '512×512' }], ['O', 'H', 'new sensory inputs', { groups: 4 }], ['H', 'L', 'exact continuation', { final_transitions: 250880 }], ['L', 'E', 'four-point curve', { checkpoints: 4 }]],
+    id: 'next', title: 'From A8 horizon rejection to Zone 2', reveal: ['F', 'H', 'E'],
+    lede: 'More information and longer training did not solve progression; execution semantics are the next isolated variable.',
+    story: `<p>EXP-0008 rejected the claim that A8 only needed a longer adaptation horizon: neither continued arm improved final held-out progress at 250,880 transitions. The sampled training policy nevertheless reached Floor 3 while argmax evaluation reached only Floor 2. <mark>EXP-0009 freezes every checkpoint and tests whether reproducible stochastic execution reaches Zone 2 across multiple unseen seeds.</mark> If it does not, the next intervention corrects truncation bootstrapping and reward-objective scale before introducing another architecture.</p>`,
+    flow: [['K', 'E', 'frozen A2/A8 checkpoints', { changed_blocks: ['evaluation'] }], ['E', 'W', 'same unseen seeds', { count: 24 }], ['W', 'E', 'argmax + two sample streams', { policy_seeds: [0, 91001, 91002] }], ['E', 'D', 'Zone 2 gate', { distinct_seeds: 3, repeated_seeds: 2 }]],
   },
   {
     id: 'all', title: 'The whole agent system', reveal: [],
@@ -321,4 +323,4 @@ export const HOW_HTML = `<div class="eyebrow">AutoDancer · live-game RL</div><h
 → one new policy version</pre>
 <h3 class="sec">Version boundaries</h3><p>Observation schema, model architecture, PPO configuration, and reward specification are stored with checkpoints. Exact resume rejects mismatches; cross-version transfer must use an explicit warm-start path.</p>
 <h3 class="sec">Source map</h3><pre>${META.filesystem}</pre>
-<h3 class="sec">Evidence rule</h3><p>Shaped return is never a promotion metric. The system compares deterministic gameplay on held-out seeds and records accepted and rejected hypotheses in <code>docs/reward-history.md</code>.</p>`;
+<h3 class="sec">Evidence rule</h3><p>Shaped return is never a promotion metric. The system compares gameplay on held-out seeds under predeclared execution semantics and records accepted and rejected hypotheses with immutable experiment decisions.</p>`;

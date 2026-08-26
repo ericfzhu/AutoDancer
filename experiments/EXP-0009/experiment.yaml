@@ -1,0 +1,71 @@
+schema_version: 1
+id: EXP-0009
+title: Stochastic policy execution calibration
+question: Does reproducibly sampling the high-entropy PPO policy reveal repeatable Zone 2 progress that argmax evaluation suppresses?
+hypothesis: The categorical policies learned useful stochastic trajectories during training, but argmax collapses near-tied logits into repeated directions; sampled execution will therefore reach Zone 2 on multiple held-out seeds more reliably than deterministic execution.
+changed_blocks: [evaluation]
+component_versions:
+  reward: V2
+  architecture: [A2, A8]
+  observation: [legacy-A2, schema9-rich]
+  controller: schema10-qualified
+  action-contract: current-11
+  algorithm: recurrent-ppo-v1
+  optimization-schedule: frozen-policy
+  runtime: async-native-pipe-v1
+  evaluation: schema10-stochastic-v1
+invariants:
+  - Bard normal seeded All Zones
+  - eight fixed-capacity workers
+  - qualified schema-10 controller and repository mod
+  - no model, reward, observation, action, PPO, or checkpoint changes
+  - the same held-out game seeds for every checkpoint and execution mode
+  - action samples keyed only by policy seed, game seed, and turn, never worker timing
+  - infrastructure retries replay both the game seed and action-sample stream from turn zero
+arms:
+  - id: a2-frozen
+    description: Promoted Reward-V2/A2 checkpoint evaluated under argmax and two reproducible stochastic policy samples.
+    component_versions:
+      architecture: A2
+      observation: legacy-A2
+  - id: a2-continuation
+    description: EXP-0008's 250,880-transition A2 continuation evaluated under the same three execution trials.
+    component_versions:
+      architecture: A2
+      observation: legacy-A2
+  - id: a8-continuation
+    description: EXP-0008's 250,880-transition A8 continuation evaluated under the same three execution trials.
+    component_versions:
+      architecture: A8
+      observation: schema9-rich
+training:
+  none: Evaluation-only diagnostic; checkpoints are frozen.
+  checkpoints:
+    a2-frozen:
+      path: runs/reward-v2-250k/final.pt
+      sha256: 9fa39f242995555a8b9b3c9556253d0c7ab19945e9cb80292bf312388d6eda5d
+    a2-continuation:
+      path: runs/architecture8-horizon/training/a2-continuation/final.pt
+      sha256: 671e9e59a909a3e98556127909a78e9c1846692533f78b4ad79d1b389df318ba
+    a8-continuation:
+      path: runs/architecture8-horizon/training/a8-continuation/final.pt
+      sha256: fddd4c6eb8526ba1990f3227d40f31fbaed16dd0b522e62f80fd3a54f39aa9c0
+evaluation:
+  game_seeds: 57001-57024
+  max_turns: 5000
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 91001
+    - mode: stochastic
+      policy_seed: 91002
+  primary_outcome: number of distinct held-out game seeds reaching Zone 2
+  diagnostics:
+    - Zone 2 success by game seed and policy sample
+    - floor and zone progress
+    - action distribution by execution mode
+    - staircase discovery and conversion
+    - unique positions and unchanged/repeated-direction behavior
+    - deaths, time limits, kills, and items
+decision_rule: Adopt stochastic execution as a candidate only if one frozen checkpoint reaches Zone 2 on at least three distinct held-out game seeds and at least two game seeds reach Zone 2 under both stochastic policy seeds, with valid controller reports and no natural restart. An isolated stochastic Zone 2 result is inconclusive. If no stochastic trial reaches Zone 2, reject execution-mode mismatch as the main blocker and proceed to a predeclared environment/reward exploration intervention.
