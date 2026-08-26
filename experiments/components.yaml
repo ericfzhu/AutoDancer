@@ -39,6 +39,7 @@ blocks:
       recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
   optimization-schedule:
     versions:
+      frozen-policy: No optimizer updates; evaluate the promoted checkpoint unchanged.
       default-ppo: All trainable parameters update from the first PPO update.
       A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
   runtime:

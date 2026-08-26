@@ -36,3 +36,9 @@ experiments:
     status: inconclusive
     historical: true
     registered_at: '2026-08-26T00:00:00+00:00'
+  EXP-0007:
+    spec: experiments/EXP-0007/experiment.yaml
+    spec_sha256: d048640e183799fa45ea45cd777b06617a4dba2a9655c5e7ad586a27869ba01c
+    status: running
+    historical: false
+    registered_at: '2026-08-26T01:00:00+00:00'

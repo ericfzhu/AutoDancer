@@ -161,7 +161,7 @@ def _promote(arguments: argparse.Namespace) -> dict[str, Any]:
     return {"baseline": arguments.name, "checkpoint_sha256": sha256_file(arguments.checkpoint)}
 
 
-def _backfill(arguments: argparse.Namespace) -> dict[str, Any]:
+def _artifact_run(arguments: argparse.Namespace, *, backfilled: bool) -> dict[str, Any]:
     tracker = ExperimentTracker(
         LineageConfig(
             experiment_id=arguments.experiment_id,
@@ -176,16 +176,44 @@ def _backfill(arguments: argparse.Namespace) -> dict[str, Any]:
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
         device=arguments.device,
-        parameters={"backfilled": True, "notes": arguments.notes},
+        parameters={"backfilled": backfilled, "notes": arguments.notes},
         source_checkpoint=arguments.source_checkpoint,
     )
     outputs = [path for path in arguments.artifact if path.is_file()]
-    tracker.complete(outputs, summary={"backfilled": True})
+    tracker.complete(outputs, summary={"backfilled": backfilled})
     return {
         "run_id": tracker.run_id,
         "parent_run_id": tracker.parent_run_id,
         "artifacts": len(outputs),
     }
+
+
+def _backfill(arguments: argparse.Namespace) -> dict[str, Any]:
+    return _artifact_run(arguments, backfilled=True)
+
+
+def _attach(arguments: argparse.Namespace) -> dict[str, Any]:
+    return _artifact_run(arguments, backfilled=False)
+
+
+def _add_artifact_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--experiment-id", required=True)
+    parser.add_argument("--arm", required=True)
+    parser.add_argument("--trial", required=True)
+    parser.add_argument("--stage", choices=sorted(STAGES), required=True)
+    parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--game-dir", type=Path, required=True)
+    parser.add_argument("--mod-dir", type=Path, required=True)
+    parser.add_argument("--artifact", type=Path, action="append", default=[])
+    parser.add_argument("--source-checkpoint", type=Path)
+    parser.add_argument(
+        "--qualification-report",
+        type=Path,
+        default=Path("runs/controller-qualification/qualification.json"),
+    )
+    parser.add_argument("--tracking-uri")
+    parser.add_argument("--device", default="historical")
+    parser.add_argument("--notes", default="")
 
 
 def _ui(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -307,24 +335,14 @@ def build_parser() -> argparse.ArgumentParser:
     promote.set_defaults(handler=_promote)
 
     backfill = subparsers.add_parser("backfill", help="attach an existing run/report to MLflow")
-    backfill.add_argument("--experiment-id", required=True)
-    backfill.add_argument("--arm", required=True)
-    backfill.add_argument("--trial", required=True)
-    backfill.add_argument("--stage", choices=sorted(STAGES), required=True)
-    backfill.add_argument("--run-dir", type=Path, required=True)
-    backfill.add_argument("--game-dir", type=Path, required=True)
-    backfill.add_argument("--mod-dir", type=Path, required=True)
-    backfill.add_argument("--artifact", type=Path, action="append", default=[])
-    backfill.add_argument("--source-checkpoint", type=Path)
-    backfill.add_argument(
-        "--qualification-report",
-        type=Path,
-        default=Path("runs/controller-qualification/qualification.json"),
-    )
-    backfill.add_argument("--tracking-uri")
-    backfill.add_argument("--device", default="historical")
-    backfill.add_argument("--notes", default="")
+    _add_artifact_arguments(backfill)
     backfill.set_defaults(handler=_backfill)
+
+    attach = subparsers.add_parser(
+        "attach", help="attach a newly generated diagnostic/comparison artifact"
+    )
+    _add_artifact_arguments(attach)
+    attach.set_defaults(handler=_attach)
 
     ui = subparsers.add_parser("ui", help="serve the local MLflow UI")
     ui.add_argument("--tracking-uri")
