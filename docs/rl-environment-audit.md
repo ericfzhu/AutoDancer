@@ -202,3 +202,27 @@ credit assignment—not model capacity—is the limiting factor. Intrinsic novel
 is a later fallback because procedural worlds weaken global state-count methods;
 episode-level exploration methods are more plausible than lifetime novelty when
 every seed generates a new dungeon.
+
+## Mechanisms checked and currently sound
+
+- **Mid-chunk recurrent resets:** `episode_starts` is stored for every
+  transition, and every model implementation zeroes LSTM state immediately
+  before an episode-start step during PPO replay. Episodes ending inside a
+  32-turn chunk therefore do not leak hidden state into the reset episode.
+- **Floor map lifetime:** explicit map memory automatically clears when the
+  observed zone/floor identity changes and retains only revealed terrain plus
+  Bard's own traversal state.
+- **Potential/PPO configuration guard:** training refuses to start when the
+  reward potential's discount differs from PPO gamma. Any future gamma arm must
+  supply a matching reward specification.
+- **Asynchronous action randomness:** collection samples are keyed by training
+  seed, worker slot, frozen policy version, and fragment turn. Worker timing
+  cannot silently change which random action quantile a transition receives.
+- **Episode identity and floor observations:** the schema-10 qualification
+  verifies reset/run/seed identity and proves that the first action after a
+  level transition consumes the new floor's observation rather than the prior
+  floor state.
+- **Rich-input connectivity:** A8 representation probes show that map,
+  tactical grid, extended player, and inventory inputs all materially affect
+  the network. A8's failure is not explained by disconnected inputs, though it
+  may still reflect how those inputs are optimized or used.
