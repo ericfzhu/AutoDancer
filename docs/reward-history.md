@@ -661,6 +661,33 @@ stochastic sample streams on the same 24 unseen game seeds. It passes only with
 repeatable Zone 2 progress across multiple seeds. The wider environment audit
 and next causal interventions are recorded in `docs/rl-environment-audit.md`.
 
+### EXP-0009 partial execution result and learning-integrity correction
+
+The three completed frozen-A2 trials confirmed a large execution-mode effect
+without satisfying the Zone 2 gate. Argmax remained on Zone 1 Floor 1. Both
+turn-keyed stochastic streams reached Floor 2 on the same seeds `57004`,
+`57005`, and `57009`; policy stream `91002` also reached Floor 3 on seed
+`57019`, with one recorded stair discovery and exit. No trial reached Zone 2.
+The sequential launcher then stalled before completing the continuation/A8
+arms, so these reports are retained as partial diagnostic evidence rather than
+promoted as a complete EXP-0009 comparison.
+
+The result rejects argmax collapse as the sole progression blocker. Before any
+Reward V5 or architecture change, commit `d12b791` corrected four confounds:
+
+- client turn limits now bootstrap the real final observation and stop GAE only
+  across the reset boundary, without an abort/failure reward;
+- player damage is scored from bounded before/after health loss rather than raw
+  lethal-overkill magnitude;
+- PPO records explained variance and value/return/advantage/reward/gradient
+  scale diagnostics;
+- floor transitions are attributed to stairs, trapdoors, or unknown sources.
+
+The next training comparison must hold A2 and Reward V2 fixed so the effect of
+these corrections is measurable. Reward V2 remains the historical baseline,
+but its unbounded turn/revisit penalties remain a separately declared objective
+defect; they should not be changed in the same causal run.
+
 ## Rules for future entries
 
 Every new reward version must record:

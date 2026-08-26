@@ -53,7 +53,7 @@ experiments:
   EXP-0009:
     spec: experiments/EXP-0009/experiment.yaml
     spec_sha256: e932d78c80f22052c78683bbf81263e530778fdbce9e6b4f9b49e8a0a224da6a
-    status: running
+    status: inconclusive
     historical: false
     registered_at: '2026-08-26T13:56:44.431163+00:00'
-    updated_at: '2026-08-26T13:57:25.022522+00:00'
+    updated_at: '2026-08-26T14:49:46.3236148+00:00'

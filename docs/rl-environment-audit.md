@@ -30,15 +30,15 @@ This may explain why stochastic rollout progress exceeds deterministic progress.
 EXP-0009 therefore evaluates frozen checkpoints under both argmax and two
 turn-keyed stochastic sample streams. It changes no learned component.
 
-### 2. Time-limit truncation is treated as terminal failure
+### 2. Resolved: time-limit truncation was treated as terminal failure
 
-The live environment distinguishes `terminated` and `truncated`, but the rollout
-collector currently combines both into one `done` flag before GAE. That prevents
-value bootstrapping across a client-imposed time limit. Gymnasium's step-API
-guidance specifically distinguishes termination from truncation because most RL
-algorithms should bootstrap after a truncation. A max-turn cutoff also currently
-produces an `aborted` gameplay penalty, conflating an experiment boundary with a
-game outcome. See the [Gymnasium terminated/truncated rationale](https://farama.org/Gymnasium-Terminated-Truncated-Step-API).
+The previous collector combined `terminated` and `truncated` into one `done` flag
+before GAE, preventing value bootstrap across a client-imposed time limit. The
+2026-08-27 correction now stores true terminations and per-transition truncation
+values separately: a time limit bootstraps its real final observation but stops
+the GAE trace across reset. Client turn limits use `time_limit`, emit no failure
+event, and receive no `aborted` gameplay penalty. This follows the
+[Gymnasium terminated/truncated rationale](https://farama.org/Gymnasium-Terminated-Truncated-Step-API).
 
 ### 3. Reward V2 has unbounded negative shaping
 
@@ -137,10 +137,11 @@ behavior or held-out progression at acceptable learner cost. Research on POMDPs
 also cautions that recurrence itself does not make long histories easy to learn
 ([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
 
-### 9. Critic quality is presently unobservable, and A8 had extreme value-target shocks
+### 9. Critic diagnostics are implemented; empirical health remains unqualified
 
-Training records value loss, but not explained variance, predicted-value mean or
-spread, return-target mean or spread, or pre-normalization advantage statistics.
+Historical training recorded value loss, but not explained variance,
+predicted-value mean or spread, return-target mean or spread, or
+pre-normalization advantage statistics.
 Value loss alone is scale-dependent: a small MSE does not establish that the
 critic explains useful variation, and a large MSE does not reveal whether the
 cause is a bad predictor or a corrupted/very large target.
@@ -155,17 +156,18 @@ totals. None of the three metric streams records explained variance or target
 scale, so the current evidence cannot tell how long the critic was useful after
 those shocks.
 
-Before changing gamma, value coefficient, architecture, or return scaling, log
-explained variance plus value, return, raw-advantage, and gradient-norm
-distributions. Adaptive target normalization such as PopArt is a candidate only
-if those diagnostics demonstrate a scale problem; adding it pre-emptively would
-change another causal factor. PopArt is designed to normalize changing targets
+The 2026-08-27 learner now logs explained variance; value, return, raw-advantage,
+and reward mean/spread/maximum magnitude; and total pre-clipping gradient norm.
+The next corrected run must establish whether these remain healthy before gamma,
+value coefficient, architecture, or return scaling changes. Adaptive target
+normalization such as PopArt is a candidate only if these diagnostics demonstrate
+a scale problem. PopArt is designed to normalize changing targets
 while preserving the network's unnormalized outputs
 ([van Hasselt et al., 2016](https://arxiv.org/abs/1602.07714)).
 
-### 10. Player-damage shaping uses attack damage rather than actual health lost
+### 10. Resolved: player-damage shaping used attack damage rather than health lost
 
-The Lua bridge currently copies `ev.damage` from `objectDealDamage` directly
+The Lua bridge copies `ev.damage` from `objectDealDamage` directly
 into a `player_damage` event, and the Python reward tracker multiplies that raw
 amount by the configured per-point penalty. SYNCHRONY documents this field as
 the amount of damage dealt; it does not say that it is clamped to the victim's
@@ -179,13 +181,12 @@ damage points, despite only five or six deaths in each batch. This is impossible
 as actual health lost and proves reward contamination. It also explains the
 critic-loss spikes in the same updates.
 
-Player-damage shaping must be based on authoritative before/after health loss,
-bounded by the health available before the turn, not raw attack magnitude. The
-raw damage event can remain diagnostic metadata. Regression tests must cover
-ordinary damage, armor/suppression, healing in adjacent turns, lethal overkill,
-multiple damage events in one turn, death, and reset. Historical runs affected
-by this defect remain valid controller evidence but are not clean reward-policy
-comparisons.
+The 2026-08-27 live adapter consolidates each turn's raw player-damage events and
+replaces their reward amount with authoritative before/after health loss bounded
+by pre-turn health. Raw damage and event count remain diagnostic metadata. Tests
+cover lethal overkill and multiple events; the qualified controller already
+covers ordinary damage, death, and reset. Historical affected runs remain valid
+controller evidence but are not clean reward-policy comparisons.
 
 ### 11. The evaluation `item_pickups` metric actually counts currency pickups
 
@@ -210,15 +211,15 @@ separately. Until then, item-based promotion criteria are not trustworthy.
 
 ## Staged causal program
 
-1. **EXP-0009 — execution calibration:** frozen A2/A8 checkpoints, 24 unseen
-   seeds, argmax plus two reproducible stochastic sample streams. Pass only with
-   Zone 2 on at least three distinct seeds and two successes repeated across both
-   stochastic streams.
-2. **Environment correction if EXP-0009 fails:** preserve bootstrapping on
-   time-limit truncation, remove infrastructure/client-horizon penalties from
-   gameplay reward, score damage from actual health loss, separate item and
-   currency telemetry, and add critic target/quality diagnostics. Add regression
-   tests before retraining.
+1. **EXP-0009 — partial execution calibration:** the completed A2-frozen trials
+   reproduced Floor 2 under both sampled streams and reached Floor 3 once, but no
+   Zone 2. The launcher stalled before the remaining arms, so partial results are
+   preserved without claiming a complete checkpoint comparison.
+2. **Environment correction — mostly complete:** truncation bootstrap,
+   client-horizon reward semantics, actual-health damage, critic diagnostics, and
+   stair/trapdoor descent attribution are implemented and regression-tested.
+   Currency/equipment telemetry remains unresolved and cannot be used as a
+   promotion gate.
 3. **Objective experiment:** make floor/zone milestones dominant; eliminate
    unbounded renewable penalties; keep task reward separate from bounded shaping.
    Use potential-based guidance where a valid potential exists.

@@ -2,11 +2,11 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 14 routed · 25 resolved**._
+_Question status: **0 open · 13 routed · 26 resolved**._
 
 ## One paragraph
 
-AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. EXP-0008 showed that extending both A2 and materially active A8 to 250,880 transitions did not produce held-out progress, so adaptation horizon is rejected. EXP-0009 now isolates whether argmax evaluation is suppressing useful behavior learned by the high-entropy sampled PPO policy. The environment audit has also identified incorrect time-limit semantics and raw-overkill player-damage shaping that must be corrected before the next training comparison.
+AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. EXP-0008 showed that extending both A2 and materially active A8 to 250,880 transitions did not produce held-out progress, so adaptation horizon is rejected. EXP-0009 showed that stochastic execution reproducibly reaches Floor 2 and once reached Floor 3, while deterministic execution collapses, but it did not reach Zone 2. Time-limit bootstrapping, actual-health damage scoring, critic diagnostics, and descent-source attribution are now corrected for the next causal training comparison.
 
 ## Decisions locked
 
@@ -47,7 +47,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 6. **Gathering live experience** — Workers advance independently, but every accepted rollout belongs to one frozen policy version. _(adds C)_
 7. **Changing the weights** — Recurrent PPO replays short sequences, then publishes one new policy version. _(adds L, K)_
 8. **Keeping experiments honest** — Representation gates admit candidates; held-out gameplay decides promotion. _(adds E, D)_
-9. **From A8 horizon rejection to Zone 2** — More information and longer training did not solve progression; execution semantics are the next isolated variable. _(adds F, H, E)_
+9. **From A8 horizon rejection to Zone 2** — Stochastic execution reveals useful movement but not Zone 2; corrected learning semantics are the next isolated variable. _(adds F, H, E)_
 10. **The whole agent system** — Explore every building block, version lineage, flow, decision, and open question.
 
 ## Structures
@@ -255,7 +255,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **In one line.** Bounded learning signals point toward the sparse goal without defining success.
 
-**What it does.** A stateful tracker deduplicates and caps exploration, combat, item, and navigation credit. Task reward, shaping reward, and gameplay outcomes are recorded separately; held-out gameplay selects policies. The current player-damage path is defective because it scores raw attack damage, including lethal overkill, rather than actual health lost.
+**What it does.** A stateful tracker deduplicates and caps exploration, combat, item, and navigation credit. Task reward, shaping reward, and gameplay outcomes are recorded separately; held-out gameplay selects policies. Player damage is normalized to the authoritative before/after health loss bounded by pre-turn health; raw attack magnitude remains diagnostic metadata.
 
 **How it's built.** **Reward lineage.**
 `Legacy`: direct events proved the loop but learned passivity.
@@ -274,10 +274,10 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **Questions.**
 
-- ~~**Q-R1** Should remaining stationary receive a generic penalty?~~ ✓ Not yet: A6’s unchanged-position turns were directional inputs and may include attacks or digging. Classify outcomes first (2026-08-24).
-- **Q-R2** How should player damage be measured? → _Use authoritative before/after health loss bounded by pre-turn health; retain raw attack magnitude only as diagnostic metadata. Historical A8 batches prove raw lethal overkill can create impossible reward and critic shocks._
+- ~~**Q-R1** Should remaining stationary receive a generic penalty?~~ ✓ Not yet: unchanged-position turns can include attacks, digging, or blocked movement; outcome-specific evidence is required (2026-08-24).
+- ~~**Q-R2** How is player damage measured?~~ ✓ The live adapter now scores before/after health loss bounded by pre-turn health and retains raw attack magnitude plus event count only as diagnostics (2026-08-27).
 - **Q-R3** Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
-- **Q-R4** What is Reward V5? → _Define it only after truncation semantics, actual-health damage, event semantics, and critic observability are corrected._
+- **Q-R4** What is Reward V5? → _Define it only after corrected semantics produce critic-health and progression evidence; do not change reward and learning integrity in the same comparison._
 
 ### Collecting and changing weights
 
@@ -315,7 +315,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 `Initial recurrent PPO` used the same core defaults but synchronous collection.
 `Architecture A2` established exact 32-step LSTM replay and architecture-checked checkpoints.
 `Async runtime` preserved the algorithm while feeding versioned actor fragments.
-`Current diagnostics` record value loss and one pre-clipping gradient snapshot per representation group, but omit explained variance and value/return/advantage distributions. Two A8 updates reached value losses 183–190 alongside impossible raw-overkill damage targets, so critic health is not presently qualified. Rollout cadence remains 128×N transitions per update. Defaults: γ .99, GAE .95, clip .2, lr 3e-4, entropy .01, value .5, grad norm .5, four epochs.
+`Learning-integrity correction` distinguishes true terminations from time limits, bootstraps each truncated final observation while stopping GAE across reset, and records explained variance, value/return/raw-advantage/reward scale, and total pre-clipping gradient norm. Two historical A8 updates reached value losses 183–190 alongside impossible raw-overkill damage targets; new runs can now determine whether the corrected critic is healthy. Rollout cadence remains 128×N transitions per update. Defaults: γ .99, GAE .95, clip .2, lr 3e-4, entropy .01, value .5, grad norm .5, four epochs.
 
 **Steps in execution.**
 
@@ -328,8 +328,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **Questions.**
 
 - **Q-L1** Is one update per 1,024 steps optimal at eight workers? → _Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed._
-- **Q-L2** Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only after logging explained variance and target scale, with matching potential-shaping discount._
-- **Q-L3** Is the current critic healthy? → _Unknown: value loss alone is scale-dependent. Add explained variance, predicted-value, return-target, raw-advantage, and gradient-norm distributions before changing gamma or adding PopArt._
+- **Q-L2** Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only after reviewing the newly logged explained variance and target scale, with matching potential-shaping discount._
+- **Q-L3** Is the corrected critic healthy? → _The required diagnostics now exist, but health remains an empirical question until a corrected training run reports stable explained variance, bounded targets, and gradients._
 - ~~**Q-L4** May PPO train on a partial healthy fleet?~~ ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
 
 #### K · Checkpoints and metrics
@@ -556,15 +556,15 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - **Q-T1** (T) How much does the trained policy rely on its LSTM? → _Run hidden-state ablations and delayed-information probes on fixed seeds without changing rewards._
 - **Q-T2** (T) Does a persistent hidden state provide unlimited learnable memory? → _No. State persists during play, but 32-step truncated BPTT biases gradients toward local dependencies. Compare 32/64/128-step chunks on fixed recurrent batches before changing the recurrent architecture._
 - ~~**Q-T3**~~ (T) ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
-- ~~**Q-R1**~~ (R) ✓ Not yet: A6’s unchanged-position turns were directional inputs and may include attacks or digging. Classify outcomes first (2026-08-24).
-- **Q-R2** (R) How should player damage be measured? → _Use authoritative before/after health loss bounded by pre-turn health; retain raw attack magnitude only as diagnostic metadata. Historical A8 batches prove raw lethal overkill can create impossible reward and critic shocks._
+- ~~**Q-R1**~~ (R) ✓ Not yet: unchanged-position turns can include attacks, digging, or blocked movement; outcome-specific evidence is required (2026-08-24).
+- ~~**Q-R2**~~ (R) ✓ The live adapter now scores before/after health loss bounded by pre-turn health and retains raw attack magnitude plus event count only as diagnostics (2026-08-27).
 - **Q-R3** (R) Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
-- **Q-R4** (R) What is Reward V5? → _Define it only after truncation semantics, actual-health damage, event semantics, and critic observability are corrected._
+- **Q-R4** (R) What is Reward V5? → _Define it only after corrected semantics produce critic-health and progression evidence; do not change reward and learning integrity in the same comparison._
 - ~~**Q-C1**~~ (C) ✓ No; fragments never mix policy versions. Fast workers wait after completing their contribution (2026-08-24).
 - ~~**Q-C2**~~ (C) ✓ It removes the per-step barrier, but PPO still waits for one complete same-version fragment from every fixed-capacity slot (2026-08-24).
 - **Q-L1** (L) Is one update per 1,024 steps optimal at eight workers? → _Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed._
-- **Q-L2** (L) Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only after logging explained variance and target scale, with matching potential-shaping discount._
-- **Q-L3** (L) Is the current critic healthy? → _Unknown: value loss alone is scale-dependent. Add explained variance, predicted-value, return-target, raw-advantage, and gradient-norm distributions before changing gamma or adding PopArt._
+- **Q-L2** (L) Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only after reviewing the newly logged explained variance and target scale, with matching potential-shaping discount._
+- **Q-L3** (L) Is the corrected critic healthy? → _The required diagnostics now exist, but health remains an empirical question until a corrected training run reports stable explained variance, bounded targets, and gradients._
 - ~~**Q-L4**~~ (L) ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
 - ~~**Q-K1**~~ (K) ✓ No; exact resume rejects it. Only the named partial warm-start path may transfer compatible weights (2026-08-24).
 - ~~**Q-K2**~~ (K) ✓ runs/reward-v2-250k/final.pt, evaluated as Reward V2 Architecture A2 (2026-08-24).
