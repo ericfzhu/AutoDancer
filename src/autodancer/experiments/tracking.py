@@ -279,10 +279,16 @@ class ExperimentTracker:
         observed: dict[str, str],
         *,
         config_hashes: dict[str, str | None] | None = None,
+        require_declared: bool = False,
     ) -> None:
         expected = self.spec.components_for_arm(self.config.arm)
         for block, actual in observed.items():
             declared = expected.get(block)
+            if require_declared and declared is None:
+                raise ExperimentError(
+                    f"Run component {block}={actual} is not declared by "
+                    f"{self.config.experiment_id}/{self.config.arm}"
+                )
             allowed = declared if isinstance(declared, list) else [declared]
             if declared is not None and actual not in allowed:
                 raise ExperimentError(

@@ -149,6 +149,11 @@ def test_mlflow_parent_child_manifest_and_output_hashes(
     tracker.validate_component_versions({"architecture": "A-test"})
     with pytest.raises(ExperimentError, match="does not match"):
         tracker.validate_component_versions({"architecture": "A-other"})
+    with pytest.raises(ExperimentError, match="not declared"):
+        tracker.validate_component_versions(
+            {"training-level-distribution": "uniform-finite-pool-v1"},
+            require_declared=True,
+        )
     tracker.log_metrics({"score": 2.0, "ignored": "text"}, step=10)
     tracker.complete([output], summary={"score": 2.0})
 

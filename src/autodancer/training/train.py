@@ -408,6 +408,11 @@ def train(arguments: argparse.Namespace) -> None:
                 },
                 config_hashes={"reward": sha256_file(arguments.reward_config)},
             )
+            if training_seed_pool:
+                tracker.validate_component_versions(
+                    {"training-level-distribution": "uniform-finite-pool-v1"},
+                    require_declared=True,
+                )
         except BaseException as error:
             tracker.fail(error)
             raise
