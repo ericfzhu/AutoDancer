@@ -15,6 +15,9 @@ from autodancer.constants import (
     MAP_CHANNELS,
     MAP_SIZE,
     PLAYER_FEATURES,
+    Action,
+    GridChannel,
+    Terrain,
 )
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
@@ -161,6 +164,79 @@ def test_async_collector_publishes_each_worker_turn_live() -> None:
     assert len(updates) == 2 + (2 * 3)
     assert updates[:2] == [(0, None, None), (1, None, None)]
     assert all(action is not None and reward is not None for _, action, reward in updates[2:])
+
+
+def test_async_collector_applies_episode_local_known_wall_memory() -> None:
+    environment = AsyncEnvironment()
+
+    def wall_observation(slot: int) -> dict[str, np.ndarray]:
+        result = observation(slot)
+        result["grid"][
+            GRID_SIZE // 2,
+            GRID_SIZE // 2 + 1,
+            GridChannel.TERRAIN_CLASS,
+        ] = Terrain.WALL
+        return result
+
+    seen_actions: dict[int, list[int]] = {0: [], 1: []}
+    for slot, worker_id in enumerate(environment.worker_ids):
+        worker = environment.environments[worker_id]
+        worker.reset = (  # type: ignore[method-assign]
+            lambda *, seed, slot=slot: (
+                wall_observation(slot),
+                {"seed": seed, "episode_status": "running"},
+            )
+        )
+
+        def step(action: int, *, slot: int = slot):
+            seen_actions[slot].append(action)
+            category = "wall_attempt" if action == int(Action.RIGHT) else "move"
+            return (
+                wall_observation(slot),
+                0.0,
+                False,
+                False,
+                {
+                    "episode_status": "running",
+                    "zone": 1,
+                    "floor": 1,
+                    "action_outcome": {"category": category},
+                },
+            )
+
+        worker.step = step  # type: ignore[method-assign]
+
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+        model.actor[-1].bias[int(Action.RIGHT)] = 20.0
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=8,
+        batch_delay=0.001,
+        action_contract="known-invalid-wall-v1",
+    )
+    try:
+        rollout = collector.collect(2)
+    finally:
+        collector.close()
+    assert np.all(rollout.actions[0].numpy() == int(Action.RIGHT))
+    assert np.all(rollout.actions[1].numpy() != int(Action.RIGHT))
+    assert collector.last_runtime_metrics["wall_attempts"] == 2
+    assert collector.last_runtime_metrics["known_invalid_wall_discoveries"] == 2
+    assert collector.last_runtime_metrics["mean_masked_directions"] == 1
 
 
 def test_async_collector_bootstraps_truncation_from_terminal_observation() -> None:

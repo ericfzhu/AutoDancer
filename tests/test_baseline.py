@@ -226,6 +226,38 @@ def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns()
     assert result["max_repeated_direction_streak"] == 2
 
 
+def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 1
+    value = {"grid": grid, "player": player}
+    accumulator = EpisodeAccumulator(9, "worker-0000", "run-9")
+    accumulator.initialize(value, {"zone": 1, "floor": 1})
+    accumulator.observe(
+        value,
+        0.0,
+        {
+            "zone": 1,
+            "floor": 1,
+            "raw_events": [],
+            "action_outcome": {"category": "wall_attempt"},
+            "action_contract": {
+                "newly_learned_invalid_wall": True,
+                "masked_direction_count": 1,
+                "remembered_wall_states": 1,
+            },
+        },
+        int(Action.RIGHT),
+    )
+    summary = summarize_episodes([accumulator.finish("dead")], "checkpoint")
+    assert summary["action_outcome_counts"] == {"wall_attempt": 1}
+    assert summary["wall_attempt_rate"] == 1
+    assert summary["known_invalid_wall_discoveries"] == 1
+    assert summary["mean_masked_directions"] == 1
+    assert summary["mean_max_remembered_wall_states"] == 1
+
+
 def test_episode_diagnostics_separate_inventory_from_currency_pickups() -> None:
     grid = np.zeros((21, 21, 29), dtype=np.int16)
     player = np.zeros(21, dtype=np.int32)

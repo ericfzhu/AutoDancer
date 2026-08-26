@@ -41,6 +41,8 @@ blocks:
     versions:
       legacy-11: Earlier eleven-action masking behavior.
       current-11: Current qualified eleven-action contract.
+      known-invalid-wall-v1: Episode-local memory masks an exact directional state only after the live game authoritatively reports a wall no-op; changed structure, control state, or inventory reopens it.
+      controlled-current-vs-known-invalid-wall-v1: Frozen-checkpoint ablation between current-11 and known-invalid-wall-v1.
   algorithm:
     versions:
       recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
@@ -62,3 +64,4 @@ blocks:
       schema10-async-v1: Qualified asynchronous deterministic evaluation.
       schema10-stochastic-v1: Qualified asynchronous evaluation with timing-independent, seed-reproducible samples from the trained categorical policy alongside argmax control runs.
       deterministic-plus-turn-keyed-stochastic-v2: Corrected-metric evaluation using argmax and two reproducible sampled-policy streams with explicit descent and item/currency attribution.
+      action-outcome-contract-v3: V2 evaluation plus authoritative action-outcome counts, wall-attempt rate, learned invalid-wall signatures, and effective-mask diagnostics.

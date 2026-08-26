@@ -16,7 +16,7 @@ from torch.distributions import Categorical
 
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
-from autodancer.training.action_contract import apply_action_contract
+from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
 
@@ -199,6 +199,9 @@ class VersionedAsyncRolloutCollector:
         self.batch_delay = batch_delay
         self.telemetry_callback = telemetry_callback
         self.action_contract = action_contract
+        self.contract_memory = ActionContractMemory(
+            action_contract, environment.num_envs
+        )
         self.base_seed = int(seed)
         seed_sequence = np.random.SeedSequence(seed)
         self.rngs = [
@@ -207,7 +210,7 @@ class VersionedAsyncRolloutCollector:
         observations, infos = environment.reset(
             [self._seed(i) for i in range(environment.num_envs)]
         )
-        observations = apply_action_contract(observations, self.action_contract)
+        observations = self.contract_memory.reset_batch(observations)
         initial_hidden = model.initial_state(environment.num_envs, device=device)
         self.states = [
             ActorState(
@@ -290,6 +293,23 @@ class VersionedAsyncRolloutCollector:
             "collector_recoveries": float(recovery_total - recoveries_before),
             "collector_recoveries_total": float(recovery_total),
             "last_recovery_error": last_recovery_error,
+            "wall_attempts": float(
+                sum(fragment.metrics["wall_attempts"] for fragment in fragments)
+            ),
+            "known_invalid_wall_discoveries": float(
+                sum(
+                    fragment.metrics["known_invalid_wall_discoveries"]
+                    for fragment in fragments
+                )
+            ),
+            "mean_masked_directions": float(
+                np.mean(
+                    [
+                        fragment.metrics["masked_direction_observations"] / length
+                        for fragment in fragments
+                    ]
+                )
+            ),
             **{
                 f"collector_recovery_{name}": float(count - counts_before.get(name, 0))
                 for name, count in recovery_counts.items()
@@ -356,7 +376,7 @@ class VersionedAsyncRolloutCollector:
                 observation, info = self.environment.recover(
                     index, self._seed(index), failure=failure
                 )
-                observation = apply_action_contract(observation, self.action_contract)
+                observation = self.contract_memory.reset_slot(index, observation)
                 self.states[index] = ActorState(
                     observation,
                     info,
@@ -388,6 +408,9 @@ class VersionedAsyncRolloutCollector:
         components: dict[str, float] = {}
         inference_wait = 0.0
         environment_wait = 0.0
+        wall_attempts = 0
+        known_invalid_wall_discoveries = 0
+        masked_direction_observations = 0
         started = time.monotonic()
         for fragment_step in range(length):
             for key, value in state.observation.items():
@@ -412,8 +435,26 @@ class VersionedAsyncRolloutCollector:
             )
             inference_wait += time.monotonic() - inference_started
             environment_started = time.monotonic()
-            next_observation, reward, terminated, truncated, info = worker.step(action)
-            next_observation = apply_action_contract(next_observation, self.action_contract)
+            raw_next_observation, reward, terminated, truncated, info = worker.step(action)
+            contract_diagnostic = self.contract_memory.observe(
+                index,
+                state.observation,
+                action,
+                raw_next_observation,
+                info,
+            )
+            info["action_contract"] = contract_diagnostic
+            next_observation = self.contract_memory.apply_slot(
+                index, raw_next_observation
+            )
+            if str((info.get("action_outcome") or {}).get("category", "")) == "wall_attempt":
+                wall_attempts += 1
+            known_invalid_wall_discoveries += int(
+                bool(contract_diagnostic["newly_learned_invalid_wall"])
+            )
+            masked_direction_observations += int(
+                contract_diagnostic["masked_direction_count"]
+            )
             step_latency = time.monotonic() - environment_started
             environment_wait += step_latency
             supervisor = getattr(self.environment, "supervisor", None)
@@ -474,8 +515,8 @@ class VersionedAsyncRolloutCollector:
                     }
                 )
                 next_observation, next_info = worker.reset(seed=self._seed(index))
-                next_observation = apply_action_contract(
-                    next_observation, self.action_contract
+                next_observation = self.contract_memory.reset_slot(
+                    index, next_observation
                 )
                 state = ActorState(
                     next_observation,
@@ -507,6 +548,13 @@ class VersionedAsyncRolloutCollector:
                 "fragment_seconds": time.monotonic() - started,
                 "inference_wait_seconds": inference_wait,
                 "environment_wait_seconds": environment_wait,
+                "wall_attempts": float(wall_attempts),
+                "known_invalid_wall_discoveries": float(
+                    known_invalid_wall_discoveries
+                ),
+                "masked_direction_observations": float(
+                    masked_direction_observations
+                ),
             },
         )
 

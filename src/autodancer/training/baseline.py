@@ -28,7 +28,10 @@ from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
-from autodancer.training.action_contract import ACTION_CONTRACTS, apply_action_contract
+from autodancer.training.action_contract import (
+    ACTION_CONTRACTS,
+    ActionContractMemory,
+)
 from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
@@ -62,6 +65,10 @@ class EpisodeAccumulator:
     unchanged_direction_turns: int = 0
     repeated_direction_turns: int = 0
     special_no_effect_turns: int = 0
+    action_outcome_counts: dict[str, int] = field(default_factory=dict)
+    known_invalid_wall_discoveries: int = 0
+    masked_direction_observations: int = 0
+    max_remembered_wall_states: int = 0
     max_repeated_direction_streak: int = 0
     staircase_discoveries: int = 0
     staircase_exits: int = 0
@@ -184,6 +191,22 @@ class EpisodeAccumulator:
             self._pending_stair_turn = None
         events = list(info.get("raw_events", []))
         event_kinds = {str(event.get("kind", "")) for event in events}
+        outcome_category = str((info.get("action_outcome") or {}).get("category", ""))
+        if outcome_category:
+            self.action_outcome_counts[outcome_category] = (
+                self.action_outcome_counts.get(outcome_category, 0) + 1
+            )
+        contract = dict(info.get("action_contract") or {})
+        self.known_invalid_wall_discoveries += int(
+            bool(contract.get("newly_learned_invalid_wall", False))
+        )
+        self.masked_direction_observations += int(
+            contract.get("masked_direction_count", 0) or 0
+        )
+        self.max_remembered_wall_states = max(
+            self.max_remembered_wall_states,
+            int(contract.get("remembered_wall_states", 0) or 0),
+        )
         unchanged = position == self._last_position
         if unchanged:
             self.unchanged_position_turns += 1
@@ -274,6 +297,10 @@ class EpisodeAccumulator:
             "unchanged_direction_turns": self.unchanged_direction_turns,
             "repeated_direction_turns": self.repeated_direction_turns,
             "special_no_effect_turns": self.special_no_effect_turns,
+            "action_outcome_counts": self.action_outcome_counts,
+            "known_invalid_wall_discoveries": self.known_invalid_wall_discoveries,
+            "masked_direction_observations": self.masked_direction_observations,
+            "max_remembered_wall_states": self.max_remembered_wall_states,
             "max_repeated_direction_streak": self.max_repeated_direction_streak,
             "unique_positions": len(self._visited_positions),
             "staircase_discoveries": self.staircase_discoveries,
@@ -319,6 +346,20 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
     staircase_exits = sum(int(episode.get("staircase_exits", 0)) for episode in episodes)
     trapdoor_descents = sum(int(episode.get("trapdoor_descents", 0)) for episode in episodes)
     unknown_descents = sum(int(episode.get("unknown_descents", 0)) for episode in episodes)
+    outcome_names = sorted(
+        {
+            str(name)
+            for episode in episodes
+            for name in dict(episode.get("action_outcome_counts", {}))
+        }
+    )
+    action_outcome_counts = {
+        name: sum(
+            int(dict(episode.get("action_outcome_counts", {})).get(name, 0))
+            for episode in episodes
+        )
+        for name in outcome_names
+    }
     return {
         "policy": policy,
         "episodes": count,
@@ -380,6 +421,23 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
             int(episode.get("special_no_effect_turns", 0)) for episode in episodes
         )
         / max(total_turns, 1),
+        "action_outcome_counts": action_outcome_counts,
+        "wall_attempt_rate": action_outcome_counts.get("wall_attempt", 0)
+        / max(total_turns, 1),
+        "known_invalid_wall_discoveries": sum(
+            int(episode.get("known_invalid_wall_discoveries", 0))
+            for episode in episodes
+        ),
+        "mean_masked_directions": sum(
+            int(episode.get("masked_direction_observations", 0))
+            for episode in episodes
+        )
+        / max(total_turns, 1),
+        "mean_max_remembered_wall_states": float(
+            np.mean(
+                [episode.get("max_remembered_wall_states", 0) for episode in episodes]
+            )
+        ),
         "mean_max_repeated_direction_streak": float(
             np.mean([episode.get("max_repeated_direction_streak", 0) for episode in episodes])
         ),
@@ -477,6 +535,7 @@ def evaluate_live_policy(
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
     parking_seed = 2_000_000_000
+    contract_memory = ActionContractMemory(action_contract, environment.num_envs)
 
     for start in range(0, len(seeds), environment.num_envs):
         wave_seeds = seeds[start : start + environment.num_envs]
@@ -487,7 +546,7 @@ def evaluate_live_policy(
             reset_seeds.extend(range(parking_seed, parking_seed + padding_count))
             parking_seed += padding_count
         observation, infos = environment.reset(reset_seeds)
-        observation = apply_action_contract(observation, action_contract)
+        observation = contract_memory.reset_batch(observation)
         if dashboard_state is not None:
             dashboard_state.update_workers(environment.worker_ids, observation, infos)
         accumulators: list[EpisodeAccumulator | None] = [
@@ -530,8 +589,18 @@ def evaluate_live_policy(
                 actions, next_hidden = _model_actions(
                     model, observation, hidden, device, previous_actions, previous_rewards
                 )
-            next_observation, rewards, terminated, truncated, step_infos = environment.step(actions)
-            next_observation = apply_action_contract(next_observation, action_contract)
+            raw_next_observation, rewards, terminated, truncated, step_infos = (
+                environment.step(actions)
+            )
+            for index in range(environment.num_envs):
+                step_infos[index]["action_contract"] = contract_memory.observe(
+                    index,
+                    {key: value[index] for key, value in observation.items()},
+                    int(actions[index]),
+                    {key: value[index] for key, value in raw_next_observation.items()},
+                    step_infos[index],
+                )
+            next_observation = contract_memory.apply_batch(raw_next_observation)
             if dashboard_state is not None:
                 dashboard_state.update_workers(
                     environment.worker_ids,
@@ -569,12 +638,15 @@ def evaluate_live_policy(
                 reset_seeds = list(range(parking_seed, parking_seed + len(reset_indices)))
                 parking_seed += len(reset_indices)
                 reset_results = environment.reset_at(reset_indices, reset_seeds)
+                effective_resets = [
+                    contract_memory.reset_slot(index, result[0])
+                    for index, result in zip(reset_indices, reset_results, strict=True)
+                ]
                 replace_observation_rows(
                     next_observation,
                     reset_indices,
-                    [result[0] for result in reset_results],
+                    effective_resets,
                 )
-                next_observation = apply_action_contract(next_observation, action_contract)
                 if next_hidden is not None:
                     next_hidden = zero_hidden_rows(next_hidden, reset_indices)
             observation = next_observation
@@ -602,13 +674,14 @@ def _evaluate_model_async(
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
+    contract_memory = ActionContractMemory(action_contract, environment.num_envs)
     for start in range(0, len(seeds), environment.num_envs):
         wave_seeds = seeds[start : start + environment.num_envs]
         padding = environment.num_envs - len(wave_seeds)
         reset_seeds = [*wave_seeds, *range(parking_seed, parking_seed + padding)]
         parking_seed += padding
         observations, infos = environment.reset(reset_seeds)
-        observations = apply_action_contract(observations, action_contract)
+        observations = contract_memory.reset_batch(observations)
         scheduler = InferenceScheduler(
             model,
             device=device,
@@ -661,16 +734,19 @@ def _evaluate_model_async(
                                 else 0.0
                             ),
                         )
-                        next_observation, reward, terminated, truncated, step_info = (
+                        raw_next_observation, reward, terminated, truncated, step_info = (
                             environment.environments[worker_id].step(action)
                         )
-                        expanded = {
-                            key: value[np.newaxis, ...] for key, value in next_observation.items()
-                        }
-                        next_observation = apply_action_contract(expanded, action_contract)
-                        next_observation = {
-                            key: value[0] for key, value in next_observation.items()
-                        }
+                        step_info["action_contract"] = contract_memory.observe(
+                            index,
+                            observation,
+                            action,
+                            raw_next_observation,
+                            step_info,
+                        )
+                        next_observation = contract_memory.apply_slot(
+                            index, raw_next_observation
+                        )
                         if dashboard_state is not None:
                             dashboard_state.update_worker(
                                 index,
@@ -706,11 +782,7 @@ def _evaluate_model_async(
                     if attempts >= 3:
                         raise
                     observation, info = environment.recover(index, seed, failure=failure)
-                    observation = apply_action_contract(
-                        {key: value[np.newaxis, ...] for key, value in observation.items()},
-                        action_contract,
-                    )
-                    observation = {key: value[0] for key, value in observation.items()}
+                    observation = contract_memory.reset_slot(index, observation)
                     hidden = model.initial_state(1, device=device)
                     previous_action = START_ACTION
                     previous_reward = 0.0

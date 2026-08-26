@@ -1,0 +1,56 @@
+schema_version: 1
+id: EXP-0011
+title: Known-invalid wall action inference ablation
+question: Does episode-local memory of authoritative wall no-ops remove the measured action-efficiency collapse without suppressing combat or digging, changing the checkpoint, or changing rewards?
+hypothesis: After one wall attempt in an unchanged structural state, masking only that exact state-action signature will prevent thousands of repeated no-op turns, reduce step limits, and preserve or improve held-out floor progress.
+changed_blocks: [action-contract, evaluation]
+component_versions:
+  action-contract: controlled-current-vs-known-invalid-wall-v1
+  environment-semantics: truncation-damage-events-v2
+  learner-diagnostics: critic-health-v2
+  reward: V2
+  architecture: A2
+  observation: legacy-A2
+  controller: schema10-requalified-current-hashes
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: frozen-policy
+  runtime: async-native-pipe-v1
+  evaluation: action-outcome-contract-v3
+invariants:
+  - frozen EXP-0010 61,440-transition checkpoint
+  - Bard normal seeded All Zones
+  - exactly eight fixed-capacity workers
+  - Reward V2 and legacy A2 observations
+  - no training, curriculum, assisted start, reward change, or architecture change
+  - the authoritative live action mask remains unchanged
+arms:
+  - id: current-11
+    description: Current policy-side contract; all four directional actions remain advertised by the live bridge.
+    component_versions:
+      action-contract: current-11
+  - id: known-invalid-wall-v1
+    description: After an authoritative wall_attempt, mask that direction only for the exact unchanged floor, position, target structure, control state, and inventory signature.
+    component_versions:
+      action-contract: known-invalid-wall-v1
+checkpoint:
+  path: runs/corrected-a2-replication/training/seed-39001/checkpoint-00061440.pt
+  sha256: dbea9bf9bcd65489057524b6cac82e5d6a6fdb55e9b290b1f0e8d24b73114b38
+  global_step: 61440
+evaluation:
+  game_seeds: 61001-61024
+  max_turns: 5000
+  workers: 8
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 93001
+    - mode: stochastic
+      policy_seed: 93002
+  primary_outcome: normal-start floor and zone progress on unseen seeds
+  diagnostics:
+    - authoritative action-outcome counts and wall-attempt rate
+    - learned wall signatures and mean masked directions
+    - step limits, deaths, unchanged-position turns, and unique positions
+    - kills, item pickups, staircase discovery, and floor exits
+decision_rule: The mask passes the inference ablation only if unit and live evidence show zero suppression of productive combat or digging, its three-trial aggregate reduces wall-attempt rate by at least 75%, reduces step-limit rate, does not reduce mean floor progress, retains at least 80% of current-contract kills and item pickups, and improves action efficiency in at least two of three policy modes. Passing authorizes a separately predeclared same-seed PPO training comparison; it does not itself promote a policy.

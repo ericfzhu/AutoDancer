@@ -704,6 +704,33 @@ streams, plus valid controller and critic-health evidence. Failure earns a
 separately predeclared floor curriculum; it does not justify an architecture or
 reward change inside EXP-0010.
 
+### EXP-0010 result: healthy learning machinery, degenerating action policy
+
+All 250,880 transitions and all nine held-out reports completed with zero
+controller restarts or infrastructure events. Critic diagnostics remained
+finite and materially healthier than the contaminated historical A8 run, but
+the Zone 2 hypothesis failed. The 61,440 checkpoint was the strongest point:
+across argmax and two stochastic streams it reached Floor 2 on distinct seeds
+`60008`, `60009`, `60015`, and `60023`; `60009` repeated in all three modes.
+No checkpoint reached Floor 3 or Zone 2.
+
+Further PPO updates degraded rather than extended that competence. At 122,880
+transitions, deterministic evaluation had `75%` step limits and `84.97%`
+unchanged-position turns. The final deterministic policy reached no Floor 2,
+had `54.17%` step limits, `85.97%` unchanged-position turns, and collected no
+items. Live dashboard outcomes showed workers repeating `wall_attempt` for
+thousands of turns. EXP-0010 is therefore rejected: correcting truncation and
+event semantics was necessary for valid learning evidence, but not sufficient
+for progression.
+
+This does not motivate Reward V5. Reward V2 already penalizes each wall loop,
+yet PPO continues to waste most of its on-policy data after entering one. The
+next isolated block is the action contract: EXP-0011 tests episode-local memory
+that suppresses only a direction already proven to be a wall no-op in the exact
+unchanged structural state. Combat, combat attempts, and successful digging
+remain legal. Only after that action-efficiency ablation may a separately
+predeclared curriculum or reward experiment proceed.
+
 ## Rules for future entries
 
 Every new reward version must record:

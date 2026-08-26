@@ -215,22 +215,79 @@ mislabeled, but new item-based promotion gates are semantically distinct.
    Zone 2. The active continuation trial was mistakenly interrupted during
    process diagnosis, so partial results are preserved without claiming either
    a complete checkpoint comparison or a launcher failure.
-2. **Environment correction — complete in code:** truncation bootstrap,
+2. **Environment correction — qualified and replicated:** truncation bootstrap,
    client-horizon reward semantics, actual-health damage, critic diagnostics, and
    stair/trapdoor descent attribution, and currency/inventory telemetry are
-   implemented and regression-tested. A live preflight is still required before
-   starting the causal training comparison.
-3. **Objective experiment:** make floor/zone milestones dominant; eliminate
+   implemented, regression-tested, and exercised by EXP-0010 with zero
+   controller faults. The critic stayed finite, but progression still regressed.
+3. **Action-efficiency experiment:** EXP-0010 exposed thousands of repeated
+   authoritative `wall_attempt` outcomes. Test stateful known-invalid masking
+   before changing reward, architecture, or task distribution.
+4. **Objective experiment:** make floor/zone milestones dominant; eliminate
    unbounded renewable penalties; keep task reward separate from bounded shaping.
    Use potential-based guidance where a valid potential exists.
-4. **Exploration experiment:** only if objective correction still stalls, test
+5. **Exploration experiment:** only if objective correction still stalls, test
    one bounded episodic novelty mechanism or curriculum at a time.
-5. **Promotion:** require repeatable Zone 2 on unseen seeds, controller-valid
+6. **Promotion:** require repeatable Zone 2 on unseen seeds, controller-valid
    reports, multiple policy/training seeds, and uncertainty intervals. Do not
    select by shaped return.
 
 This order is intentionally falsifiable: each stage either explains the current
 failure or earns the right to introduce the next mechanism.
+
+## EXP-0010 evidence and newly demonstrated design flaws
+
+The corrected A2 replication completed 250,880 transitions and nine held-out
+reports without a controller recovery. It rules out the controller, false
+truncation terminals, overkill damage, and a numerically broken critic as the
+immediate explanation. The strongest checkpoint was at 61,440 transitions and
+reached Floor 2 on four distinct unseen seeds, but later updates lost that
+competence. At 122,880 transitions the deterministic policy spent `84.97%` of
+turns without changing position and timed out on `75%` of seeds. At 250,880 it
+spent `85.97%` stationary and reached no Floor 2. No report reached Floor 3 or
+Zone 2.
+
+Three environment-design problems now have direct or strong supporting
+evidence:
+
+1. **Known no-op actions remain advertised.** The live protocol correctly
+   reports all engine-legal directions, but a policy can repeatedly select a
+   wall that it has already proved it cannot dig. This consumed thousands of
+   expensive on-policy transitions. Invalid-action masking has a policy-gradient
+   justification and is empirically important when invalid choices are common
+   ([Huang and Ontañón, 2020](https://arxiv.org/abs/2006.14171)). EXP-0011 uses
+   a conservative history-based mask: the first attempt is always allowed, and
+   only the exact observed wall/position/control/inventory signature is cached.
+   Any state change reopens the action; combat and successful digging are never
+   cached.
+2. **The training-level distribution is effectively infinite before mastery.**
+   Every reset draws another procedural seed, so the critic rarely revisits the
+   same long-horizon task while rewards can still propagate backward. Procgen
+   separates finite training levels from unseen evaluation and finds that broad
+   procedural diversity is essential for eventual generalization
+   ([Cobbe et al., 2020](https://proceedings.mlr.press/v119/cobbe20a.html)).
+   Prioritized Level Replay improves sample efficiency by revisiting levels with
+   high estimated learning potential rather than sampling uniformly forever
+   ([Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)). A
+   fixed training pool with progress/TD-error prioritization is the next seed
+   policy once action efficiency is repaired; evaluation remains on unseen
+   normal starts.
+3. **The useful credit horizon is far shorter than a floor.** With `gamma=0.99`,
+   a milestone 500 turns away has a direct discount of roughly `0.0066`; with
+   GAE lambda `0.95`, long direct traces decay faster still. Bootstrapping can
+   propagate value over repeated visits, but unlimited fresh seeds weaken that
+   mechanism. Reverse start-state curricula are a principled response to sparse
+   goals, expanding starts away from a known success state as competence grows
+   ([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+
+These findings also put the 250,880-turn budget in context. NetHack, a related
+partially observed roguelike benchmark, defines staircase and other subskills
+instead of treating full-game completion as the first learnable target, and
+published implementations validate at vastly larger interaction budgets
+([NetHack Learning Environment](https://arxiv.org/abs/2006.13760)). AutoDancer
+should preserve unseen-seed end-to-end evaluation while using finite replay and
+assisted subskill starts during training; those starts must be tagged and must
+never count as normal-start success.
 
 ## Why a floor curriculum is likely necessary
 
