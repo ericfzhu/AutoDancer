@@ -8,7 +8,7 @@ export const META = {
     { k: 'Measured baseline', v: 'Reward V2 · Architecture A2' },
   ],
   intro: `_**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._`,
-  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. A8 resolved A7's gradient-starvation failure and passed every candidate curve criterion, but broad gameplay remains unrun because both A2 controls violated the predeclared zero-restart health gate.`,
+  onePara: `AutoDancer is a recurrent PPO agent that learns Bard by acting in real Crypt of the NecroDancer processes. Python owns a fixed fleet of isolated game workers, exchanges actions and complete transitions with a Lua/native named-pipe bridge, constructs player-visible observations and explicit floor memory, and batches experience for a shared actor-critic. The outer experiment loop—not shaped return—decides whether a reward or architecture version is better using deterministic gameplay on unseen seeds. A2 with Reward V2 remains the measured baseline. Qualified EXP-0007 showed that A8 uses all four rich observation groups and preserves local competence, but its 30,720-transition checkpoint did not improve broad held-out progression. EXP-0008 now tests whether that was an adaptation-horizon limitation by continuing A2 and A8 to 250,880 transitions.`,
   costModel: [
     'One environment turn is one acknowledged pipe command, one live engine turn, one schema validation, and one policy inference.',
     'One default rollout is 128 transitions per worker. At eight workers, each PPO update follows 1,024 live transitions.',
@@ -31,7 +31,8 @@ src/autodancer/
     model.py            recurrent actor-critic
     action_contract.py  versioned policy-side action masks
     representation.py   sensitivity and gradient gates
-    architecture8_compare.py  predeclared A8 decision gates
+    architecture8_compare.py  initial A8 decision gates
+    architecture8_horizon_compare.py  long-horizon A8 gates
     async_collector.py  versioned actor scheduler
     ppo.py              recurrent PPO and checkpoints
     baseline.py         deterministic evaluation
@@ -54,6 +55,8 @@ export const DECISIONS = [
   { axis: 'Architecture admission', decision: 'Before broad live training, require candidate input groups to show both controlled output sensitivity and encoder gradient reach; nonzero parameters alone are insufficient.', adr: '[Representation test](../representation-diagnostics.md)' },
   { axis: 'A8 experiment', decision: 'Compare unchanged A2 under legacy and repaired action contracts against an exact-parity A8 residual; freeze A2 for 10 updates and stop before broad gameplay unless representation and harm gates pass.', adr: '[A8 controls](../architecture8-controls.md)' },
   { axis: 'A8 curve outcome', decision: 'A8 passed representation and candidate gameplay criteria, but both A2 controls restarted once; stop before broad gameplay and retain A2 pending clean control retries.', adr: '[A8 result](../architecture8-controls.md#result)' },
+  { axis: 'Qualified A8 outcome', decision: 'EXP-0007 passed parity, representation, controller, and early-curve gates, but A8 tied both controls on broad floor progress and missed the death gate; retain A2 at the 30,720-transition screening budget.', adr: '[Experiment contract](../../../experiments/EXP-0007/experiment.yaml)' },
+  { axis: 'A8 horizon test', decision: 'EXP-0008 exactly resumes the qualified A2 and A8 states to 250,880 transitions; only repeated held-out advantage can advance A8 to multiseed confirmation.', adr: '[Experiment contract](../../../experiments/EXP-0008/experiment.yaml)' },
 ];
 
 export const GROUPS = [
@@ -188,11 +191,11 @@ export const NODES = [
   },
   {
     id: 'H', code: 'H', name: 'Architecture A8 controls', short: 'A8 CONTROLS', group: 'future', gx: 14.5, gy: 20.5, w: 3.5, d: 3, h: 68, kind: 'tall',
-    one: 'A8 learned material sensory paths and positive curves, but unhealthy controls blocked broad gameplay.',
-    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output matrix projection. Its completed curve made all four new groups material and improved final progress and survival over fixed A2. The experiment still stopped because each A2 control restarted one worker, violating the predeclared health gate.',
-    how: `<strong>Measured experiment.</strong><br><code>A2 legacy</code>: 30,720 transitions, final progress 1.0625, one training restart.<br><code>A2 fixed</code>: 30,720 transitions, final progress 1.0625, death 0.375, one training restart.<br><code>A8</code>: 30,720 transitions, final progress 1.125, death 0.3125, zero restarts.<br><code>Representation</code>: all four new groups material at warmup and final; projection norm 1.7694→2.1708.<br><code>Decision</code>: stop before broad gameplay because control health failed; retain A2 pending an infrastructure-only control retry.`,
-    steps: [['Prove parity', 'Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.'], ['Open projection', 'Freeze A2 while the full residual matrix receives the first gradients.'], ['Measure curves', 'Evaluate both controls and A8 at four fixed checkpoints.'], ['Gate representation', 'Require every new observation group to show material sensitivity and gradient reach.'], ['Integrate broadly', 'Run longer held-out gameplay only if all preceding gates pass.']],
-    cond: [{ q: 'Does A8 already replace A2?', r: 'No. It passed candidate curve criteria, but broad gameplay was not admitted because both controls violated the zero-restart requirement (2026-08-25).' }, { q: 'Did A8 solve A7’s gradient starvation?', r: 'Yes: all four new observation groups were material at both measured checkpoints, while A7 had zero material groups (2026-08-25).' }, { q: 'What is the next valid step?', r: 'Repeat only the unhealthy controls without changing architecture, reward, seeds, or thresholds; admit broad gameplay only after clean comparable controls (2026-08-25).' }],
+    one: 'A8 uses the rich inputs, but its first qualified checkpoint improved activity rather than progression.',
+    what: 'A8 preserves every A2 tensor and adds schema-9 perception through a zero-output 512×512 matrix projection. EXP-0007 proved exact initialization parity, material influence from all four new groups, clean training, and valid broad evaluation. A8 retained combat and items and reduced unchanged-position behavior, but did not discover stairs or improve floor progress at 30,720 transitions.',
+    how: `<strong>Qualified EXP-0007.</strong><br><code>A2 frozen</code>: broad progress 1.00, death 0.30, 44 kills, 37 items, unchanged position 0.913.<br><code>A2 fine-tuned</code>: progress 1.00, death 0.033, 15 kills, 14 items, unchanged position 0.984.<br><code>A8</code>: progress 1.00, death 0.20, 43 kills, 38 items, unchanged position 0.587.<br><code>Interpretation</code>: the adapter changed behavior and preserved local competence, but produced local motion rather than strategic navigation.<br><code>EXP-0008</code>: exactly resume both trainable checkpoints from 30,720 to 250,880 transitions and test for repeated held-out progress advantage.`,
+    steps: [['Prove parity', 'Load the real V2 checkpoint and require zero logits, value, recurrent-state, and action error.'], ['Open projection', 'Freeze A2 for ten updates while the full residual matrix receives the first gradients.'], ['Qualify broadly', 'Use the schema-10 controller and fresh held-out seeds to separate activity from gameplay progress.'], ['Continue exactly', 'Resume A2 and A8 model, critic, optimizer, counters, and RNG state to 250,880 transitions.'], ['Test emergence', 'Require A8 to beat continued A2 at two consecutive checkpoints including the final checkpoint.']],
+    cond: [{ q: 'Does A8 already replace A2?', r: 'No. In qualified EXP-0007 it tied both A2 controls on broad floor progress and missed the death gate at 30,720 transitions (2026-08-26).' }, { q: 'Did A8 solve A7’s gradient starvation?', r: 'Yes: all four new observation groups were material at warmup and final, with exact A2 behavior at initialization (2026-08-26).' }, { q: 'Could A8 simply need more training?', to: 'EXP-0008 resumes the exact qualified A2 and A8 states to 250,880 transitions and measures the same held-out curve at 30,720, 61,440, 122,880, and 250,880.' }],
   },
 ];
 
@@ -296,10 +299,10 @@ export const CH = [
     flow: [['K', 'E', 'candidate', { architecture: 6 }], ['E', 'W', 'unseen seeds', { count: 30 }], ['W', 'E', 'outcomes', { mean_floor_progress: 1.011 }], ['E', 'D', 'decision', { retain: 'A2' }]],
   },
   {
-    id: 'next', title: 'From A7 to controlled A8', reveal: ['F', 'H'],
-    lede: 'A7 identified gradient starvation; A8 solved it, but unhealthy controls stopped the experiment before broad gameplay.',
-    story: `<p>A8 kept A2’s exact starting behavior and made all four new input groups material. Its final curve improved progress and survival, but each A2 control restarted one worker. <mark>A8 has positive candidate evidence, not promotion evidence; broad gameplay remains unrun.</mark></p>`,
-    flow: [['P', 'F', 'exact A2 path', { error: 0 }], ['F', 'H', 'replace scalar bottleneck', { projection: '512×512' }], ['O', 'H', 'new sensory inputs', { groups: 4 }], ['H', 'L', 'frozen-base warmup', { transitions: 10240 }], ['L', 'E', 'admission evidence', { broad_only_after_pass: true }]],
+    id: 'next', title: 'From A7 to the A8 horizon test', reveal: ['F', 'H'],
+    lede: 'A8 solved gradient starvation and changed behavior, but the qualified short run did not improve progression.',
+    story: `<p>EXP-0007 proved that A8 kept A2’s exact starting behavior, learned material use of all four new input groups, and preserved local competence. Broad evaluation found much less stationary behavior but no staircase discovery or floor-progress gain. <mark>EXP-0008 tests the remaining horizon hypothesis by exactly continuing A2 and A8 to 250,880 transitions.</mark></p>`,
+    flow: [['P', 'F', 'exact A2 path', { error: 0 }], ['F', 'H', 'replace scalar bottleneck', { projection: '512×512' }], ['O', 'H', 'new sensory inputs', { groups: 4 }], ['H', 'L', 'exact continuation', { final_transitions: 250880 }], ['L', 'E', 'four-point curve', { checkpoints: 4 }]],
   },
   {
     id: 'all', title: 'The whole agent system', reveal: [],

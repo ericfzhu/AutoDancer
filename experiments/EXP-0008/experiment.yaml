@@ -1,0 +1,85 @@
+schema_version: 1
+id: EXP-0008
+title: Architecture 8 training-horizon test
+question: Does A8's rich-observation residual develop a repeatable held-out progression advantage over equally continued A2 when adaptation is extended from 30,720 to 250,880 transitions?
+hypothesis: A8 learns more slowly than its A2 base; with a longer horizon its held-out floor progress and staircase behavior will improve across checkpoints while preserving A2-level safety and local competence.
+changed_blocks: [optimization-schedule]
+component_versions:
+  reward: V2
+  architecture: [A2, A8]
+  observation: [legacy-A2, schema9-rich]
+  controller: schema10-qualified
+  action-contract: current-11
+  algorithm: recurrent-ppo-v1
+  optimization-schedule: A8-horizon-continuation
+  runtime: async-native-pipe-v1
+  evaluation: schema10-async-v1
+invariants:
+  - Bard normal seeded All Zones
+  - eight fixed-capacity workers
+  - qualified schema-10 controller and repository mod
+  - Reward V2 and the current eleven-action contract
+  - recurrent PPO hyperparameters from EXP-0007
+  - identical training seed, continuation budget, and evaluation seeds for both trainable arms
+  - no reward, observation, architecture, action, or controller changes relative to EXP-0007
+arms:
+  - id: a2-frozen
+    description: Evaluate the promoted A2/V2 source checkpoint without optimizer updates.
+    component_versions:
+      architecture: A2
+      observation: legacy-A2
+      optimization-schedule: frozen-policy
+  - id: a2-continuation
+    description: Resume EXP-0007's A2 fine-tune checkpoint at 30,720 transitions with exact optimizer and RNG state and continue to 250,880.
+    component_versions:
+      architecture: A2
+      observation: legacy-A2
+      optimization-schedule: A8-horizon-continuation
+  - id: a8-continuation
+    description: Resume EXP-0007's A8 checkpoint at 30,720 transitions with exact optimizer and RNG state and continue joint training to 250,880.
+    component_versions:
+      architecture: A8
+      observation: schema9-rich
+      optimization-schedule: A8-horizon-continuation
+training:
+  seed: 51001
+  workers: 8
+  device: cuda
+  start_step: 30720
+  final_step: 250880
+  checkpoint_steps: [30720, 61440, 122880, 250880]
+  a2_source: runs/architecture8-qualified-replication/training/a2-finetune/final.pt
+  a2_source_sha256: e29cd49f6eabf57c3b2e9a6c46661a174579e380e03c0d306c63d788fcc7744d
+  a8_source: runs/architecture8-qualified-replication/training/a8-candidate/final.pt
+  a8_source_sha256: 8c2e311cef39dd0c59c9a6c4cd4a7f4a21c88df89d13e26f862c8f821512b6e9
+  reward_config: configs/reward-v2.json
+  reward_config_sha256: 84494b038f1d6c8e144d72e84dbca7227de2881f5ab8973b384758d7aff53b12
+  controller_qualification: runs/controller-qualification/qualification.json
+  controller_qualification_sha256: 126533ab66c31b699709c6e32bfaf9099fbeb4e96b651c68f1f6d602b8572888
+  resume: exact model, critic, optimizer, global step, update count, and RNG states
+  ppo:
+    rollout_length: 128
+    sequence_length: 32
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    learning_rate: 0.0003
+    entropy_coef: 0.01
+    value_coef: 0.5
+    max_grad_norm: 0.5
+    update_epochs: 4
+    minibatch_chunks: 8
+evaluation:
+  deterministic: true
+  shaped_return_selects_policy: false
+  seeds: 56001-56016
+  max_turns: 3000
+  checkpoints: [30720, 61440, 122880, 250880]
+  metrics:
+    - mean floor progress
+    - staircase discovery and exit
+    - death and step-limit rates
+    - kills and item pickups per episode
+    - unique positions and unchanged-position rate
+  follow_up_if_passed: Three fresh training seeds and 64 new held-out seeds are a separate confirmation experiment.
+decision_rule: Advance A8 only if all reports and controller/training health are valid, the rich groups remain material, A8 beats equally continued A2 at two consecutive extended checkpoints including the final checkpoint, final A8 progress strictly beats both A2 controls, and final safety and local competence remain within the declared bounds. A final-only advantage is inconclusive and requires a predeclared replication; no final advantage retains A2 and rejects A8 under Reward V2 at this horizon.

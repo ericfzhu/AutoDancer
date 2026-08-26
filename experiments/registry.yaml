@@ -39,6 +39,14 @@ experiments:
   EXP-0007:
     spec: experiments/EXP-0007/experiment.yaml
     spec_sha256: d048640e183799fa45ea45cd777b06617a4dba2a9655c5e7ad586a27869ba01c
-    status: running
+    status: rejected
     historical: false
     registered_at: '2026-08-26T01:00:00+00:00'
+    updated_at: '2026-08-26T04:18:30.512409+00:00'
+  EXP-0008:
+    spec: experiments/EXP-0008/experiment.yaml
+    spec_sha256: 9c78f4b54f58b615790bd2da95c4d508944f85192c7d7e2e361f097d3b9d7933
+    status: running
+    historical: false
+    registered_at: '2026-08-26T04:24:23.182583+00:00'
+    updated_at: '2026-08-26T04:29:13.264986+00:00'

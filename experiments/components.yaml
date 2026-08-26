@@ -42,6 +42,7 @@ blocks:
       frozen-policy: No optimizer updates; evaluate the promoted checkpoint unchanged.
       default-ppo: All trainable parameters update from the first PPO update.
       A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
+      A8-horizon-continuation: Resume the qualified 30,720-transition A2 and A8 states and extend both to 250,880 transitions without resetting optimizer or RNG state.
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.

@@ -21,12 +21,12 @@ There is one MLflow Experiment named `AutoDancer`:
 
 ```text
 AutoDancer
-└── EXP-0007 parent: one causal question and decision rule
-    ├── arm-a / seed-51001 / training
-    ├── arm-a / seed-51001 / evaluation
-    ├── arm-a / seed-51002 / training
-    ├── control / seed-51001 / training
-    └── aggregate / heldout-01 / comparison
+└── EXP-0008 parent: one causal question and decision rule
+    ├── a2-continuation / seed-51001 / training
+    ├── a8-continuation / seed-51001 / training
+    ├── each arm / checkpoint / evaluation
+    ├── a8-continuation / representation-final / diagnostic
+    └── aggregate / horizon-comparison / comparison
 ```
 
 An experiment changes one declared block or tightly coupled intervention. An

@@ -105,3 +105,27 @@ Retry controls live under `training/control-retry-1/` and their reports under
 matching evaluation subdirectories. If either control restarts, the retry stops
 before evaluation. If both remain healthy, the corrected comparator recomputes
 the curve gate and automatically runs broad gameplay when admitted.
+
+## Qualified replication and horizon follow-up
+
+After the schema-10 controller qualification, EXP-0007 repeated the comparison
+cleanly with frozen A2, equally fine-tuned A2, and A8. All training and
+evaluation health checks passed and the broad evaluation ran on 30 fresh seeds.
+
+At 30,720 transitions A8 retained frozen-A2 competence (43 versus 44 kills and
+38 versus 37 item pickups), reduced death rate from `0.30` to `0.20`, and reduced
+unchanged-position rate from `0.913` to `0.587`. However, all three policies had
+mean progress `1.00`, remained on floor 1, and recorded zero staircase
+discoveries. A8 also missed the predeclared death bound relative to the highly
+passive fine-tuned A2 control. EXP-0007 therefore retained A2 as an
+**early-budget rejection**; it did not establish that A8 cannot improve with
+more adaptation.
+
+EXP-0008 tests that remaining horizon hypothesis without changing the reward,
+architecture, observation, controller, PPO configuration, action contract, or
+training seed. It exactly resumes both 30,720-transition trainable checkpoints
+and continues them to 250,880 transitions, with common held-out evaluation at
+30,720, 61,440, 122,880, and 250,880. A8 advances only if its progression
+advantage repeats at the last two checkpoints and satisfies the declared safety
+and competence bounds. A final-only advantage is inconclusive and must be
+replicated rather than promoted.
