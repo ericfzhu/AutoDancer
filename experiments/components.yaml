@@ -54,6 +54,11 @@ blocks:
       A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
       A8-horizon-continuation: Resume the qualified 30,720-transition A2 and A8 states and extend both to 250,880 transitions without resetting optimizer or RNG state.
       250880-transition-single-seed: Warm-start non-critic A2 weights, reset critic/optimizer/RNG, and train one full 250,880-transition causal replication.
+  training-level-distribution:
+    versions:
+      unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
+      uniform-finite-pool-v1: Each worker samples from one declared finite seed pool; independent streams and exact next-draw state are checkpointed.
+      prioritized-level-replay-v1: Planned finite-pool replay weighted by measured learning potential; not yet implemented or authorized for an experiment.
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.

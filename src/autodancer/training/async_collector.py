@@ -19,6 +19,7 @@ from autodancer.live.protocol import ProtocolError
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
+from autodancer.training.seed_schedule import TrainingSeedSchedule
 
 
 @dataclass(slots=True)
@@ -192,6 +193,8 @@ class VersionedAsyncRolloutCollector:
         telemetry_callback: Any | None = None,
         action_contract: str = "current",
         initial_policy_version: int = 0,
+        training_seed_pool: tuple[int, ...] = (),
+        seed_schedule_state: dict[str, Any] | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -203,10 +206,11 @@ class VersionedAsyncRolloutCollector:
             action_contract, environment.num_envs
         )
         self.base_seed = int(seed)
-        seed_sequence = np.random.SeedSequence(seed)
-        self.rngs = [
-            np.random.default_rng(item) for item in seed_sequence.spawn(environment.num_envs)
-        ]
+        self.seed_schedule = TrainingSeedSchedule(
+            int(seed), environment.num_envs, tuple(training_seed_pool)
+        )
+        if seed_schedule_state is not None:
+            self.seed_schedule.load_state_dict(seed_schedule_state)
         observations, infos = environment.reset(
             [self._seed(i) for i in range(environment.num_envs)]
         )
@@ -244,7 +248,10 @@ class VersionedAsyncRolloutCollector:
             self.telemetry_callback(index, observation, info, action, reward)
 
     def _seed(self, index: int) -> int:
-        return int(self.rngs[index].integers(0, 2**31))
+        return self.seed_schedule.next(index)
+
+    def seed_schedule_state(self) -> dict[str, Any]:
+        return self.seed_schedule.state_dict()
 
     def collect(self, length: int) -> RolloutBatch:
         with self._recovery_lock:

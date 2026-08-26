@@ -289,6 +289,15 @@ should preserve unseen-seed end-to-end evaluation while using finite replay and
 assisted subskill starts during training; those starts must be tagged and must
 never count as normal-start success.
 
+The opt-in `--training-seed-pool start-end` training interface now implements
+the first controlled step: uniform sampling from a declared finite pool with
+independent worker streams. The exact next-draw state is stored in checkpoints
+and restored across resume and periodic evaluation. The default remains the
+historical unbounded distribution, and no experiment uses the finite pool until
+its lineage specification declares that changed block. Uniform replay isolates
+the effect of repeated exposure; TD-error prioritization remains a later,
+separately versioned intervention rather than being bundled into the first test.
+
 ## Why a floor curriculum is likely necessary
 
 The live transition budget is extremely small relative to published hard-

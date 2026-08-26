@@ -32,6 +32,7 @@ from autodancer.training.model import (
     RecurrentActorCritic,
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
+from autodancer.training.seed_schedule import parse_training_seed_pool
 
 TelemetryCallback = Callable[
     [dict[str, np.ndarray], list[dict[str, Any]], np.ndarray | None, np.ndarray | None],
@@ -317,6 +318,19 @@ def train(arguments: argparse.Namespace) -> None:
         sequence_length=arguments.sequence_length,
     )
     reward_config = load_reward_config(arguments.reward_config)
+    training_seed_pool = (
+        ()
+        if arguments.training_seed_pool is None
+        else parse_training_seed_pool(arguments.training_seed_pool)
+    )
+    seed_checkpoint_metadata = (
+        {
+            "training_seed_schedule": "uniform-pool-v1",
+            "training_seed_pool": list(training_seed_pool),
+        }
+        if training_seed_pool
+        else {}
+    )
     if reward_config.discount != ppo_config.gamma:
         raise ValueError("Reward potential discount must match PPO gamma")
     supervisor_config = SupervisorConfig(
@@ -371,6 +385,10 @@ def train(arguments: argparse.Namespace) -> None:
                 ),
                 "reward_config_sha256": sha256_file(arguments.reward_config),
                 "action_contract": arguments.action_contract,
+                "training_seed_schedule": (
+                    "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
+                ),
+                "training_seed_pool": list(training_seed_pool),
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -447,11 +465,13 @@ def train(arguments: argparse.Namespace) -> None:
                     checkpoint_metadata={
                         "reward": reward_config.specification(),
                         "action_contract": arguments.action_contract,
+                        **seed_checkpoint_metadata,
                         "freeze_base_updates": arguments.freeze_base_updates,
                     },
                 )
+                resume_metrics: dict[str, Any] = {}
                 if arguments.resume:
-                    algorithm.load(arguments.resume)
+                    resume_metrics = algorithm.load(arguments.resume)
                 elif arguments.initialize_from:
                     algorithm.initialize_from(arguments.initialize_from)
                 elif arguments.fine_tune_from:
@@ -476,6 +496,8 @@ def train(arguments: argparse.Namespace) -> None:
                     batch_delay=arguments.inference_batch_delay_ms / 1000.0,
                     action_contract=arguments.action_contract,
                     initial_policy_version=algorithm.updates,
+                    training_seed_pool=training_seed_pool,
+                    seed_schedule_state=resume_metrics.get("training_seed_schedule_state"),
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -503,6 +525,7 @@ def train(arguments: argparse.Namespace) -> None:
                         "steps_per_second": (algorithm.global_step - process_start_step) / elapsed,
                         **update_metrics,
                         **collector.last_runtime_metrics,
+                        "training_seed_schedule_state": collector.seed_schedule_state(),
                         **episode_metrics(collector.completed_episodes),
                         **{
                             f"reward_{name}": value
@@ -532,16 +555,22 @@ def train(arguments: argparse.Namespace) -> None:
                         )
                         if dashboard_state is not None:
                             dashboard_state.set_status("training")
+                        schedule_state = collector.seed_schedule_state()
                         collector.close()
                         collector = VersionedAsyncRolloutCollector(
                             environment,
                             algorithm.model,
                             device=device,
-                            seed=arguments.seed + algorithm.global_step,
+                            seed=arguments.seed,
                             telemetry_callback=telemetry_callback,
                             batch_delay=arguments.inference_batch_delay_ms / 1000.0,
                             action_contract=arguments.action_contract,
                             initial_policy_version=algorithm.updates,
+                            training_seed_pool=training_seed_pool,
+                            seed_schedule_state=schedule_state,
+                        )
+                        metrics["training_seed_schedule_state"] = (
+                            collector.seed_schedule_state()
                         )
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
@@ -574,6 +603,12 @@ def train(arguments: argparse.Namespace) -> None:
                             "reward": reward_config.specification(),
                             "initialized_from": algorithm.checkpoint_metadata.get("initialization"),
                             "action_contract": arguments.action_contract,
+                            "training_seed_schedule": (
+                                "uniform-pool-v1"
+                                if training_seed_pool
+                                else "unbounded-random-v1"
+                            ),
+                            "training_seed_pool": list(training_seed_pool),
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
@@ -671,6 +706,10 @@ def main() -> int:
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--inference-batch-delay-ms", type=float, default=2.0)
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
+    parser.add_argument(
+        "--training-seed-pool",
+        help="finite `start-end` or comma-separated game-seed pool sampled on resets",
+    )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--reward-config",

@@ -21,6 +21,7 @@ from autodancer.constants import (
 )
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
+from autodancer.training.seed_schedule import TrainingSeedSchedule
 
 
 def observation(slot: int) -> dict[str, np.ndarray]:
@@ -100,6 +101,48 @@ class AsyncEnvironment:
     def recover(self, index: int, seed: int, *, failure=None):
         del failure
         return self.environments[self.worker_ids[index]].reset(seed=seed)
+
+
+def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    pool = (101, 102, 103)
+    first = VersionedAsyncRolloutCollector(
+        AsyncEnvironment(),
+        model,
+        device=torch.device("cpu"),
+        seed=77,
+        training_seed_pool=pool,
+    )
+    try:
+        assert {int(state.info["seed"]) for state in first.states} <= set(pool)
+        saved = first.seed_schedule_state()
+    finally:
+        first.close()
+
+    expected_schedule = TrainingSeedSchedule(77, 2, pool)
+    expected_schedule.load_state_dict(saved)
+    expected = [expected_schedule.next(0), expected_schedule.next(1)]
+    resumed = VersionedAsyncRolloutCollector(
+        AsyncEnvironment(),
+        model,
+        device=torch.device("cpu"),
+        seed=77,
+        training_seed_pool=pool,
+        seed_schedule_state=saved,
+    )
+    try:
+        assert [int(state.info["seed"]) for state in resumed.states] == expected
+    finally:
+        resumed.close()
 
 
 def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:
