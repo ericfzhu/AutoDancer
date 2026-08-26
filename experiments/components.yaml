@@ -30,6 +30,13 @@ blocks:
     versions:
       historical-live: Live bridge predating the schema-10 hard qualification.
       schema10-qualified: Launch-bound duplex pipe controller qualified for one million turns.
+      schema10-requalified-current-hashes: Schema-10 controller requalified for one million transitions with experiment startup bound to exact mod hashes.
+  environment-semantics:
+    versions:
+      truncation-damage-events-v2: Time limits bootstrap rather than terminalize, player damage uses actual health loss, and item/currency/descent events have distinct meanings.
+  learner-diagnostics:
+    versions:
+      critic-health-v2: Explained variance plus value, return, raw-advantage, reward-scale, and pre-clipping gradient diagnostics.
   action-contract:
     versions:
       legacy-11: Earlier eleven-action masking behavior.
@@ -37,12 +44,14 @@ blocks:
   algorithm:
     versions:
       recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
+      recurrent-ppo-v1-corrected-truncation: Recurrent PPO v1 with separate true termination and time-limit bootstrap values.
   optimization-schedule:
     versions:
       frozen-policy: No optimizer updates; evaluate the promoted checkpoint unchanged.
       default-ppo: All trainable parameters update from the first PPO update.
       A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
       A8-horizon-continuation: Resume the qualified 30,720-transition A2 and A8 states and extend both to 250,880 transitions without resetting optimizer or RNG state.
+      250880-transition-single-seed: Warm-start non-critic A2 weights, reset critic/optimizer/RNG, and train one full 250,880-transition causal replication.
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.
@@ -52,3 +61,4 @@ blocks:
       heldout-live-v1: Deterministic held-out live-game episodes with gameplay metrics.
       schema10-async-v1: Qualified asynchronous deterministic evaluation.
       schema10-stochastic-v1: Qualified asynchronous evaluation with timing-independent, seed-reproducible samples from the trained categorical policy alongside argmax control runs.
+      deterministic-plus-turn-keyed-stochastic-v2: Corrected-metric evaluation using argmax and two reproducible sampled-policy streams with explicit descent and item/currency attribution.

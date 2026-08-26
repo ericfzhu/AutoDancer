@@ -689,6 +689,21 @@ these corrections is measurable. Reward V2 remains the historical baseline,
 but its unbounded turn/revisit penalties remain a separately declared objective
 defect; they should not be changed in the same causal run.
 
+### EXP-0010 corrected A2 replication (predeclared)
+
+EXP-0010 holds Architecture A2, Reward V2, the observation slice, action
+contract, PPO hyperparameters, and eight-worker runtime fixed. It warm-starts
+all compatible non-critic tensors from `runs/reward-v2-250k/final.pt`, resets
+the critic and optimizer, and trains for 250,880 transitions with seed `39001`.
+This is a full-horizon causal replication rather than a short smoke pilot.
+
+Final and curve checkpoints are evaluated on unseen seeds `60001–60024` under
+argmax and policy streams `92001`/`92002`. Passing requires Zone 2 on at least
+three distinct seeds, with at least two successes repeated across both sampled
+streams, plus valid controller and critic-health evidence. Failure earns a
+separately predeclared floor curriculum; it does not justify an architecture or
+reward change inside EXP-0010.
+
 ## Rules for future entries
 
 Every new reward version must record:

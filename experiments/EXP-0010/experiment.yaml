@@ -1,0 +1,70 @@
+schema_version: 1
+id: EXP-0010
+title: Corrected learning-integrity A2 replication
+question: Do corrected truncation, damage, and event semantics produce a healthy critic and repeatable Zone 2 progress without changing Architecture A2 or Reward V2?
+hypothesis: Removing false abort terminals and lethal-overkill targets will stabilize value learning enough for the already competent stochastic A2 policy to convert exploration and Floor 2 progress into repeatable deeper progression.
+changed_blocks: [environment-semantics, learner-diagnostics]
+component_versions:
+  environment-semantics: truncation-damage-events-v2
+  learner-diagnostics: critic-health-v2
+  reward: V2
+  architecture: A2
+  observation: legacy-A2
+  controller: schema10-requalified-current-hashes
+  action-contract: current-11
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: 250880-transition-single-seed
+  runtime: async-native-pipe-v1
+  evaluation: deterministic-plus-turn-keyed-stochastic-v2
+invariants:
+  - Bard normal seeded All Zones
+  - exactly eight fixed-capacity workers
+  - fresh million-transition controller qualification bound to current mod hashes
+  - Architecture A2 and its legacy observation slice
+  - exact Reward V2 weights and gamma 0.99
+  - current 11-action contract
+  - rollout length 128, recurrent chunk length 32, four PPO epochs
+  - no curriculum, assisted start, intrinsic reward, architecture change, or reward-weight change
+arms:
+  - id: corrected-a2
+    description: Warm-start all compatible A2 policy, encoder, and recurrent weights from the promoted V2 checkpoint while resetting critic and optimizer under corrected environment semantics.
+    component_versions:
+      architecture: A2
+      reward: V2
+training:
+  source_checkpoint:
+    path: runs/reward-v2-250k/final.pt
+    sha256: 9fa39f242995555a8b9b3c9556253d0c7ab19945e9cb80292bf312388d6eda5d
+  initialization: transfer every compatible non-critic tensor; reset critic, optimizer, counters, and RNG stream
+  seed: 39001
+  transitions: 250880
+  workers: 8
+  checkpoints: [61440, 122880, 250880]
+  dashboard: true
+  reward_config: configs/reward-v2.json
+  health_diagnostics:
+    - explained variance
+    - value, return, raw advantage, and reward mean/std/max magnitude
+    - total pre-clipping gradient norm
+    - value loss and finite PPO losses
+    - worker recovery and per-slot capacity
+evaluation:
+  curve_checkpoints: [61440, 122880, 250880]
+  game_seeds: 60001-60024
+  max_turns: 5000
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 92001
+    - mode: stochastic
+      policy_seed: 92002
+  primary_outcome: distinct unseen seeds reaching Zone 2
+  diagnostics:
+    - floor and zone progress by seed and checkpoint
+    - staircase, trapdoor, and unknown descent counts
+    - staircase discovery-to-exit conversion and latency
+    - true inventory acquisitions and currency pickups
+    - death, time-limit, combat, movement, and action distribution
+    - critic quality and target scale across training
+decision_rule: Corrections alone pass only if the final checkpoint reaches Zone 2 on at least three distinct held-out seeds, at least two Zone 2 seeds repeat across both stochastic policy streams, controller reports are valid with no natural restart, all losses and diagnostics are finite, and no critic-target shock comparable to historical A8 overkill spikes occurs. If the Zone 2 gate fails, retain A2 as the historical baseline and proceed to a separately predeclared staged floor curriculum without changing architecture and reward in this experiment.

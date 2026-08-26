@@ -57,3 +57,9 @@ experiments:
     historical: false
     registered_at: '2026-08-26T13:56:44.431163+00:00'
     updated_at: '2026-08-26T14:49:46.3236148+00:00'
+  EXP-0010:
+    spec: experiments/EXP-0010/experiment.yaml
+    spec_sha256: 2d00119224264c46375923684dbc2bf7e562c0837917adad8dddee6ad58ce9fd
+    status: planned
+    historical: false
+    registered_at: '2026-08-26T15:04:34.9906291+00:00'
