@@ -372,7 +372,7 @@ class RewardTracker:
             components["player_damage"] = components.get("player_damage", 0.0) + (
                 config.player_damage * amount
             )
-        elif kind == "item_collected" and config.currency:
+        elif kind == "currency_collected" and config.currency:
             components["currency"] = components.get("currency", 0.0) + (
                 config.currency * min(amount, config.max_currency_per_turn)
             )

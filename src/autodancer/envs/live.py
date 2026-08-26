@@ -16,6 +16,7 @@ from autodancer.constants import (
     Action,
     ActorKind,
     GridChannel,
+    InventoryFeature,
     PlayerFeature,
     Terrain,
 )
@@ -174,6 +175,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             events = self._normalize_player_damage(
                 events, previous_observation, observation
             )
+            events.extend(self._inventory_pickup_events(previous_observation, observation))
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
         truncated = status == "aborted"
@@ -238,6 +240,33 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             normalized if index == first_index else event
             for index, event in enumerate(events)
             if index == first_index or index not in damage_indices
+        ]
+
+    @staticmethod
+    def _inventory_pickup_events(
+        before: dict[str, np.ndarray], after: dict[str, np.ndarray]
+    ) -> list[dict[str, Any]]:
+        def counts(observation: dict[str, np.ndarray]) -> dict[int, int]:
+            result: dict[int, int] = {}
+            for item in observation["inventory"]:
+                item_type = int(item[InventoryFeature.ITEM_TYPE])
+                if item_type == 0:
+                    continue
+                quantity = max(int(item[InventoryFeature.QUANTITY]), 1)
+                result[item_type] = result.get(item_type, 0) + quantity
+            return result
+
+        previous = counts(before)
+        current = counts(after)
+        return [
+            {
+                "kind": "item_collected",
+                "amount": quantity - previous.get(item_type, 0),
+                "entity_id": 0,
+                "data": {"item_type": item_type, "source": "inventory_delta"},
+            }
+            for item_type, quantity in sorted(current.items())
+            if quantity > previous.get(item_type, 0)
         ]
 
     def qualification_goto_level(

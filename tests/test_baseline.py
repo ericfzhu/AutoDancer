@@ -4,7 +4,15 @@ import numpy as np
 import pytest
 import torch
 
-from autodancer.constants import Action, GridChannel, PlayerFeature, Terrain
+from autodancer.constants import (
+    INVENTORY_FEATURES,
+    INVENTORY_SLOTS,
+    Action,
+    GridChannel,
+    InventoryFeature,
+    PlayerFeature,
+    Terrain,
+)
 from autodancer.training.baseline import (
     EpisodeAccumulator,
     compare_summaries,
@@ -216,3 +224,35 @@ def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns()
     assert result["unchanged_direction_turns"] == 2
     assert result["repeated_direction_turns"] == 1
     assert result["max_repeated_direction_streak"] == 2
+
+
+def test_episode_diagnostics_separate_inventory_from_currency_pickups() -> None:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 1
+    inventory = np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16)
+    inventory[0, InventoryFeature.ITEM_TYPE] = 10
+    initial = {"grid": grid, "player": player, "inventory": inventory}
+    accumulator = EpisodeAccumulator(8, "worker-0000", "run-8")
+    accumulator.initialize(initial, {"zone": 1, "floor": 1})
+
+    acquired = inventory.copy()
+    acquired[1, InventoryFeature.ITEM_TYPE] = 20
+    acquired[2, InventoryFeature.ITEM_TYPE] = 30
+    acquired[2, InventoryFeature.QUANTITY] = 2
+    accumulator.observe(
+        {"grid": grid, "player": player, "inventory": acquired},
+        0.0,
+        {
+            "zone": 1,
+            "floor": 1,
+            "raw_events": [{"kind": "currency_collected", "amount": 5}],
+        },
+        int(Action.RIGHT),
+    )
+    result = accumulator.finish("running")
+    assert result["item_pickups"] == 3
+    assert result["unique_item_types"] == 2
+    assert result["currency_pickups"] == 1
+    assert result["currency_value"] == 5

@@ -112,6 +112,26 @@ def test_progress_inventory_and_terminal_rewards_dominate_shaping() -> None:
     assert victory_reward == pytest.approx(50.0)
 
 
+def test_currency_reward_consumes_currency_event_not_item_event() -> None:
+    tracker = RewardTracker(
+        RewardConfig(currency=0.1, new_position=0, new_tile=0, stair_potential_max=0)
+    )
+    value = observation()
+    tracker.reset(value, {"zone": 1, "floor": 1})
+    reward, parts = tracker.score(
+        value,
+        {"zone": 1, "floor": 1, "episode_status": "running"},
+        [
+            {"kind": "currency_collected", "amount": 3},
+            {"kind": "item_collected", "amount": 99},
+        ],
+        terminated=False,
+        truncated=False,
+    )
+    assert reward == pytest.approx(0.3)
+    assert parts == {"currency": pytest.approx(0.3)}
+
+
 def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
     path = tmp_path / "reward.json"
     path.write_text('{"turn": -0.01, "survival": 9}', encoding="utf-8")

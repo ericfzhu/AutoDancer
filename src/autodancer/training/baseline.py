@@ -15,7 +15,14 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from autodancer.constants import ACTION_COUNT, Action, GridChannel, PlayerFeature, Terrain
+from autodancer.constants import (
+    ACTION_COUNT,
+    Action,
+    GridChannel,
+    InventoryFeature,
+    PlayerFeature,
+    Terrain,
+)
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
@@ -40,7 +47,8 @@ class EpisodeAccumulator:
     max_gold: int = 0
     enemy_kills: int = 0
     item_pickups: int = 0
-    item_value: int = 0
+    currency_pickups: int = 0
+    currency_value: int = 0
     enemy_damage: int = 0
     player_damage: int = 0
     extrinsic_return: float = 0.0
@@ -68,6 +76,9 @@ class EpisodeAccumulator:
     _floor: tuple[int, int] = (0, 0)
     _stairs_seen_on_floor: bool = False
     _pending_stair_turn: int | None = None
+    _inventory_quantities: dict[int, int] = field(default_factory=dict)
+    _seen_item_types: set[int] = field(default_factory=set)
+    _collected_item_types: set[int] = field(default_factory=set)
 
     @staticmethod
     def _position(
@@ -93,11 +104,27 @@ class EpisodeAccumulator:
             )
         )
 
+    @staticmethod
+    def _inventory_counts(observation: dict[str, np.ndarray]) -> dict[int, int]:
+        counts: dict[int, int] = {}
+        inventory = observation.get("inventory")
+        if inventory is None:
+            return counts
+        for item in inventory:
+            item_type = int(item[InventoryFeature.ITEM_TYPE])
+            if item_type == 0:
+                continue
+            quantity = max(int(item[InventoryFeature.QUANTITY]), 1)
+            counts[item_type] = counts.get(item_type, 0) + quantity
+        return counts
+
     def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
         position = self._position(observation, info)
         self._last_position = position
         self._floor = position[:2]
         self._visited_positions.add(position)
+        self._inventory_quantities = self._inventory_counts(observation)
+        self._seen_item_types = set(self._inventory_quantities)
         if self._has_visible_stairs(observation):
             self._stairs_seen_on_floor = True
             self.staircase_discoveries = 1
@@ -120,6 +147,14 @@ class EpisodeAccumulator:
             self.max_gold,
             int(observation["player"][PlayerFeature.GOLD]),
         )
+        inventory = self._inventory_counts(observation)
+        self.item_pickups += sum(
+            max(quantity - self._inventory_quantities.get(item_type, 0), 0)
+            for item_type, quantity in inventory.items()
+        )
+        self._collected_item_types.update(set(inventory) - self._seen_item_types)
+        self._seen_item_types.update(inventory)
+        self._inventory_quantities = inventory
         if 0 <= action < ACTION_COUNT:
             self.action_counts[action] += 1
         position = self._position(observation, info)
@@ -200,9 +235,9 @@ class EpisodeAccumulator:
             amount = int(event.get("amount", 0) or 0)
             if kind == "enemy_kill":
                 self.enemy_kills += max(amount, 1)
-            elif kind == "item_collected":
-                self.item_pickups += 1
-                self.item_value += amount
+            elif kind == "currency_collected":
+                self.currency_pickups += 1
+                self.currency_value += amount
             elif kind == "enemy_damage":
                 self.enemy_damage += amount
             elif kind == "player_damage":
@@ -222,7 +257,9 @@ class EpisodeAccumulator:
             "max_gold": self.max_gold,
             "enemy_kills": self.enemy_kills,
             "item_pickups": self.item_pickups,
-            "item_value": self.item_value,
+            "unique_item_types": len(self._collected_item_types),
+            "currency_pickups": self.currency_pickups,
+            "currency_value": self.currency_value,
             "enemy_damage": self.enemy_damage,
             "player_damage": self.player_damage,
             "action_counts": self.action_counts,
@@ -303,6 +340,15 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
+        "unique_item_types": sum(
+            int(episode.get("unique_item_types", 0)) for episode in episodes
+        ),
+        "currency_pickups": sum(
+            int(episode.get("currency_pickups", 0)) for episode in episodes
+        ),
+        "currency_value": sum(
+            int(episode.get("currency_value", 0)) for episode in episodes
+        ),
         "enemy_damage": sum(int(episode["enemy_damage"]) for episode in episodes),
         "player_damage": sum(int(episode["player_damage"]) for episode in episodes),
         "action_counts": action_counts,

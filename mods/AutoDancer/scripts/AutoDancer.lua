@@ -815,7 +815,7 @@ event.objectCurrency.add("captureAutoDancerCurrencyPickup", {
     sequence = 100,
 }, function(ev)
     if isLocalPlayer(ev.entity) and ev.item and (ev.difference or 0) > 0 then
-        queueEvent("item_collected", ev.difference, ev.item)
+        queueEvent("currency_collected", ev.difference, ev.item)
     end
 end)
 

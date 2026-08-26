@@ -13,6 +13,7 @@ from autodancer.constants import (
     PLAYER_FEATURES,
     Action,
     GridChannel,
+    InventoryFeature,
     PlayerFeature,
     Terrain,
 )
@@ -232,6 +233,30 @@ def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> N
     assert damage_events[0]["data"] == {"raw_damage": 1001, "event_count": 2}
     assert info["reward_components"]["player_damage"] == pytest.approx(-0.6)
     assert reward == pytest.approx(-0.6)
+
+
+def test_live_environment_derives_item_pickups_from_inventory_delta() -> None:
+    reset_record = record(0, "reset")
+    reset_record["observation"]["inventory"][0][InventoryFeature.ITEM_TYPE] = 10
+    turn_record = record(1, "turn", requested_action=Action.UP)
+    turn_record["observation"]["inventory"][0][InventoryFeature.ITEM_TYPE] = 10
+    turn_record["observation"]["inventory"][1][InventoryFeature.ITEM_TYPE] = 20
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource([reset_record, turn_record]),
+        bridge=FakeBridge(),
+    )
+    environment.reset(seed=7)
+    _, _, _, _, info = environment.step(Action.UP)
+    assert [
+        event for event in info["raw_events"] if event.get("kind") == "item_collected"
+    ] == [
+        {
+            "kind": "item_collected",
+            "amount": 1,
+            "entity_id": 0,
+            "data": {"item_type": 20, "source": "inventory_delta"},
+        }
+    ]
 
 
 def test_terminal_record_may_mask_every_action() -> None:
