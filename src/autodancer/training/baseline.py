@@ -68,6 +68,9 @@ class EpisodeAccumulator:
     action_outcome_counts: dict[str, int] = field(default_factory=dict)
     known_invalid_wall_discoveries: int = 0
     masked_direction_observations: int = 0
+    effective_masked_direction_observations: int = 0
+    navigation_prior_turns: int = 0
+    navigation_masked_direction_observations: int = 0
     max_remembered_wall_states: int = 0
     max_repeated_direction_streak: int = 0
     staircase_discoveries: int = 0
@@ -203,6 +206,15 @@ class EpisodeAccumulator:
         self.masked_direction_observations += int(
             contract.get("masked_direction_count", 0) or 0
         )
+        self.effective_masked_direction_observations += int(
+            contract.get("effective_masked_direction_count", 0) or 0
+        )
+        self.navigation_prior_turns += int(
+            bool(contract.get("navigation_prior_active", False))
+        )
+        self.navigation_masked_direction_observations += len(
+            contract.get("navigation_masked_directions", []) or []
+        )
         self.max_remembered_wall_states = max(
             self.max_remembered_wall_states,
             int(contract.get("remembered_wall_states", 0) or 0),
@@ -300,6 +312,13 @@ class EpisodeAccumulator:
             "action_outcome_counts": self.action_outcome_counts,
             "known_invalid_wall_discoveries": self.known_invalid_wall_discoveries,
             "masked_direction_observations": self.masked_direction_observations,
+            "effective_masked_direction_observations": (
+                self.effective_masked_direction_observations
+            ),
+            "navigation_prior_turns": self.navigation_prior_turns,
+            "navigation_masked_direction_observations": (
+                self.navigation_masked_direction_observations
+            ),
             "max_remembered_wall_states": self.max_remembered_wall_states,
             "max_repeated_direction_streak": self.max_repeated_direction_streak,
             "unique_positions": len(self._visited_positions),
@@ -430,6 +449,20 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         ),
         "mean_masked_directions": sum(
             int(episode.get("masked_direction_observations", 0))
+            for episode in episodes
+        )
+        / max(total_turns, 1),
+        "mean_effective_masked_directions": sum(
+            int(episode.get("effective_masked_direction_observations", 0))
+            for episode in episodes
+        )
+        / max(total_turns, 1),
+        "navigation_prior_rate": sum(
+            int(episode.get("navigation_prior_turns", 0)) for episode in episodes
+        )
+        / max(total_turns, 1),
+        "mean_navigation_masked_directions": sum(
+            int(episode.get("navigation_masked_direction_observations", 0))
             for episode in episodes
         )
         / max(total_turns, 1),

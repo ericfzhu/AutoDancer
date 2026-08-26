@@ -317,6 +317,23 @@ class VersionedAsyncRolloutCollector:
                     ]
                 )
             ),
+            "mean_effective_masked_directions": float(
+                np.mean(
+                    [
+                        fragment.metrics["effective_masked_direction_observations"]
+                        / length
+                        for fragment in fragments
+                    ]
+                )
+            ),
+            "navigation_prior_rate": float(
+                np.mean(
+                    [
+                        fragment.metrics["navigation_prior_turns"] / length
+                        for fragment in fragments
+                    ]
+                )
+            ),
             **{
                 f"collector_recovery_{name}": float(count - counts_before.get(name, 0))
                 for name, count in recovery_counts.items()
@@ -418,6 +435,8 @@ class VersionedAsyncRolloutCollector:
         wall_attempts = 0
         known_invalid_wall_discoveries = 0
         masked_direction_observations = 0
+        effective_masked_direction_observations = 0
+        navigation_prior_turns = 0
         started = time.monotonic()
         for fragment_step in range(length):
             for key, value in state.observation.items():
@@ -461,6 +480,12 @@ class VersionedAsyncRolloutCollector:
             )
             masked_direction_observations += int(
                 contract_diagnostic["masked_direction_count"]
+            )
+            effective_masked_direction_observations += int(
+                contract_diagnostic["effective_masked_direction_count"]
+            )
+            navigation_prior_turns += int(
+                bool(contract_diagnostic["navigation_prior_active"])
             )
             step_latency = time.monotonic() - environment_started
             environment_wait += step_latency
@@ -562,6 +587,10 @@ class VersionedAsyncRolloutCollector:
                 "masked_direction_observations": float(
                     masked_direction_observations
                 ),
+                "effective_masked_direction_observations": float(
+                    effective_masked_direction_observations
+                ),
+                "navigation_prior_turns": float(navigation_prior_turns),
             },
         )
 

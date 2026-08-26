@@ -280,6 +280,8 @@ def test_async_collector_applies_episode_local_known_wall_memory() -> None:
     assert collector.last_runtime_metrics["wall_attempts"] == 2
     assert collector.last_runtime_metrics["known_invalid_wall_discoveries"] == 2
     assert collector.last_runtime_metrics["mean_masked_directions"] == 1
+    assert collector.last_runtime_metrics["mean_effective_masked_directions"] == 1
+    assert collector.last_runtime_metrics["navigation_prior_rate"] == 0
 
 
 def test_async_collector_bootstraps_truncation_from_terminal_observation() -> None:

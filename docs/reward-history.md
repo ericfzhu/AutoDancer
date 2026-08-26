@@ -731,6 +731,21 @@ unchanged structural state. Combat, combat attempts, and successful digging
 remain legal. Only after that action-efficiency ablation may a separately
 predeclared curriculum or reward experiment proceed.
 
+### EXP-0011 result: reward was not the wall-loop bottleneck
+
+The frozen action-contract ablation held Reward V2 fixed and completed six
+controller-valid 24-seed reports. Exact-state wall memory reduced wall attempts
+by `96.65%` and retained kills and item pickups, proving that Reward V2's
+existing negative loop signal was not enough to prevent the policy from wasting
+live experience on actions it already knew were ineffective.
+
+This did not improve the task outcome: step-limit rate was unchanged at
+`13.89%`, mean floor progress fell slightly, and no run exceeded Zone 1 Floor 2.
+The frozen policy substituted valid movement cycles for wall loops. EXP-0011 is
+therefore rejected without introducing Reward V5. The next experiment changes
+navigation information/action selection while keeping Reward V2 fixed; reward
+shaping resumes only if that isolated navigation intervention fails.
+
 ## Rules for future entries
 
 Every new reward version must record:

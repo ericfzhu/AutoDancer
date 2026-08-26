@@ -235,6 +235,34 @@ mislabeled, but new item-based promotion gates are semantically distinct.
 This order is intentionally falsifiable: each stage either explains the current
 failure or earns the right to introduce the next mechanism.
 
+## EXP-0011 result: invalid actions fixed, valid navigation cycles remain
+
+All six 24-seed reports completed without controller faults. The exact-state
+wall memory reduced aggregate wall attempts from `30,373 / 66,644` turns
+(`45.57%`) to `1,047 / 68,503` (`1.53%`), a `96.65%` reduction. It improved
+action efficiency in all three policy modes, retained `243 / 232` kills and
+`29 / 30` item pickups, and proved that combat and digging remained available.
+
+The intervention nevertheless failed its predeclared zero-shot deployment
+gate. Step limits remained exactly `10 / 72`, aggregate mean floor progress
+fell from `1.0694` to `1.0556`, and neither arm exceeded Zone 1 Floor 2. The
+deterministic traces make the remaining defect concrete: after a wall direction
+was suppressed, A2 often selected a sequence of valid moves among only a few
+positions, or an ambiguous unchanged-direction action, until the same 5,000-
+turn cap. Invalid-action masking therefore repairs wasted actions but does not
+supply a navigation objective or persistent traversal state to a frozen policy.
+
+EXP-0011 is rejected for promotion and `current-11` remains the frozen-policy
+contract. The next isolated diagnostic targets the newly demonstrated valid-
+cycle problem using the already available human-equivalent floor memory. A
+map-guided navigation prior must disengage during combat, leave successful
+digging and interactions available, prefer known stairs once discovered, and
+otherwise choose among least-visited reachable frontiers. This is explicitly a
+hybrid planning/action-prior experiment, not an invalid-action claim or a reward
+change. If it cannot improve unseen-seed floor progress, proceed to the declared
+finite seed distribution or floor curriculum rather than adding stronger
+heuristic masking post hoc.
+
 ## EXP-0010 evidence and newly demonstrated design flaws
 
 The corrected A2 replication completed 250,880 transitions and nine held-out

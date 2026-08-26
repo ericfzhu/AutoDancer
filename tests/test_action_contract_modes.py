@@ -8,10 +8,13 @@ from autodancer.constants import (
     GRID_SIZE,
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
+    MAP_CHANNELS,
+    MAP_SIZE,
     PLAYER_FEATURES,
     Action,
     ActorKind,
     GridChannel,
+    MapChannel,
     PlayerFeature,
     Terrain,
 )
@@ -28,6 +31,7 @@ def _observation(*, x: int = 4, y: int = 7) -> dict[str, np.ndarray]:
     player[PlayerFeature.Y] = y
     return {
         "grid": grid,
+        "map_memory": np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16),
         "player": player,
         "inventory": np.zeros(
             (INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16
@@ -134,3 +138,92 @@ def test_known_invalid_wall_memory_is_slot_local_and_clears_on_reset() -> None:
     assert effective["action_mask"][0, Action.RIGHT] == 0
     assert effective["action_mask"][1, Action.RIGHT] == 1
     assert memory.reset_slot(0, live)["action_mask"][Action.RIGHT] == 1
+
+
+def test_map_navigation_prior_selects_least_visited_direction_and_masks_wait() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v1", 1)
+    live = _observation()
+    centre = MAP_SIZE // 2
+    visits = {
+        Action.UP: 0,
+        Action.RIGHT: 2,
+        Action.DOWN: 3,
+        Action.LEFT: 4,
+    }
+    for action, count in visits.items():
+        dx, dy = {
+            Action.UP: (0, -1),
+            Action.RIGHT: (1, 0),
+            Action.DOWN: (0, 1),
+            Action.LEFT: (-1, 0),
+        }[action]
+        live["map_memory"][centre + dy, centre + dx, MapChannel.TERRAIN_CLASS] = (
+            Terrain.FLOOR
+        )
+        live["map_memory"][centre + dy, centre + dx, MapChannel.VISIT_COUNT] = count
+
+    effective = memory.reset_slot(0, live)
+
+    assert effective["action_mask"][Action.UP] == 1
+    assert np.all(
+        effective["action_mask"][[Action.RIGHT, Action.DOWN, Action.LEFT, Action.WAIT]]
+        == 0
+    )
+
+
+def test_map_navigation_prior_disengages_when_enemy_is_visible() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v1", 1)
+    live = _observation()
+    live["player"][PlayerFeature.VISIBLE_ENEMIES] = 1
+
+    effective = memory.reset_slot(0, live)
+
+    assert np.all(effective["action_mask"] == live["action_mask"])
+
+
+def test_map_navigation_prior_routes_toward_known_stairs() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v1", 1)
+    live = _observation()
+    centre = MAP_SIZE // 2
+    live["map_memory"][..., MapChannel.TERRAIN_CLASS] = Terrain.FLOOR
+    live["map_memory"][centre, centre + 2, MapChannel.TERRAIN_CLASS] = Terrain.STAIRS
+
+    effective = memory.reset_slot(0, live)
+
+    assert effective["action_mask"][Action.RIGHT] == 1
+    assert np.all(
+        effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]]
+        == 0
+    )
+
+
+def test_map_navigation_prior_never_suppresses_possible_dig() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v1", 1)
+    live = _observation()
+    centre = GRID_SIZE // 2
+    live["grid"][centre, centre + 1, GridChannel.TERRAIN_CLASS] = Terrain.WALL
+
+    effective = memory.reset_slot(0, live)
+
+    assert effective["action_mask"][Action.RIGHT] == 1
+    assert effective["action_mask"][Action.UP] == 1
+
+
+def test_map_navigation_prior_applies_independently_to_batched_slots() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v1", 2)
+    first = _observation()
+    second = _observation()
+    centre = MAP_SIZE // 2
+    first["map_memory"][centre, centre + 1, MapChannel.VISIT_COUNT] = 3
+    second["map_memory"][centre - 1, centre, MapChannel.VISIT_COUNT] = 3
+    batch = {
+        key: np.stack([first[key], second[key]])
+        for key in first
+    }
+
+    effective = memory.reset_batch(batch)
+
+    assert effective["action_mask"][0, Action.RIGHT] == 0
+    assert effective["action_mask"][1, Action.UP] == 0
+    assert effective["action_mask"][0, Action.UP] == 1
+    assert effective["action_mask"][1, Action.RIGHT] == 1

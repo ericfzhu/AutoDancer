@@ -245,7 +245,10 @@ def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
             "action_contract": {
                 "newly_learned_invalid_wall": True,
                 "masked_direction_count": 1,
+                "effective_masked_direction_count": 3,
                 "remembered_wall_states": 1,
+                "navigation_prior_active": True,
+                "navigation_masked_directions": [1, 2],
             },
         },
         int(Action.RIGHT),
@@ -255,6 +258,9 @@ def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
     assert summary["wall_attempt_rate"] == 1
     assert summary["known_invalid_wall_discoveries"] == 1
     assert summary["mean_masked_directions"] == 1
+    assert summary["mean_effective_masked_directions"] == 3
+    assert summary["navigation_prior_rate"] == 1
+    assert summary["mean_navigation_masked_directions"] == 2
     assert summary["mean_max_remembered_wall_states"] == 1
 
 

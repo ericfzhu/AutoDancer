@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0011",
+  "decided_at": "2026-08-26T23:20:00+00:00",
+  "outcome": "rejected",
+  "selected_arm": "current-11",
+  "summary": "Known-invalid wall memory was a correct and highly effective action-efficiency intervention, reducing aggregate wall-attempt rate by 96.65% while retaining 104.7% of kills and 96.7% of item pickups. It nevertheless failed the predeclared zero-shot deployment gate: aggregate mean floor progress fell from 1.0694 to 1.0556 and the step-limit rate remained 13.89%. No trial exceeded Zone 1 Floor 2. Deterministic traces show that the frozen A2 policy replaced repeated wall selections with short valid movement and unchanged-direction cycles. Retain current-11 for the promoted frozen checkpoint; treat persistent navigation state and valid-cycle handling as the next isolated defect rather than claiming that invalid-action masking alone solves progression.",
+  "evidence": [
+    "runs\\known-invalid-wall-ablation\\comparison.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\current-11-deterministic\\report.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\current-11-stochastic-93001\\report.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\current-11-stochastic-93002\\report.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\known-invalid-wall-v1-deterministic\\report.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\known-invalid-wall-v1-stochastic-93001\\report.json",
+    "runs\\known-invalid-wall-ablation\\evaluation\\known-invalid-wall-v1-stochastic-93002\\report.json"
+  ],
+  "mlflow_run_ids": []
+}

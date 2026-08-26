@@ -43,6 +43,8 @@ blocks:
       current-11: Current qualified eleven-action contract.
       known-invalid-wall-v1: Episode-local memory masks an exact directional state only after the live game authoritatively reports a wall no-op; changed structure, control state, or inventory reopens it.
       controlled-current-vs-known-invalid-wall-v1: Frozen-checkpoint ablation between current-11 and known-invalid-wall-v1.
+      map-navigation-prior-v1: Outside combat, combine exact wall memory with the persistent floor map to route toward known stairs or prefer least-visited adjacent directions; combat and available special actions remain policy-controlled.
+      controlled-current-vs-map-navigation-prior-v1: Frozen-checkpoint ablation between current-11 and the hybrid human-equivalent map navigation prior.
   algorithm:
     versions:
       recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
@@ -70,3 +72,4 @@ blocks:
       schema10-stochastic-v1: Qualified asynchronous evaluation with timing-independent, seed-reproducible samples from the trained categorical policy alongside argmax control runs.
       deterministic-plus-turn-keyed-stochastic-v2: Corrected-metric evaluation using argmax and two reproducible sampled-policy streams with explicit descent and item/currency attribution.
       action-outcome-contract-v3: V2 evaluation plus authoritative action-outcome counts, wall-attempt rate, learned invalid-wall signatures, and effective-mask diagnostics.
+      map-navigation-contract-v4: Action-outcome evaluation plus navigation-prior activation, effective directional masking, staircase conversion, traversal diversity, and valid-cycle diagnostics.

@@ -1,0 +1,58 @@
+schema_version: 1
+id: EXP-0012
+title: Human-equivalent map navigation prior ablation
+question: Does a combat-gated navigation prior using the already available persistent floor memory convert valid traversal cycles into repeatable floor progress without changing the checkpoint or rewards?
+hypothesis: Outside combat, routing toward known stairs and preferring least-visited adjacent directions will reduce valid movement cycles and step limits while preserving A2's local combat competence.
+changed_blocks: [action-contract, evaluation]
+component_versions:
+  action-contract: controlled-current-vs-map-navigation-prior-v1
+  environment-semantics: truncation-damage-events-v2
+  learner-diagnostics: critic-health-v2
+  reward: V2
+  architecture: A2
+  observation: legacy-A2
+  controller: schema10-requalified-current-hashes
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: frozen-policy
+  training-level-distribution: unbounded-random-v1
+  runtime: async-native-pipe-v1
+  evaluation: map-navigation-contract-v4
+invariants:
+  - frozen EXP-0010 61,440-transition checkpoint
+  - Bard normal seeded All Zones
+  - exactly eight fixed-capacity workers
+  - Reward V2 and no optimizer updates
+  - identical unseen game seeds and policy samples across arms
+  - map prior disengages whenever an enemy is visible
+  - combat, digging, and available special actions remain policy-controlled
+arms:
+  - id: current-11
+    description: Current qualified action contract with no navigation prior.
+    component_versions:
+      action-contract: current-11
+  - id: map-navigation-prior-v1
+    description: Exact wall memory plus combat-gated routing to known stairs or least-visited adjacent directions using persistent floor memory.
+    component_versions:
+      action-contract: map-navigation-prior-v1
+checkpoint:
+  path: runs/corrected-a2-replication/training/seed-39001/checkpoint-00061440.pt
+  sha256: dbea9bf9bcd65489057524b6cac82e5d6a6fdb55e9b290b1f0e8d24b73114b38
+  global_step: 61440
+evaluation:
+  game_seeds: 62001-62024
+  max_turns: 5000
+  workers: 8
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 94001
+    - mode: stochastic
+      policy_seed: 94002
+  primary_outcome: normal-start floor and zone progress on unseen seeds
+  diagnostics:
+    - navigation-prior activation and effective directional masking
+    - step limits, valid movement cycles, unchanged-position turns, and unique positions
+    - staircase discovery, discovery-to-exit conversion, and exit latency
+    - kills, item pickups, damage, deaths, and action-outcome counts
+decision_rule: The map prior passes only if all reports are controller-valid, aggregate mean floor progress improves, step-limit rate is at most half the current contract, kills and item pickups each remain at least 80% of control, progress improves in at least two of three policy modes, and tests plus live outcomes show no combat or successful-dig suppression. Passing authorizes a separately declared training comparison. Zone 2 promotion still requires at least three distinct unseen seeds and at least two repeated successes across the two stochastic samples.
