@@ -271,9 +271,7 @@ def evaluate_policy(
     episodes = _evaluate_deterministic_async(
         environment,
         model,
-        seeds=rng.integers(
-            0, 2**31, size=environment.num_envs, dtype=np.int64
-        ).tolist(),
+        seeds=rng.integers(0, 2**31, size=environment.num_envs, dtype=np.int64).tolist(),
         max_steps=steps,
         device=device,
         dashboard_state=None,
@@ -314,6 +312,64 @@ def train(arguments: argparse.Namespace) -> None:
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
+    tracker: Any | None = None
+    experiment_id = getattr(arguments, "experiment_id", None)
+    if experiment_id is not None:
+        from autodancer.experiments.provenance import sha256_file
+        from autodancer.experiments.tracking import ExperimentTracker, LineageConfig
+
+        source_checkpoint = (
+            arguments.resume or arguments.initialize_from or arguments.fine_tune_from
+        )
+        tracker = ExperimentTracker(
+            LineageConfig(
+                experiment_id=experiment_id,
+                arm=arguments.experiment_arm,
+                trial=arguments.trial_id or f"seed-{arguments.seed}",
+                stage="training",
+                run_dir=arguments.run_dir,
+                store_root=arguments.experiment_root,
+                tracking_uri=arguments.mlflow_tracking_uri,
+                qualification_report=arguments.controller_qualification,
+            ),
+            game_dir=arguments.game_dir,
+            mod_dir=arguments.mod_dir,
+            device=str(device),
+            parameters={
+                "seed": arguments.seed,
+                "total_steps": arguments.total_steps,
+                "num_instances": arguments.num_instances,
+                "architecture": arguments.architecture,
+                "ppo": asdict(ppo_config),
+                "reward": reward_config.specification(),
+                "reward_lineage_version": arguments.reward_lineage_version,
+                "reward_config": (
+                    None if arguments.reward_config is None else str(arguments.reward_config)
+                ),
+                "reward_config_sha256": sha256_file(arguments.reward_config),
+                "action_contract": arguments.action_contract,
+                "freeze_base_updates": arguments.freeze_base_updates,
+                "telemetry_transport": arguments.telemetry_transport,
+                "worker_profile": arguments.worker_profile,
+                "affinity": arguments.affinity,
+            },
+            source_checkpoint=source_checkpoint,
+        )
+        try:
+            if arguments.reward_lineage_version is None:
+                raise ValueError("Tracked training requires --reward-lineage-version")
+            if not arguments.reward_lineage_version.startswith(f"V{reward_config.profile_version}"):
+                raise ValueError("Reward lineage version disagrees with the loaded reward profile")
+            tracker.validate_component_versions(
+                {
+                    "architecture": f"A{arguments.architecture}",
+                    "reward": arguments.reward_lineage_version,
+                },
+                config_hashes={"reward": sha256_file(arguments.reward_config)},
+            )
+        except BaseException as error:
+            tracker.fail(error)
+            raise
     dashboard_state = DashboardState() if arguments.dashboard is not None else None
     dashboard_server = (
         DashboardServer(dashboard_state, host=arguments.dashboard_host, port=arguments.dashboard)
@@ -377,6 +433,17 @@ def train(arguments: argparse.Namespace) -> None:
                     algorithm.initialize_from(arguments.initialize_from)
                 elif arguments.fine_tune_from:
                     algorithm.initialize_for_finetune(arguments.fine_tune_from)
+                if tracker is not None:
+                    tracker.set_resolved(
+                        {
+                            "device": str(device),
+                            "architecture": model.architecture_spec(),
+                            "reward": reward_config.specification(),
+                            "initialization": algorithm.checkpoint_metadata.get("initialization"),
+                            "starting_global_step": algorithm.global_step,
+                            "starting_updates": algorithm.updates,
+                        }
+                    )
                 collector = VersionedAsyncRolloutCollector(
                     environment,
                     algorithm.model,
@@ -410,9 +477,7 @@ def train(arguments: argparse.Namespace) -> None:
                         "global_step": algorithm.global_step,
                         "updates": algorithm.updates,
                         "base_frozen": float(base_frozen),
-                        "steps_per_second": (
-                            algorithm.global_step - process_start_step
-                        ) / elapsed,
+                        "steps_per_second": (algorithm.global_step - process_start_step) / elapsed,
                         **update_metrics,
                         **collector.last_runtime_metrics,
                         **episode_metrics(collector.completed_episodes),
@@ -425,9 +490,7 @@ def train(arguments: argparse.Namespace) -> None:
                         ),
                         **(
                             model.architecture_metrics()
-                            if isinstance(
-                                model, (AdapterActorCritic, ProjectedAdapterActorCritic)
-                            )
+                            if isinstance(model, (AdapterActorCritic, ProjectedAdapterActorCritic))
                             else {}
                         ),
                     }
@@ -464,6 +527,8 @@ def train(arguments: argparse.Namespace) -> None:
                         dashboard_state.update_training(metrics)
                     with metrics_path.open("a", encoding="utf-8") as handle:
                         handle.write(json.dumps(metrics, sort_keys=True) + "\n")
+                    if tracker is not None:
+                        tracker.log_metrics(metrics, step=algorithm.global_step)
                     print(json.dumps(metrics, sort_keys=True))
                     if algorithm.global_step % arguments.checkpoint_interval < (
                         ppo_config.rollout_length * arguments.num_instances
@@ -484,9 +549,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "ppo": asdict(ppo_config),
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
-                            "initialized_from": algorithm.checkpoint_metadata.get(
-                                "initialization"
-                            ),
+                            "initialized_from": algorithm.checkpoint_metadata.get("initialization"),
                             "action_contract": arguments.action_contract,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
@@ -505,13 +568,40 @@ def train(arguments: argparse.Namespace) -> None:
                             "dashboard_url": (
                                 dashboard_server.url if dashboard_server is not None else None
                             ),
+                            "lineage": (
+                                None
+                                if tracker is None
+                                else {
+                                    "experiment_id": tracker.config.experiment_id,
+                                    "arm": tracker.config.arm,
+                                    "trial": tracker.config.trial,
+                                    "mlflow_run_id": tracker.run_id,
+                                    "spec_sha256": tracker.spec.digest,
+                                }
+                            ),
                         },
                         indent=2,
                     ),
                     encoding="utf-8",
                 )
+                if tracker is not None:
+                    tracker.complete(
+                        [
+                            arguments.run_dir / "config.json",
+                            metrics_path,
+                            arguments.run_dir / "final.pt",
+                        ],
+                        summary=metrics,
+                    )
             finally:
                 environment.close()
+    except BaseException as error:
+        if tracker is not None:
+            try:
+                tracker.fail(error)
+            except BaseException:
+                pass
+        raise
     finally:
         if dashboard_server is not None:
             dashboard_server.stop()
@@ -565,6 +655,10 @@ def main() -> int:
         help="JSON object overriding the versioned default reward weights",
     )
     parser.add_argument(
+        "--reward-lineage-version",
+        help="component catalog label such as V2 or V4A (required for tracked runs)",
+    )
+    parser.add_argument(
         "--dashboard",
         nargs="?",
         type=int,
@@ -573,6 +667,16 @@ def main() -> int:
         help="serve the live symbolic worker dashboard (default port: 8765)",
     )
     parser.add_argument("--dashboard-host", default="127.0.0.1")
+    parser.add_argument("--experiment-id", help="registered immutable experiment id")
+    parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
+    parser.add_argument("--trial-id", help="stable trial label (defaults to seed-N)")
+    parser.add_argument("--experiment-root", type=Path, default=Path("experiments"))
+    parser.add_argument("--mlflow-tracking-uri")
+    parser.add_argument(
+        "--controller-qualification",
+        type=Path,
+        default=Path("runs/controller-qualification/qualification.json"),
+    )
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
@@ -589,6 +693,8 @@ def main() -> int:
         parser.error("--freeze-base-updates cannot be negative")
     if arguments.freeze_base_updates and arguments.architecture != 8:
         parser.error("--freeze-base-updates is only valid for Architecture 8")
+    if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
+        parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)
     return 0
 

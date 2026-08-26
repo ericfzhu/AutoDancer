@@ -297,8 +297,7 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         )
         / max(total_turns, 1),
         "productive_stationary_interaction_rate": sum(
-            int(episode.get("productive_stationary_interaction_turns", 0))
-            for episode in episodes
+            int(episode.get("productive_stationary_interaction_turns", 0)) for episode in episodes
         )
         / max(total_turns, 1),
         "unchanged_direction_rate": sum(
@@ -579,8 +578,7 @@ def _evaluate_deterministic_async(
                             environment.environments[worker_id].step(action)
                         )
                         expanded = {
-                            key: value[np.newaxis, ...]
-                            for key, value in next_observation.items()
+                            key: value[np.newaxis, ...] for key, value in next_observation.items()
                         }
                         next_observation = apply_action_contract(expanded, action_contract)
                         next_observation = {
@@ -595,9 +593,7 @@ def _evaluate_deterministic_async(
                                 action=action,
                                 reward=float(reward),
                             )
-                        accumulator.observe(
-                            next_observation, float(reward), step_info, int(action)
-                        )
+                        accumulator.observe(next_observation, float(reward), step_info, int(action))
                         observation = next_observation
                         info = step_info
                         hidden = next_hidden
@@ -618,9 +614,7 @@ def _evaluate_deterministic_async(
                     )
                     if attempts >= 3:
                         raise
-                    observation, info = environment.recover(
-                        index, seed, failure=failure
-                    )
+                    observation, info = environment.recover(index, seed, failure=failure)
                     observation = apply_action_contract(
                         {key: value[np.newaxis, ...] for key, value in observation.items()},
                         action_contract,
@@ -646,7 +640,7 @@ def _checkpoint_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
+def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
     architecture = payload.get("architecture", {})
@@ -740,9 +734,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_global_step": int(payload.get("global_step", 0)),
         "checkpoint_updates": int(payload.get("updates", 0)),
         "reward": payload.get("checkpoint_metadata", {}).get("reward"),
-        "checkpoint_action_contract": payload.get("checkpoint_metadata", {}).get(
-            "action_contract"
-        ),
+        "checkpoint_action_contract": payload.get("checkpoint_metadata", {}).get("action_contract"),
         "evaluation_reward": reward_config.specification(),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
@@ -763,6 +755,89 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     temporary.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     temporary.replace(arguments.output)
     return report
+
+
+def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
+    """Run evaluation, optionally attaching it to an experiment parent in MLflow."""
+    tracker: Any | None = None
+    experiment_id = getattr(arguments, "experiment_id", None)
+    if experiment_id is not None:
+        from autodancer.experiments.provenance import sha256_file
+        from autodancer.experiments.tracking import ExperimentTracker, LineageConfig
+
+        tracker = ExperimentTracker(
+            LineageConfig(
+                experiment_id=experiment_id,
+                arm=arguments.experiment_arm,
+                trial=arguments.trial_id or arguments.checkpoint.stem,
+                stage="evaluation",
+                run_dir=arguments.output.parent,
+                store_root=arguments.experiment_root,
+                tracking_uri=arguments.mlflow_tracking_uri,
+                qualification_report=arguments.controller_qualification,
+            ),
+            game_dir=arguments.game_dir,
+            mod_dir=arguments.mod_dir,
+            device=arguments.device,
+            parameters={
+                "seeds": arguments.seeds,
+                "max_steps": arguments.max_steps,
+                "num_instances": arguments.num_instances,
+                "policy_seed": arguments.policy_seed,
+                "action_contract": arguments.action_contract,
+                "trained_only": arguments.trained_only,
+                "reward_lineage_version": arguments.reward_lineage_version,
+                "reward_config": (
+                    None if arguments.reward_config is None else str(arguments.reward_config)
+                ),
+                "reward_config_sha256": sha256_file(arguments.reward_config),
+            },
+            source_checkpoint=arguments.checkpoint,
+        )
+        try:
+            checkpoint = torch.load(arguments.checkpoint, map_location="cpu", weights_only=False)
+            architecture_version = f"A{int(checkpoint['architecture']['version'])}"
+            reward_version = arguments.reward_lineage_version
+            if reward_version is None:
+                raise ValueError("Tracked evaluation requires --reward-lineage-version")
+            checkpoint_reward_version = (
+                checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
+            )
+            if not reward_version.startswith(f"V{checkpoint_reward_version}"):
+                raise ValueError("Reward lineage version disagrees with the checkpoint")
+            tracker.validate_component_versions(
+                {"architecture": architecture_version, "reward": reward_version},
+                config_hashes={"reward": sha256_file(arguments.reward_config)},
+            )
+        except BaseException as error:
+            tracker.fail(error)
+            raise
+    try:
+        report = _run_baseline(arguments)
+        if tracker is not None:
+            tracker.set_resolved(
+                {
+                    "checkpoint_global_step": report["checkpoint_global_step"],
+                    "checkpoint_sha256": report["checkpoint_sha256"],
+                    "reward": report["reward"],
+                    "controller_valid": report["controller_valid"],
+                }
+            )
+            metrics = {
+                f"trained.{name}": value
+                for name, value in report["trained"].items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+            tracker.log_metrics(metrics, step=report["checkpoint_global_step"])
+            tracker.complete([arguments.output], summary=metrics)
+        return report
+    except BaseException as error:
+        if tracker is not None:
+            try:
+                tracker.fail(error)
+            except BaseException:
+                pass
+        raise
 
 
 def _parse_seeds(value: str) -> list[int]:
@@ -791,6 +866,10 @@ def main() -> int:
     parser.add_argument("--policy-seed", type=int, default=8675309)
     parser.add_argument("--reward-config", type=Path)
     parser.add_argument(
+        "--reward-lineage-version",
+        help="component catalog label such as V2 or V4A (required for tracked runs)",
+    )
+    parser.add_argument(
         "--trained-only",
         action="store_true",
         help="Evaluate only the deterministic checkpoint policy, without a random baseline",
@@ -803,11 +882,23 @@ def main() -> int:
     parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
+    parser.add_argument("--experiment-id", help="registered immutable experiment id")
+    parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
+    parser.add_argument("--trial-id", help="stable evaluation trial label")
+    parser.add_argument("--experiment-root", type=Path, default=Path("experiments"))
+    parser.add_argument("--mlflow-tracking-uri")
+    parser.add_argument(
+        "--controller-qualification",
+        type=Path,
+        default=Path("runs/controller-qualification/qualification.json"),
+    )
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.num_instances <= 0 or arguments.max_steps <= 0:
         parser.error("--num-instances and --max-steps must be positive")
+    if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
+        parser.error("--experiment-id and --experiment-arm must be supplied together")
     report = run_baseline(arguments)
     summary = {
         "checkpoint_global_step": report["checkpoint_global_step"],
