@@ -668,9 +668,10 @@ without satisfying the Zone 2 gate. Argmax remained on Zone 1 Floor 1. Both
 turn-keyed stochastic streams reached Floor 2 on the same seeds `57004`,
 `57005`, and `57009`; policy stream `91002` also reached Floor 3 on seed
 `57019`, with one recorded stair discovery and exit. No trial reached Zone 2.
-The sequential launcher then stalled before completing the continuation/A8
-arms, so these reports are retained as partial diagnostic evidence rather than
-promoted as a complete EXP-0009 comparison.
+The active continuation evaluation was mistakenly interrupted after its owned
+game workers were queried under the wrong executable name. There is no evidence
+of a launcher failure. The completed reports are retained as partial diagnostic
+evidence rather than promoted as a complete EXP-0009 comparison.
 
 The result rejects argmax collapse as the sole progression blocker. Before any
 Reward V5 or architecture change, commit `d12b791` corrected four confounds:

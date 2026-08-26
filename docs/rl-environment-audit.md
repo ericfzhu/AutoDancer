@@ -212,8 +212,9 @@ mislabeled, but new item-based promotion gates are semantically distinct.
 
 1. **EXP-0009 — partial execution calibration:** the completed A2-frozen trials
    reproduced Floor 2 under both sampled streams and reached Floor 3 once, but no
-   Zone 2. The launcher stalled before the remaining arms, so partial results are
-   preserved without claiming a complete checkpoint comparison.
+   Zone 2. The active continuation trial was mistakenly interrupted during
+   process diagnosis, so partial results are preserved without claiming either
+   a complete checkpoint comparison or a launcher failure.
 2. **Environment correction — complete in code:** truncation bootstrap,
    client-horizon reward semantics, actual-health damage, critic diagnostics, and
    stair/trapdoor descent attribution, and currency/inventory telemetry are
