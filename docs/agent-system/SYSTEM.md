@@ -2,7 +2,7 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 9 routed · 25 resolved**._
+_Question status: **0 open · 10 routed · 25 resolved**._
 
 ## One paragraph
 
@@ -317,7 +317,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **Steps in execution.**
 
 1. **Bootstrap** — Estimate the value after the final rollout state.
-2. **Advantage** — Compute backward GAE with terminal masking.
+2. **Advantage** — Compute backward GAE; true termination must stop value bootstrap, while time-limit truncation must bootstrap its final observation but stop the trace across reset.
 3. **Chunk** — Split each worker trajectory into 32-step sequences with stored initial LSTM state.
 4. **Optimize** — Shuffle chunks across four epochs and update clipped policy and critic objectives.
 5. **Publish** — Increment the policy version only after the whole update finishes.
@@ -325,7 +325,8 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 **Questions.**
 
 - **Q-L1** Is one update per 1,024 steps optimal at eight workers? → _Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed._
-- ~~**Q-L2** May PPO train on a partial healthy fleet?~~ ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
+- **Q-L2** Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only as a versioned optimization/objective change with critic stability controls and matching potential-shaping discount._
+- ~~**Q-L3** May PPO train on a partial healthy fleet?~~ ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
 
 #### K · Checkpoints and metrics
 
@@ -555,7 +556,8 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-C1**~~ (C) ✓ No; fragments never mix policy versions. Fast workers wait after completing their contribution (2026-08-24).
 - ~~**Q-C2**~~ (C) ✓ It removes the per-step barrier, but PPO still waits for one complete same-version fragment from every fixed-capacity slot (2026-08-24).
 - **Q-L1** (L) Is one update per 1,024 steps optimal at eight workers? → _Benchmark rollout length, epochs, minibatch chunks, and GPU utilization while holding total environment steps and evaluation seeds fixed._
-- ~~**Q-L2**~~ (L) ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
+- **Q-L2** (L) Is γ=.99 aligned with multi-floor play? → _No evidence establishes that. Its effective horizon is about 100 turns and γ^1000 is roughly 4.3e-5, while failed episodes last 3,000–5,000 turns. Test horizon only as a versioned optimization/objective change with critic stability controls and matching potential-shaping discount._
+- ~~**Q-L3**~~ (L) ✓ No; fixed capacity and same-version rollout integrity take precedence over silently continuing with fewer workers (2026-08-24).
 - ~~**Q-K1**~~ (K) ✓ No; exact resume rejects it. Only the named partial warm-start path may transfer compatible weights (2026-08-24).
 - ~~**Q-K2**~~ (K) ✓ runs/reward-v2-250k/final.pt, evaluated as Reward V2 Architecture A2 (2026-08-24).
 - ~~**Q-E1**~~ (E) ✓ It failed the predeclared gameplay gate and produced worse local competence and more stationary outcomes within the pilot budget (2026-08-24).

@@ -87,6 +87,33 @@ Before another architecture search, we should verify truncation bootstrapping,
 advantage construction, action masking, entropy, and evaluation semantics against
 the intended task.
 
+### 7. The discount and advantage horizons are shorter than a floor
+
+The current PPO configuration uses `gamma=0.99` and `gae_lambda=0.95`. A reward
+500 turns in the future is multiplied by about `0.0066`; at 1,000 turns it is
+about `0.000043`. The direct GAE trace decays even faster because
+`gamma * lambda = 0.9405`: after 100 turns its weight is roughly `0.0022`.
+Measured failed episodes routinely last 3,000–5,000 turns. Floor rewards provide
+intermediate subgoals, but even those are often hundreds or thousands of actions
+away from the early decisions that must discover them.
+
+The effective-horizon approximation `1 / (1 - gamma)` makes the mismatch plain:
+`gamma=0.99` expresses a horizon near 100 turns. Zhang et al. describe how
+discounting effectively forgets consequences beyond this scale and why simply
+raising gamma trades that bias for higher variance
+([average-reward on-policy RL](https://proceedings.mlr.press/v139/zhang21q.html)).
+Pohlen et al. used `gamma=0.999` plus stabilization specifically to extend Atari
+planning by an order of magnitude
+([Observe and Look Further](https://arxiv.org/abs/1805.11593)).
+
+This does not justify changing gamma alone: a longer horizon can destabilize the
+critic, and potential-based shaping must use the same discount as the learning
+objective to retain its invariance guarantee. It does justify treating discount,
+GAE lambda, rollout length, value normalization, and stage-level rewards as one
+explicitly versioned objective/optimization block. A floor curriculum shortens
+the experienced distance to each milestone without first taking on the variance
+of an almost-undiscounted full-run critic.
+
 ## Staged causal program
 
 1. **EXP-0009 — execution calibration:** frozen A2/A8 checkpoints, 24 unseen
