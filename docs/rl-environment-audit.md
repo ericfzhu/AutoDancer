@@ -188,13 +188,13 @@ cover lethal overkill and multiple events; the qualified controller already
 covers ordinary damage, death, and reset. Historical affected runs remain valid
 controller evidence but are not clean reward-policy comparisons.
 
-### 11. The evaluation `item_pickups` metric actually counts currency pickups
+### 11. Resolved: `item_pickups` previously counted currency pickups
 
-The only Lua site that emits an `item_collected` event is the
-`objectCurrency` hook. It emits once when Bard picks up a currency entity and
-stores the currency difference as the event amount. The deterministic evaluator
-then increments `item_pickups` once for every such event and calls the amount
-`item_value`. No equipment-pickup event feeds that metric.
+Historically, the only Lua site that emitted an `item_collected` event was the
+`objectCurrency` hook. It emitted once when Bard picked up a currency entity and
+stored the currency difference as the event amount. The deterministic evaluator
+then incremented `item_pickups` once for every such event and called the amount
+`item_value`. No equipment-pickup event fed that metric.
 
 Reward state does independently infer newly seen inventory type IDs, so the
 policy has received some equipment-related shaping. The evaluation outcome used
@@ -202,12 +202,11 @@ by several historical promotion gates, however, measures coin-pile collection,
 not weapons, armor, consumables, or equipment competence. Those historical
 numbers must be relabeled rather than interpreted as general item pickups.
 
-The protocol should emit distinct `currency_collected` and `item_collected`
-events. Equipment collection must be observed after a successful inventory
-transaction, with stable type/slot metadata and without counting failed pickup
-attempts or slot swaps twice. Evaluation should report currency transactions,
-currency amount, equipment pickups, unique equipment types, and consumables
-separately. Until then, item-based promotion criteria are not trustworthy.
+The 2026-08-27 correction makes Lua emit `currency_collected` only from the
+currency hook. The live adapter derives `item_collected` from positive inventory
+deltas, and evaluation separately reports item units, unique acquired item
+types, currency transactions, and currency value. Historical item metrics remain
+mislabeled, but new item-based promotion gates are semantically distinct.
 
 ## Staged causal program
 
@@ -215,11 +214,11 @@ separately. Until then, item-based promotion criteria are not trustworthy.
    reproduced Floor 2 under both sampled streams and reached Floor 3 once, but no
    Zone 2. The launcher stalled before the remaining arms, so partial results are
    preserved without claiming a complete checkpoint comparison.
-2. **Environment correction — mostly complete:** truncation bootstrap,
+2. **Environment correction — complete in code:** truncation bootstrap,
    client-horizon reward semantics, actual-health damage, critic diagnostics, and
-   stair/trapdoor descent attribution are implemented and regression-tested.
-   Currency/equipment telemetry remains unresolved and cannot be used as a
-   promotion gate.
+   stair/trapdoor descent attribution, and currency/inventory telemetry are
+   implemented and regression-tested. A live preflight is still required before
+   starting the causal training comparison.
 3. **Objective experiment:** make floor/zone milestones dominant; eliminate
    unbounded renewable penalties; keep task reward separate from bounded shaping.
    Use potential-based guidance where a valid potential exists.

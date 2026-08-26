@@ -2,7 +2,7 @@
 
 _**This file is the living source of truth for AutoDancer's agent design.** The interactive atlas and this text twin are built from the same data._
 
-_Question status: **0 open · 13 routed · 26 resolved**._
+_Question status: **0 open · 12 routed · 27 resolved**._
 
 ## One paragraph
 
@@ -276,7 +276,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 - ~~**Q-R1** Should remaining stationary receive a generic penalty?~~ ✓ Not yet: unchanged-position turns can include attacks, digging, or blocked movement; outcome-specific evidence is required (2026-08-24).
 - ~~**Q-R2** How is player damage measured?~~ ✓ The live adapter now scores before/after health loss bounded by pre-turn health and retains raw attack magnitude plus event count only as diagnostics (2026-08-27).
-- **Q-R3** Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
+- ~~**Q-R3** How are items and currency distinguished?~~ ✓ Lua emits currency_collected from the currency hook; Python derives item_collected only from positive inventory deltas. Reports separate item units, unique acquired types, currency transactions, and currency value (2026-08-27).
 - **Q-R4** What is Reward V5? → _Define it only after corrected semantics produce critic-health and progression evidence; do not change reward and learning integrity in the same comparison._
 
 ### Collecting and changing weights
@@ -362,7 +362,7 @@ Experiment rationale and measured outcomes live in [reward-history.md](../reward
 
 **In one line.** Unseen-seed gameplay—not shaped return—decides whether a version advances.
 
-**What it does.** Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, movement, stairs, and runtime health. The current item_pickups field is misnamed: it counts currency pickup events rather than equipment.
+**What it does.** Training reward is diagnostic, not the objective. Paired policies play fresh seeds with fresh recurrent state and a fixed turn cap; reports compare progression, death, timeouts, combat, movement, stairs/trapdoors, inventory acquisitions, currency, and runtime health. Item metrics now come from inventory deltas rather than currency events.
 
 **How it's built.** **Version lineage.**
 `Baseline` compared checkpoint argmax play with masked random on held-out seeds.
@@ -558,7 +558,7 @@ Reference by ID. ✓ resolved (with date) · → routed to a named next step · 
 - ~~**Q-T3**~~ (T) ✓ No; explicit player-like spatial memory removes an avoidable information burden, while the LSTM handles temporal context (2026-08-24).
 - ~~**Q-R1**~~ (R) ✓ Not yet: unchanged-position turns can include attacks, digging, or blocked movement; outcome-specific evidence is required (2026-08-24).
 - ~~**Q-R2**~~ (R) ✓ The live adapter now scores before/after health loss bounded by pre-turn health and retains raw attack magnitude plus event count only as diagnostics (2026-08-27).
-- **Q-R3** (R) Does item_collected measure equipment? → _No. The current bridge emits it only from objectCurrency, so historical item-pickup metrics are coin-pile transactions. Split currency and equipment events before using item competence as a promotion gate._
+- ~~**Q-R3**~~ (R) ✓ Lua emits currency_collected from the currency hook; Python derives item_collected only from positive inventory deltas. Reports separate item units, unique acquired types, currency transactions, and currency value (2026-08-27).
 - **Q-R4** (R) What is Reward V5? → _Define it only after corrected semantics produce critic-health and progression evidence; do not change reward and learning integrity in the same comparison._
 - ~~**Q-C1**~~ (C) ✓ No; fragments never mix policy versions. Fast workers wait after completing their contribution (2026-08-24).
 - ~~**Q-C2**~~ (C) ✓ It removes the per-step barrier, but PPO still waits for one complete same-version fragment from every fixed-capacity slot (2026-08-24).
