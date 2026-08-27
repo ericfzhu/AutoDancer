@@ -19,9 +19,18 @@ from autodancer.constants import (
     GridChannel,
     Terrain,
 )
-from autodancer.training.async_collector import VersionedAsyncRolloutCollector
+from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
 from autodancer.training.seed_schedule import TrainingSeedSchedule
+
+
+def test_actor_state_initializes_progress_from_reset_level() -> None:
+    state = ActorState(
+        observation(0),
+        {"zone": 2, "floor": 1},
+        torch.zeros(1, 2),
+    )
+    assert (state.furthest_zone, state.furthest_floor) == (2, 1)
 
 
 def observation(slot: int) -> dict[str, np.ndarray]:

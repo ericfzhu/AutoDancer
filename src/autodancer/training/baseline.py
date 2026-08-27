@@ -35,6 +35,7 @@ from autodancer.training.action_contract import (
 from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
+from autodancer.training.progress import deeper_level, level_progress
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
 
@@ -130,6 +131,7 @@ class EpisodeAccumulator:
 
     def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
         position = self._position(observation, info)
+        self.furthest_zone, self.furthest_floor = position[:2]
         self._last_position = position
         self._floor = position[:2]
         self._visited_positions.add(position)
@@ -151,8 +153,10 @@ class EpisodeAccumulator:
         self.extrinsic_return += float(info.get("extrinsic_reward", 0.0))
         self.shaping_return += float(info.get("shaping_reward", 0.0))
         self.turns += 1
-        self.furthest_zone = max(self.furthest_zone, int(info.get("zone") or 0))
-        self.furthest_floor = max(self.furthest_floor, int(info.get("floor") or 0))
+        self.furthest_zone, self.furthest_floor = deeper_level(
+            (self.furthest_zone, self.furthest_floor),
+            (int(info.get("zone") or 0), int(info.get("floor") or 0)),
+        )
         self.max_gold = max(
             self.max_gold,
             int(observation["player"][PlayerFeature.GOLD]),
@@ -346,7 +350,9 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         raise ValueError("At least one episode is required")
     count = len(episodes)
     progress = [
-        max(int(episode["furthest_zone"]) - 1, 0) * 4 + int(episode["furthest_floor"])
+        level_progress(
+            int(episode["furthest_zone"]), int(episode["furthest_floor"])
+        )
         for episode in episodes
     ]
     total_turns = sum(int(episode["turns"]) for episode in episodes)
@@ -402,6 +408,14 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
         "unique_item_types": sum(
             int(episode.get("unique_item_types", 0)) for episode in episodes
+        ),
+        "repeat_item_transactions": sum(
+            max(
+                int(episode.get("item_pickups", 0))
+                - int(episode.get("unique_item_types", 0)),
+                0,
+            )
+            for episode in episodes
         ),
         "currency_pickups": sum(
             int(episode.get("currency_pickups", 0)) for episode in episodes

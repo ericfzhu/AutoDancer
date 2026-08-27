@@ -19,6 +19,7 @@ from autodancer.live.protocol import ProtocolError
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
+from autodancer.training.progress import deeper_level
 from autodancer.training.seed_schedule import TrainingSeedSchedule
 
 
@@ -36,6 +37,12 @@ class ActorState:
     episode_events: list[dict[str, Any]] = field(default_factory=list)
     furthest_zone: int = 0
     furthest_floor: int = 0
+
+    def __post_init__(self) -> None:
+        self.furthest_zone, self.furthest_floor = deeper_level(
+            (self.furthest_zone, self.furthest_floor),
+            (int(self.info.get("zone") or 0), int(self.info.get("floor") or 0)),
+        )
 
 
 @dataclass(slots=True)
@@ -521,8 +528,10 @@ class VersionedAsyncRolloutCollector:
             state.episode_extrinsic_return += float(info.get("extrinsic_reward", 0.0))
             state.episode_shaping_return += float(info.get("shaping_reward", 0.0))
             state.episode_events.extend(info.get("raw_events", []))
-            state.furthest_zone = max(state.furthest_zone, int(info.get("zone") or 0))
-            state.furthest_floor = max(state.furthest_floor, int(info.get("floor") or 0))
+            state.furthest_zone, state.furthest_floor = deeper_level(
+                (state.furthest_zone, state.furthest_floor),
+                (int(info.get("zone") or 0), int(info.get("floor") or 0)),
+            )
             for name, component in info.get("reward_components", {}).items():
                 components[name] = components.get(name, 0.0) + float(component)
             actions.append(torch.tensor(action, dtype=torch.long))

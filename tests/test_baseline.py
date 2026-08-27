@@ -294,3 +294,37 @@ def test_episode_diagnostics_separate_inventory_from_currency_pickups() -> None:
     assert result["unique_item_types"] == 2
     assert result["currency_pickups"] == 1
     assert result["currency_value"] == 5
+
+
+def test_episode_progress_keeps_zone_and_floor_from_the_same_level() -> None:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 4
+    value = {"grid": grid, "player": player}
+    accumulator = EpisodeAccumulator(12, "worker-0000", "run-12")
+    accumulator.initialize(value, {"zone": 1, "floor": 4})
+
+    player_next = player.copy()
+    player_next[PlayerFeature.ZONE] = 2
+    player_next[PlayerFeature.FLOOR] = 1
+    accumulator.observe(
+        {"grid": grid, "player": player_next},
+        10.0,
+        {"zone": 2, "floor": 1, "raw_events": []},
+        int(Action.DOWN),
+    )
+
+    result = accumulator.finish("running")
+    summary = summarize_episodes([result], "checkpoint")
+    assert (result["furthest_zone"], result["furthest_floor"]) == (2, 1)
+    assert summary["mean_progress"] == 5
+    assert summary["furthest_floor"] == 5
+
+
+def test_episode_summary_marks_repeated_item_transactions() -> None:
+    value = episode(1, status="dead", turns=10)
+    value["item_pickups"] = 20
+    value["unique_item_types"] = 2
+    summary = summarize_episodes([value], "checkpoint")
+    assert summary["repeat_item_transactions"] == 18
