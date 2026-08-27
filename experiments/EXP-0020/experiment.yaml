@@ -1,0 +1,72 @@
+schema_version: 1
+id: EXP-0020
+title: Legal Death Metal guide acquisition
+question: Can a function-preserving A2-to-A8 warm start learn repeatable deep Death Metal phases when only Bard's starting health is increased and every boss objective remains untouched?
+hypothesis: The selected A2 policy already supplies local movement and combat competence, while A8 can learn from authoritative boss identity, objective health, persistent map, and event context; player20 assistance should lengthen legally generated trajectories enough for PPO to acquire phase-4 Death Metal behavior without corrupting the task.
+changed_blocks: [reward, architecture, controller, environment-semantics, learner-diagnostics, optimization-schedule, training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalGuideV1
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-player-health-only-candidate
+  environment-semantics: player-health-only-boss-curriculum-v4
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: A2-to-A8-actor-parity-fresh-critic-v2
+  training-level-distribution: reverse-curriculum-sequential-goto-v1
+  runtime: async-native-pipe-v1
+  evaluation: legal-death-metal-guide-v9
+invariants:
+  - training cannot start until the exact repository mod hashes pass a fresh eight-worker one-million-transition controller qualification
+  - Bard begins from a normal seeded All Zones run followed by real-game sequential GOTO to Zone 1 Floor 4
+  - player20 changes only Bard's starting current and maximum health; every boss and boss-add identity, role, current health, and maximum health is snapshotted and exactly unchanged
+  - assistance is applied once before collection and emits no transition, gameplay event, or reward
+  - the source A2 actor, recurrent state transition, and action logits are exactly preserved at initialization while critic, optimizer, episode state, and RNG are fresh
+  - A8's inherited A2 base is frozen for exactly ten PPO updates and then jointly optimized
+  - calibration, training, and evaluation candidate ranges are disjoint; calibration observes boss identity only and never policy performance
+  - every selected game seed is telemetry-confirmed as Death Metal before training or evaluation
+  - acquisition failures and infrastructure-invalid episodes remain visible and can never be scored as deaths, aborts, or successful gameplay
+  - exactly eight fixed-capacity workers, one policy version per rollout, and zero natural infrastructure contamination are required
+  - task reward, shaping reward, phase acquisition, deaths, and Zone 2 entry remain separate; shaped return never selects a checkpoint
+  - no player20 result constitutes unassisted boss completion or normal-start Zone 2 evidence
+arms:
+  - id: a8-player20-legal-guide
+    description: Three independent A8 trials initialized at exact A2 actor parity, trained against untouched full-health Death Metal with player20 survival assistance.
+source:
+  checkpoint: runs/assisted-death-metal/training/seed-68002/final.pt
+  checkpoint_sha256: bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5
+  provenance_limit: The checkpoint is used only as a local-policy initializer; its retired boss-mutating results are invalid and supply no achievement evidence.
+calibration:
+  training_candidate_seed_range: 80001-80256
+  training_selection: ascending first 48 seeds whose official boss_type telemetry is DEATH_METAL
+  evaluation_candidate_seed_range: 81001-81256
+  evaluation_selection: ascending first 24 seeds whose official boss_type telemetry is DEATH_METAL
+  disclosure_limit: observe only boss identity after the real sequential level start; do not evaluate actions, phase depth, damage, survival, or completion
+training:
+  training_seeds: [82001, 82002, 82003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  initialization: exact A2 actor and recurrent parity with zero-projected A8 adapter, fresh critic and optimizer
+  freeze_base_updates: 10
+  transition_budget_per_trial: 122880
+  checkpoint_steps: [30720, 61440, 122880]
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns_per_episode: 500
+  reward_config: configs/reward-death-metal-guide-v1.json
+  reward_config_sha256: 650b2d3e8bfdb378bcdf2b63045f9ee2f71a4d229eb49af3474eb767a07732e4
+evaluation:
+  heldout_game_seeds: recorded before training from the declared evaluation calibration range
+  workers: 8
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns: 500
+  modes: [deterministic, stochastic-83001, stochastic-83002]
+  primary_outcome: authoritative Death Metal phase-4 acquisition with every selected seed retained in the denominator
+  secondary_outcomes: [live Zone 2 Floor 1 entry, phase depth, authoritative boss damage, boss kills, deaths, turns]
+  diagnostics: [boss actor types, initial and minimum objective health, phase depth, phase-4 reached, acquisition failure, action distribution, entropy, explained variance, KL, clipping, gradient norms, controller validity, worker capacity, restarts]
+decision_rule: Accept a legal guide only if the three-checkpoint aggregate phase-4 rate is at least 25 percent, at least two of three final checkpoints reach phase 4 on at least 20 percent of held-out seeds, at least 12 distinct held-out seeds reach phase 4 somewhere across the three finals, boss damage improves over the matched frozen parent, and every controller-validity invariant holds. Select lexicographically by Zone 2 entries, phase-4 rate, mean phase depth, boss damage, death rate, then turns. If the gate fails, retain the parent and diagnose phase-specific action/state coverage without changing reward post hoc. A passing guide authorizes separately declared phase-3, phase-2, and full-boss horizon expansion; it is not itself normal-start promotion.
