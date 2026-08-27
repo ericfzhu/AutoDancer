@@ -7,6 +7,16 @@ seeds. A single training trajectory or one lucky sampled evaluation is evidence
 of possibility, not success. Gameplay progress, rather than shaped return, is
 the primary outcome.
 
+For the first normal-start Zone 2 qualification, "multiple" means at least three
+distinct successes from a seed bank fixed before evaluation, with the direction
+reproduced by at least two independent policy/action samples. That bank must be
+unfiltered with respect to generated boss type; assisted starts and a suite
+selected to contain only a mastered boss are subskill evidence, not end-to-end
+generalization. Reports must stratify attempts and successes by official boss
+type so favorable seed composition is visible. Broader boss robustness remains
+a subsequent requirement across all four Zone 1 boss types, but it must not be
+conflated with the initial multi-seed normal-start milestone.
+
 ## Evidence from the current system
 
 - Stochastic PPO collection has reached Zone 1 Floor 3.
