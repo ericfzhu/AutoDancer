@@ -514,3 +514,59 @@ new arbitrary reward weight: either create nearer real-game good starts, obtain
 reproducible successful action traces for a separately declared demonstration
 bootstrap, or introduce a boss-local hierarchical option. The normal-start goal
 remains repeatable Zone 2 entry on multiple unseen seeds.
+
+## When to replace flat PPO with temporal abstraction
+
+The normal-start Zone 2 objective has a natural event hierarchy that the live
+bridge already observes authoritatively:
+
+1. reveal and traverse the current floor;
+2. discover and reach a descent;
+3. repeat across Floors 1–3;
+4. enter the boss arena;
+5. defeat boss objectives and enter Zone 2.
+
+A single primitive-action value function must currently assign credit across all
+five phases despite their different horizons and state requirements. The
+[options framework](https://www.sciencedirect.com/science/article/pii/S0004370299000521)
+formalizes closed-loop policies that act over multiple primitive steps, while
+[Hierarchies of Reward Machines](https://proceedings.mlr.press/v202/furelos-blanco23a.html)
+uses observed high-level events to decompose long-horizon sparse tasks into
+independently learnable subtasks. This fits AutoDancer better than indefinitely
+increasing movement shaping: floor transition, boss entry, boss damage, boss
+death, and zone transition are already validated events, not inferred labels.
+
+Temporal abstraction should not be bundled into EXP-0016. First establish that
+the primitive A2 policy can acquire one assisted boss skill. If assistance can be
+removed but Floor-3-to-boss training still fails, predeclare an architecture with:
+
+- a small explicit task-state vector derived from authoritative events;
+- separate learned navigation and combat option policies sharing the sensory
+  encoder;
+- an option selector operating at event/short fixed boundaries;
+- primitive actions, rewards, and task-success evaluation unchanged;
+- interruption when local threats appear, so a navigation option cannot ignore
+  combat;
+- normal-start evaluation with no scripted option actions.
+
+This design also removes an informational asymmetry: A2 currently receives a
+boss type through `PlayerFeature.TASK`, but receives no explicit representation
+of whether the current high-level objective is exploration, a known stair route,
+or a live boss objective. Humans infer and retain that task state naturally.
+
+Hindsight Experience Replay is not a drop-in correction here. HER relabels goals
+inside replay for an off-policy, goal-conditioned learner
+([Andrychowicz et al., 2017](https://papers.nips.cc/paper_files/paper/2017/hash/453fadbd8a1a3af50a9df4df899537b5-Abstract.html));
+AutoDancer currently uses on-policy recurrent PPO and has no goal-conditioned
+critic. Adding HER would therefore change algorithm, replay semantics,
+observation contract, and reward together, defeating causal diagnosis.
+
+Demonstrations are a more compatible fallback if successful live traces can be
+reproduced and recorded. Work such as
+[Deep Q-learning from Demonstrations](https://ojs.aaai.org/index.php/AAAI/article/view/11757)
+shows that small demonstration sets can materially reduce real-environment sample
+cost, but its exact algorithm is value/replay based. For AutoDancer the controlled
+analogue would be a separately versioned behavior-cloning auxiliary phase over
+qualified observation/action/mask traces, followed by PPO fine-tuning and held-out
+evaluation. A reported successful episode without its action sequence is not a
+demonstration dataset and must not be treated as one.
