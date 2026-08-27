@@ -71,6 +71,7 @@ class EpisodeAccumulator:
     player_damage: int = 0
     extrinsic_return: float = 0.0
     shaping_return: float = 0.0
+    natural_prefix: dict[str, Any] = field(default_factory=dict)
     action_counts: list[int] = field(default_factory=lambda: [0] * ACTION_COUNT)
     unchanged_position_turns: int = 0
     max_unchanged_position_streak: int = 0
@@ -153,6 +154,7 @@ class EpisodeAccumulator:
         self._visited_positions.add(position)
         self._inventory_quantities = self._inventory_counts(observation)
         self._seen_item_types = set(self._inventory_quantities)
+        self.natural_prefix = dict(info.get("learning_segment") or {})
         if self._has_visible_stairs(observation):
             self._stairs_seen_on_floor = True
             self.staircase_discoveries = 1
@@ -315,6 +317,7 @@ class EpisodeAccumulator:
             "episode_return": self.episode_return,
             "extrinsic_return": self.extrinsic_return,
             "shaping_return": self.shaping_return,
+            "natural_prefix": self.natural_prefix,
             "turns": self.turns,
             "furthest_zone": self.furthest_zone,
             "furthest_floor": self.furthest_floor,
@@ -424,6 +427,11 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         str(boss_type): sum(int(episode.get("boss_type", 0)) == boss_type for episode in episodes)
         for boss_type in sorted({int(episode.get("boss_type", 0)) for episode in episodes})
     }
+    prefixes = [
+        dict(episode.get("natural_prefix") or {})
+        for episode in episodes
+        if episode.get("natural_prefix")
+    ]
     return {
         "policy": policy,
         "episodes": count,
@@ -452,6 +460,19 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "deepest_zone": int(deepest_episode["furthest_zone"]),
         "deepest_floor": int(deepest_episode["furthest_floor"]),
         "boss_type_counts": boss_type_counts,
+        "natural_prefix_episodes": len(prefixes),
+        "natural_prefix_mean_guide_turns": (
+            float(np.mean([int(prefix.get("guide_turns", 0)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
+        "natural_prefix_mean_attempts": (
+            float(np.mean([int(prefix.get("attempts", 0)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
+        "natural_prefix_boundaries_valid": bool(prefixes)
+        and all(bool((prefix.get("boundary") or {}).get("reached")) for prefix in prefixes),
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),

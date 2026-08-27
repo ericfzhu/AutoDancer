@@ -273,6 +273,11 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         event for event in events if bool((event.get("data") or {}).get("boss_add", False))
     ]
     statuses = [str(episode.get("status", "")) for episode in episodes]
+    prefixes = [
+        dict(episode.get("natural_prefix") or {})
+        for episode in episodes
+        if episode.get("natural_prefix")
+    ]
     boss_types = sorted({int(episode.get("boss_type", 0)) for episode in episodes})
     deepest_level = (0, 0)
     for episode in episodes:
@@ -295,6 +300,21 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             sum(status == "curriculum_complete" for status in statuses)
         ),
         "time_limits": float(sum(status == "time_limit" for status in statuses)),
+        "natural_prefix_episodes": float(len(prefixes)),
+        "natural_prefix_mean_guide_turns": (
+            float(np.mean([int(prefix.get("guide_turns", 0)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
+        "natural_prefix_mean_attempts": (
+            float(np.mean([int(prefix.get("attempts", 0)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
+        "natural_prefix_boundaries_valid": float(
+            bool(prefixes)
+            and all(bool((prefix.get("boundary") or {}).get("reached")) for prefix in prefixes)
+        ),
         "episode_seeds": sorted(
             {int(episode["seed"]) for episode in episodes if "seed" in episode}
         ),
