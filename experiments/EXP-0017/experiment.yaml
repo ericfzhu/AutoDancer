@@ -81,6 +81,20 @@ training_if_needed:
   checkpoint_steps: [25600, 51200]
   reward_config: configs/reward-v4a.json
   reward_config_sha256: 42b373a1704151a4dab22abfb88e7df31d5052284a57351e4bb8ebd4a557fab7
+training:
+  conditional: run only if the frozen transfer gate fails
+  source_checkpoint: runs/assisted-death-metal/training/seed-68002/final.pt
+  training_seeds: [70001, 70002, 70003]
+  game_seed_pool: [64001, 64002, 64012, 64013, 64016, 64018, 64020, 64026, 64027]
+  curriculum_config: configs/curriculum-exp0017-player10-replay.json
+  workers: 8
+  transition_budget_per_trial: 51200
+evaluation:
+  first_stage: frozen transfer gate on the first 24 telemetry-confirmed Death Metal seeds in 69001-69256
+  conditional_acceptance_stage: matched player10 and player20 evaluation on fresh Death Metal seeds in 71001-71256
+  modes: [deterministic, stochastic-100001, stochastic-100002]
+  max_turns: 500
+  primary_outcome: live entry to Zone 2 Floor 1
 acceptance_if_training:
   candidate_seed_range: 71001-71256
   selected_seeds: ascending first 24 telemetry-confirmed Death Metal seeds

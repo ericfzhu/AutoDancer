@@ -104,3 +104,9 @@ experiments:
     status: planned
     historical: false
     registered_at: '2026-08-27T04:45:00+00:00'
+  EXP-0017:
+    spec: experiments/EXP-0017/experiment.yaml
+    spec_sha256: 1eb7088301ada9d49cc1d8b6375dcaea2edfb0a621238d33bd70b60821a40c15
+    status: planned
+    historical: false
+    registered_at: '2026-08-27T18:03:00+00:00'
