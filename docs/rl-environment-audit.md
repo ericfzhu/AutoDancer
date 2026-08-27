@@ -723,6 +723,30 @@ map inputs in that boss-local test. Map-aware navigation should remain a separat
 floor-stage or option-policy question so combat information and strategic memory
 are not confounded again.
 
+Death Metal makes this assistance reduction discontinuous rather than scalar.
+The live build's boss starts with nine health, while the documented fight changes
+behaviour at health bands 9–7, 6–5, 4–3, and 2–1: shield-relative attacks in the
+first band, teleporting and timed summons in the middle bands, then a fast
+fireball/chase phase at the end. The current one-health curriculum trains only
+that final band and can bypass the shield, teleport, and summon decisions
+entirely. This explains why one-hit completion cannot establish general boss
+competence and why an immediate one-to-nine transfer is an unnecessarily severe
+distribution shift. The phase structure is described by the community-maintained
+[Death Metal mechanics reference](https://crypt-of-the-necrodancer.fandom.com/wiki/Death_Metal),
+and the shield behaviour is corroborated by the game's published
+[release notes](https://www.gogdb.org/product/1432297044/releasenotes).
+
+After normal player health transfers, calibrate frozen performance at boss-health
+caps 2, 4, 6, and 9 on the same held-out Death Metal seeds. Select the hardest
+cap with a nonzero but sub-mastered success rate, then train it with replay from
+the immediately easier cap. Promotion at each boundary requires success in the
+newly introduced phase, not merely total boss damage or ordinary-enemy kills.
+Profiles must leave boss adds unmodified and report observed boss health so the
+experiment cannot silently skip a phase. If the first newly introduced phase
+fails despite adequate successful examples at the easier cap, that is the trigger
+for the tactical-only representation test described above—not for changing the
+reward at the same time.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
