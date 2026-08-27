@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,7 @@ from autodancer.constants import (
     Terrain,
 )
 from autodancer.envs.live import AutoDancerLiveEnv
-from autodancer.live.bridge import BridgeCommand
+from autodancer.live.bridge import CURRICULUM_PROFILES, BridgeCommand
 from autodancer.live.protocol import (
     LOG_MARKER,
     SCHEMA_VERSION,
@@ -847,6 +848,18 @@ def test_lua_player_health_profiles_preserve_boss_and_boss_add_state() -> None:
     assert "objectiveHealthSnapshot" in application
     assert "objective_state_unchanged" in application
     assert 'hasComponent(entity, "bossAdd")' in source
+
+
+def test_lua_bridge_and_python_use_the_same_curriculum_profile_whitelist() -> None:
+    source = (
+        Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "Bridge.lua"
+    ).read_text(encoding="utf-8")
+    declared = set(
+        re.findall(r'^\s*\["([^"]+)"\]\s*=\s*true,?$', source, re.MULTILINE)
+    )
+
+    assert declared == set(CURRICULUM_PROFILES)
+    assert not any(profile.startswith("boss1hp-") for profile in declared)
 
 
 def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:

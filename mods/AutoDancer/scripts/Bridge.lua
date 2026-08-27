@@ -28,10 +28,10 @@ local ACTION_WATCHDOG_TICKS = 600
 local RESET_WATCHDOG_TICKS = 2700
 local CURRICULUM_PROFILES = {
     ["normal"] = true,
-    ["boss1hp-player20"] = true,
-    ["boss1hp-player10"] = true,
-    ["boss1hp-player8"] = true,
-    ["boss1hp-player6"] = true,
+    ["player20"] = true,
+    ["player10"] = true,
+    ["player8"] = true,
+    ["player6"] = true,
 }
 
 local instanceID = tostring(Native.getInstanceID() or "worker-unknown")
