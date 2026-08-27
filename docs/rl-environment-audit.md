@@ -624,6 +624,48 @@ replaying mastered starts; demonstrate unassisted boss completion on multiple
 unseen boss seeds; then move the start backward to Floor 3, Floor 2, and normal
 Floor 1. A stage may advance only on gameplay success, never shaped return.
 
+### Curriculum arrival-state mismatch
+
+The current later-floor reset is not a fabricated board. Python starts a normal
+seeded All Zones run and asks the game to advance one sequential level at a time
+with `GameSession.nextLevel(0)`. This preserves the game's run state and produces
+a legal later floor with Bard's default carried inventory. It is therefore a
+useful good-start distribution, but it is only a narrow subset of the states in
+which a normal policy will actually arrive. A played-through arrival may have
+lost health, acquired or consumed items, and accumulated a nonzero GRU state.
+Direct curriculum episodes instead begin with restored/default run resources and
+a fresh recurrent state. A policy can consequently pass a direct Floor 3 or boss
+start while depending on conditions that are uncommon after Floors 1 and 2.
+
+This is the same general issue addressed by reverse-curriculum methods when they
+expand from feasible nearby states rather than arbitrary convenient states.
+[Reverse Curriculum Generation](https://proceedings.mlr.press/v78/florensa17a.html)
+uses reachable starts near already-solvable states, while
+[Jump-Start RL](https://proceedings.mlr.press/v202/uchendu23a.html) lets a guide
+policy generate the exploration policy's starting-state distribution. The exact
+mechanisms do not transfer directly to a live, reset-limited game, but the design
+principle does: training starts should converge toward the state distribution
+created by the policy that must use the learned skill.
+
+AutoDancer must therefore qualify each backward expansion in two ways:
+
+1. fixed later-floor starts measure whether the isolated subskill was retained;
+2. starts from the immediately preceding floor must cross the boundary naturally
+   and complete the same downstream target with carried health, inventory, and
+   recurrent context.
+
+The second result is the promotion evidence. Direct-start success alone only
+authorizes the preceding-floor stage. Curriculum reports must record the arrival
+health, inventory signature, and whether recurrent state was fresh or carried,
+then compare those distributions with natural boundary crossings. Before the
+first floor-stage experiment, deterministic evaluation must also compare carried
+GRU state against an explicit floor-boundary reset. If resetting does not reduce
+gameplay success, resetting at every floor boundary is preferable because it
+removes stale-history mismatch while current health, inventory, level identity,
+and floor memory remain explicitly observed. If carried state helps, training
+must include natural boundary crossings rather than assuming zero-state starts
+will transfer.
+
 This reset-distribution prerequisite is now implemented as
 `mixed-curriculum-replay-v1`. The live environment validates Gymnasium reset
 `options`; every episode carries an identified start level, target level, and
