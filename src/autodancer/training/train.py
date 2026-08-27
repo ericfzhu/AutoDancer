@@ -21,6 +21,7 @@ from autodancer.curriculum import fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.progress import deeper_level, level_progress
 from autodancer.rewards import load_reward_config
 from autodancer.training.action_contract import ACTION_CONTRACTS
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
@@ -278,6 +279,12 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     statuses = [str(episode.get("status", "")) for episode in episodes]
     boss_types = sorted({int(episode.get("boss_type", 0)) for episode in episodes})
+    deepest_level = (0, 0)
+    for episode in episodes:
+        deepest_level = deeper_level(
+            deepest_level,
+            (int(episode.get("zone") or 0), int(episode.get("floor") or 0)),
+        )
     return {
         "episodes": float(len(episodes)),
         "mean_return": float(np.mean([episode["return"] for episode in episodes])),
@@ -324,8 +331,9 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             sum(event.get("kind") == "enemy_kill" for event in boss_add_events)
         ),
         "items_collected": float(sum(event.get("kind") == "item_collected" for event in events)),
-        "furthest_zone": float(max(int(episode.get("zone") or 0) for episode in episodes)),
-        "furthest_floor": float(max(int(episode.get("floor") or 0) for episode in episodes)),
+        "furthest_zone": float(deepest_level[0]),
+        "furthest_floor": float(deepest_level[1]),
+        "furthest_level": float(level_progress(*deepest_level)),
     }
 
 

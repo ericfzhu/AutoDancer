@@ -126,6 +126,12 @@ Two defects were found after EXP-0012:
   `furthest_level=5` and the unambiguous paired fields
   `deepest_zone=2, deepest_floor=1`; the legacy field remains only for historical
   comparator and checkpoint compatibility.
+- PPO update diagnostics separately retained the old independent maxima and could
+  still emit `(furthest_zone=2, furthest_floor=4)` when one completed episode
+  entered Zone 2 and another ended on the Zone 1 boss floor. They now retain the
+  deepest real episode pair and report `furthest_level` separately. This defect
+  affected monitoring and interpretation only; actor episode state, rewards,
+  rollout tensors, and acceptance comparisons already used paired episode data.
 - Raw item pickup counts include repeated inventory swaps. In EXP-0012 seed
   62023, one looping episode recorded 2,485 pickups but only one newly acquired
   item type. Reports now expose repeated item transactions; selection should use

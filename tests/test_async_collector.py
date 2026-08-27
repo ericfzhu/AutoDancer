@@ -516,6 +516,8 @@ def test_episode_metrics_distinguish_curriculum_success_and_time_limits() -> Non
     assert metrics["curriculum_completions"] == 1
     assert metrics["time_limits"] == 1
     assert metrics["episode_seeds"] == [41, 42]
+    assert (metrics["furthest_zone"], metrics["furthest_floor"]) == (2, 1)
+    assert metrics["furthest_level"] == 5
 
 
 def test_async_collector_discards_only_failed_slot_fragment() -> None:
