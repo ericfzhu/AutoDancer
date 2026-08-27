@@ -1,0 +1,76 @@
+schema_version: 1
+id: EXP-0018
+title: Normal Bard-health one-hit boss transfer
+question: Does the accepted EXP-0017 policy retain repeatable Death Metal completion when player-health assistance is fully removed, and if not, can calibrated mastered-start replay consolidate it?
+hypothesis: The one-hit finishing policy has already learned enough local combat to transfer to Bard's normal six health on fresh seeds; if that boundary is marginal, an 80/20 player6-to-player10 mixture will consolidate it without forgetting.
+changed_blocks: [environment-semantics, optimization-schedule, training-level-distribution, evaluation]
+component_versions:
+  reward: V4A
+  architecture: A2
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: mixed-assisted-curriculum-v3
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: assistance-reduction-with-replay-v1
+  training-level-distribution: mixed-curriculum-replay-v1
+  runtime: async-native-pipe-v1
+  evaluation: assistance-transfer-and-retention-v8
+invariants:
+  - the EXP-0017-selected checkpoint is unchanged from seed-68002 and is the only parent
+  - Bard normal seeded All Zones identity is followed by real-game sequential GOTO to Zone 1 Floor 4
+  - player6 is Bard's normal health; the boss objective alone remains one-hit assisted
+  - setup assistance emits no transition or reward and success requires live entry to Zone 2 Floor 1
+  - all seeds are telemetry-confirmed Death Metal and the fresh transfer suite is evaluated once
+  - exactly eight qualified fixed-capacity workers, zero infrastructure contamination, and exact identity validation are required
+  - if optimization is needed, every trial uses the same 80 percent player6 / 20 percent mastered player10 distribution
+  - gameplay completion, death, and retention decide; shaped return never does
+  - no one-hit boss result constitutes unassisted boss or normal-start Zone 2 evidence
+arms:
+  - id: frozen-player6-transfer
+    description: Evaluate the unchanged selected parent on fresh normal-health, one-hit Death Metal starts before any optimizer update.
+    component_versions:
+      environment-semantics: assisted-single-boss-curriculum-v2
+      optimization-schedule: frozen-policy
+      training-level-distribution: reverse-curriculum-sequential-goto-v1
+  - id: mixed-player6-replay
+    description: Conditional three-trial fine-tuning using 80 percent player6 and 20 percent mastered player10 starts.
+    component_versions:
+      environment-semantics: mixed-assisted-curriculum-v3
+      optimization-schedule: assistance-reduction-with-replay-v1
+      training-level-distribution: mixed-curriculum-replay-v1
+calibration:
+  plan: experiments/EXP-0018/calibration-plan.md
+  result: experiments/EXP-0018/calibration-result.json
+  sampled_completion: 25/48
+  deterministic_completion: 5/24
+  selected_mixture: 80 percent player6 / 20 percent mastered player10
+source:
+  checkpoint: runs/assisted-death-metal/training/seed-68002/final.pt
+  checkpoint_sha256: bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5
+frozen_transfer_gate:
+  candidate_seed_range: 72001-72256
+  heldout_selection: ascending first 24 telemetry-confirmed Death Metal seeds
+  profile: boss1hp-player6
+  modes: [deterministic, stochastic-103001, stochastic-103002]
+  max_turns: 500
+  pass_rule: sampled completion at least 50 percent, at least 12 distinct successful seeds, sampled death at most 50 percent, deterministic completion at least 20 percent, exact controller validity, and zero restarts
+  action_if_passed: retain the frozen parent and advance to separately versioned boss-health assistance removal
+  action_if_failed: consume these seeds as development and run the fixed mixed-replay trials
+training:
+  conditional: run only if the frozen transfer gate fails
+  source_checkpoint: runs/assisted-death-metal/training/seed-68002/final.pt
+  curriculum_config: configs/curriculum-exp0018-player6-replay.json
+  curriculum_config_sha256: bad1e38d2119116bcb95ed6ae1083acb6a2865449e8f3decb43ddf7e0b938d24
+  training_seeds: [73001, 73002, 73003]
+  game_seed_pool: [64001, 64002, 64012, 64013, 64016, 64018, 64020, 64026, 64027]
+  workers: 8
+  transition_budget_per_trial: 51200
+  max_turns: 500
+evaluation:
+  first_stage: frozen gate on the first 24 Death Metal seeds in 72001-72256
+  conditional_acceptance_stage: matched player6 and player10 evaluation on fresh Death Metal seeds in 74001-74256
+  primary_outcome: live entry to Zone 2 Floor 1
+  modes: [deterministic, two timing-independent stochastic streams]
+decision_rule: Run the frozen gate first. If it passes, skip optimization and accept removal of player-health assistance. If it fails, accept a mixed-replay checkpoint only when fresh player6 sampled completion is at least 50 percent with improvement in two of three trials and player10 retention is at least 80 percent of the matched parent; otherwise retain the parent and add an intermediate health profile. Never change reward or architecture based on this result.

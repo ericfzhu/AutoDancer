@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0018",
+  "calibration_role": "design-only-development-history",
+  "source_checkpoint": "runs/assisted-death-metal/training/seed-68002/final.pt",
+  "source_checkpoint_sha256": "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5",
+  "profile": "boss1hp-player6",
+  "seed_source": "EXP-0017 accepted heldout seeds, now consumed as EXP-0018 development history",
+  "results": {
+    "deterministic": {
+      "successes": 5,
+      "episodes": 24,
+      "completion_rate": 0.20833333333333334,
+      "death_rate": 0.7916666666666666
+    },
+    "stochastic_102001": {
+      "successes": 14,
+      "episodes": 24,
+      "completion_rate": 0.5833333333333334,
+      "death_rate": 0.4166666666666667
+    },
+    "stochastic_102002": {
+      "successes": 11,
+      "episodes": 24,
+      "completion_rate": 0.4583333333333333,
+      "death_rate": 0.5416666666666666
+    },
+    "sampled_aggregate": {
+      "successes": 25,
+      "episodes": 48,
+      "completion_rate": 0.5208333333333334,
+      "death_rate": 0.4791666666666667
+    }
+  },
+  "predeclared_rule_selected": "80-percent-player6-20-percent-mastered-player10",
+  "frozen_fresh_gate_authorized": true,
+  "acceptance_eligible": false,
+  "reason": "The calibration crosses every provisional frozen threshold but reuses prior acceptance seeds; EXP-0018 requires a new seed suite.",
+  "evidence": [
+    "experiments/EXP-0018/calibration-plan.md",
+    "runs/player6-parent-calibration/deterministic.json",
+    "runs/player6-parent-calibration/stochastic-102001.json",
+    "runs/player6-parent-calibration/stochastic-102002.json"
+  ]
+}
