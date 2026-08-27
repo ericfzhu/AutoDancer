@@ -283,6 +283,10 @@ def test_curriculum_reset_jumps_sequentially_without_reward_and_terminates_at_ta
     assert info["completed"] == 0
     assert info["deaths"] == 0
     assert "zone_complete" in info["reward_components"]
+    assert info["reward_components"]["floor_complete"] == 5.0
+    assert info["reward_components"]["zone_complete"] == 10.0
+    assert "victory" not in info["reward_components"]
+    assert info["extrinsic_reward"] == 15.0
 
 
 def test_curriculum_profile_is_routed_only_to_the_start_floor() -> None:
