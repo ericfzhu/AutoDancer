@@ -147,6 +147,30 @@ behavior or held-out progression at acceptable learner cost. Research on POMDPs
 also cautions that recurrence itself does not make long histories easy to learn
 ([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
 
+There is a second recurrent approximation in the current collector. Actor hidden
+states persist across learner updates, so policy version `v+1` initially acts
+from an LSTM state produced by version `v`. During the four PPO epochs, each
+chunk likewise starts from its stored behavior-version state even after the
+model has changed. Collection remains internally on-policy—the action and old
+log-probability were produced from the same state and frozen policy—but the new
+policy likelihood is evaluated under a potentially stale recurrent
+representation. The lag is one PPO update rather than a long replay-buffer lag,
+so its magnitude must be measured rather than assumed catastrophic.
+
+Before a recurrent-horizon experiment, add hidden-state drift diagnostics: for
+sampled chunks, no-gradient-unroll a preceding context under the current model
+and report hidden-state relative error, action-distribution KL, and value change
+against the stored-state evaluation. A versioned burn-in arm should retain a
+short prefix (initially 16 or 32 turns), reconstruct the target chunk's state
+without loss on that prefix, and apply gradients only to the existing target
+window. The same mechanism should re-anchor each actor after a policy publish;
+resetting hidden state to zero at arbitrary rollout boundaries would instead
+fabricate episode boundaries. This adapts the stored-state plus burn-in response
+to recurrent state staleness studied by
+[R2D2](https://openreview.net/pdf/387fb2fcee8f74c53cf707a9856f40c458f33933.pdf),
+while recognizing that R2D2's off-policy replay setting has much larger lag than
+AutoDancer's synchronous PPO updates.
+
 ### 9. Critic diagnostics are implemented; empirical health remains unqualified
 
 Historical training recorded value loss, but not explained variance,
