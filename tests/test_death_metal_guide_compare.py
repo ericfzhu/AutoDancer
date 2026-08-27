@@ -79,3 +79,16 @@ def test_guide_gate_rejects_one_lucky_checkpoint(tmp_path: Path) -> None:
 
     assert result["gate"]["passed"] is False
     assert result["selected_trial"] is None
+
+
+def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
+    source = Path("tools/run-exp0020-legal-death-metal-guide.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "boss1hp" not in source
+    assert '"--curriculum-profile", "player20"' in source
+    assert '"--initialize-from", $guideSource' in source
+    assert '"--freeze-base-updates", "10"' in source
+    assert "controller-qualification-player-health-only-world-ready" in source
+    assert "$guideTotalSteps = 122880" in source
