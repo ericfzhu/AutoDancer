@@ -557,6 +557,23 @@ replaying mastered starts; demonstrate unassisted boss completion on multiple
 unseen boss seeds; then move the start backward to Floor 3, Floor 2, and normal
 Floor 1. A stage may advance only on gameplay success, never shaped return.
 
+The current Python reset API cannot yet execute that replay mixture. The live
+environment discards Gymnasium reset `options`, the supervisor constructs every
+worker with one fixed start level/profile, and the asynchronous actor supplies
+only the next seed. Before the first mixed-stage experiment, add a validated
+per-episode reset specification containing game seed, start level, target level,
+and assistance profile. The actor—not Lua—should draw this specification from a
+versioned curriculum sampler using a deterministic stream keyed by training
+seed, worker slot, policy version, and episode index. Checkpoints must preserve
+the sampler state and accumulated per-start outcomes exactly. Reset telemetry
+must acknowledge the complete specification, and rollout metadata must retain it
+for every transition so a worker restart cannot silently change the training
+distribution. Evaluation must bypass the sampler and supply an explicit fixed
+unassisted specification. This is a prerequisite for old-start replay and
+competence-based selection; running separate fixed-profile jobs and warm-starting
+between them is not equivalent because it provides no within-update protection
+against forgetting.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
