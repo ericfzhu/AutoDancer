@@ -31,11 +31,15 @@ def compare_assistance_transfer(
     pass_decision: str,
     fail_decision: str,
     selected_checkpoint: str,
+    minimum_sampled_completion: float = 0.5,
+    minimum_distinct_successful_seeds: int = 12,
+    maximum_sampled_death: float = 0.5,
+    minimum_deterministic_completion: float = 0.2,
 ) -> dict[str, Any]:
     selection = json.loads((root / "heldout-selection.json").read_text(encoding="utf-8-sig"))
     expected_seeds = [int(seed) for seed in selection["seeds"]]
     if len(expected_seeds) != 24 or len(set(expected_seeds)) != 24:
-        raise ValueError("EXP-0017 transfer gate requires exactly 24 distinct seeds")
+        raise ValueError(f"{experiment_id} transfer gate requires exactly 24 distinct seeds")
     reports: dict[str, Any] = {}
     sampled_successes = 0
     sampled_episodes = 0
@@ -94,10 +98,10 @@ def compare_assistance_transfer(
     sampled_death_rate = sampled_deaths / max(sampled_episodes, 1)
     passed = (
         controller_valid
-        and sampled_completion_rate >= 0.5
-        and len(sampled_successful_seeds) >= 12
-        and sampled_death_rate <= 0.5
-        and deterministic_rate >= 0.2
+        and sampled_completion_rate >= minimum_sampled_completion
+        and len(sampled_successful_seeds) >= minimum_distinct_successful_seeds
+        and sampled_death_rate <= maximum_sampled_death
+        and deterministic_rate >= minimum_deterministic_completion
     )
     result = {
         "schema_version": 1,
@@ -114,6 +118,12 @@ def compare_assistance_transfer(
         },
         "deterministic_completion_rate": deterministic_rate,
         "controller_valid": controller_valid,
+        "thresholds": {
+            "minimum_sampled_completion": minimum_sampled_completion,
+            "minimum_distinct_successful_seeds": minimum_distinct_successful_seeds,
+            "maximum_sampled_death": maximum_sampled_death,
+            "minimum_deterministic_completion": minimum_deterministic_completion,
+        },
         "passed": passed,
         "decision": (
             pass_decision if passed else fail_decision
