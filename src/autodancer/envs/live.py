@@ -91,9 +91,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
         if self.curriculum_profile not in CURRICULUM_PROFILES:
-            raise ValueError(
-                "curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES)
-            )
+            raise ValueError("curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES))
         if self.curriculum_profile != "normal" and self.curriculum_start_level <= 1:
             raise ValueError("assisted curriculum profiles require a later start level")
         if (
@@ -117,6 +115,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._episode_done = False
         self._episode_seed: int | None = None
         self._run_id: str | None = None
+        self._learning_segment: dict[str, Any] | None = None
         self.reward_tracker = RewardTracker(reward_config)
         self.map_memory = FloorMapMemory()
 
@@ -138,6 +137,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self.attach_existing and reset_spec.start_level != 1:
             raise ValueError("attach_existing cannot perform a curriculum level start")
         self._active_reset_spec = reset_spec
+        self._learning_segment = None
         source, bridge = self._dependencies()
         self.map_memory.reset()
         source.reset_sequence()
@@ -174,17 +174,14 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             for target_level in range(2, reset_spec.start_level + 1):
                 profile = (
                     reset_spec.profile
-                    if target_level == reset_spec.start_level
-                    and reset_spec.profile != "normal"
+                    if target_level == reset_spec.start_level and reset_spec.profile != "normal"
                     else None
                 )
                 observation, info = self._goto_level(target_level, profile)
         if reset_spec.profile != "normal":
             expected_health = int(reset_spec.profile.rsplit("player", 1)[1])
             observed_health = int(observation["player"][PlayerFeature.HEALTH])
-            observed_max_health = int(
-                observation["player"][PlayerFeature.MAX_HEALTH]
-            )
+            observed_max_health = int(observation["player"][PlayerFeature.MAX_HEALTH])
             if (observed_health, observed_max_health) != (
                 expected_health,
                 expected_health,
@@ -258,19 +255,17 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         info["curriculum_start_level"] = self._active_reset_spec.start_level
         info["curriculum_target_level"] = self._active_reset_spec.target_level
         info["curriculum_profile"] = self._active_reset_spec.profile
+        if self._learning_segment is not None:
+            info["learning_segment"] = dict(self._learning_segment)
         self._episode_steps += 1
         events = [dict(event) for event in record.get("events", [])]
         if previous_observation is not None:
-            events = self._normalize_player_damage(
-                events, previous_observation, observation
-            )
+            events = self._normalize_player_damage(events, previous_observation, observation)
             events.extend(self._inventory_pickup_events(previous_observation, observation))
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
         truncated = status == "aborted"
-        current_level = level_progress(
-            int(info.get("zone") or 0), int(info.get("floor") or 0)
-        )
+        current_level = level_progress(int(info.get("zone") or 0), int(info.get("floor") or 0))
         curriculum_complete = bool(
             self._active_reset_spec.target_level is not None
             and current_level >= self._active_reset_spec.target_level
@@ -315,6 +310,38 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             self.progress_callback(info)
         return observation, reward, terminated, truncated, info
 
+    def begin_learning_segment(
+        self,
+        info: dict[str, Any],
+        *,
+        metadata: dict[str, Any],
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Start learner accounting without changing the running game state.
+
+        This is the Python-side half of a natural-prefix handoff.  It preserves
+        the process, run, seed, sequence, observation, inventory, health, map
+        memory, and every engine entity.  Only client-side reward history and
+        the learner turn limit are rebased, so guide rewards cannot enter PPO.
+        """
+
+        if self._last_observation is None or self._episode_done:
+            raise RuntimeError("begin_learning_segment() requires a running live episode")
+        if str(info.get("run_id")) != self._run_id:
+            raise ProtocolError("Natural-prefix handoff changed the active run ID")
+        if int(info.get("seed", -1)) != self._episode_seed:
+            raise ProtocolError("Natural-prefix handoff changed the active seed")
+        if str(info.get("episode_status", "running")) != "running":
+            raise ProtocolError("Natural-prefix handoff requires a running engine state")
+        self._episode_steps = 0
+        self._learning_segment = dict(metadata)
+        segment_info = dict(info)
+        segment_info["turns"] = 0
+        segment_info["learning_segment"] = dict(metadata)
+        self.reward_tracker.reset(self._last_observation, segment_info)
+        if self.progress_callback is not None:
+            self.progress_callback(segment_info)
+        return self._last_observation, segment_info
+
     @staticmethod
     def _normalize_player_damage(
         events: list[dict[str, Any]],
@@ -331,8 +358,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         current_health = max(int(after["player"][PlayerFeature.HEALTH]), 0)
         actual_loss = min(max(previous_health - current_health, 0), previous_health)
         raw_damage = sum(
-            max(int(events[index].get("amount", 0) or 0), 0)
-            for index in damage_indices
+            max(int(events[index].get("amount", 0) or 0), 0) for index in damage_indices
         )
         first_index = damage_indices[0]
         normalized = dict(events[first_index])
@@ -373,9 +399,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             if quantity > previous.get(item_type, 0)
         ]
 
-    def qualification_goto_level(
-        self, level: int
-    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    def qualification_goto_level(self, level: int) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Load a real run-sequence level for qualification-only boundary checks."""
         return self._goto_level(level)
 
@@ -386,11 +410,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self._episode_done or self._run_id is None or self._episode_seed is None:
             raise RuntimeError("goto_level() requires an active reset run")
         source, bridge = self._dependencies()
-        command = (
-            bridge.goto_level(level)
-            if profile is None
-            else bridge.goto_level(level, profile)
-        )
+        command = bridge.goto_level(level) if profile is None else bridge.goto_level(level, profile)
         record = source.read(self.reset_timeout)
         validate_record(record)
         self._verify_acknowledgement(record, command)

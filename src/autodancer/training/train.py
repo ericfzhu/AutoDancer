@@ -33,6 +33,11 @@ from autodancer.training.model import (
     PolicyModel,
     ProjectedAdapterActorCritic,
     RecurrentActorCritic,
+    model_from_spec,
+)
+from autodancer.training.natural_prefix import (
+    NATURAL_PREFIX_RECURRENT_MODES,
+    NaturalPrefixConfig,
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
 from autodancer.training.seed_schedule import parse_training_seed_pool
@@ -166,9 +171,7 @@ class RolloutCollector:
                     reward,
                 )
             done = terminated | truncated
-            terminal_bootstrap = torch.zeros(
-                self.environment.num_envs, dtype=torch.float32
-            )
+            terminal_bootstrap = torch.zeros(self.environment.num_envs, dtype=torch.float32)
             bootstrap_indices = np.flatnonzero(truncated & ~terminated).tolist()
             if bootstrap_indices:
                 with torch.inference_mode():
@@ -177,12 +180,8 @@ class RolloutCollector:
                     terminal_observation["previous_reward"] = torch.from_numpy(
                         reward.astype(np.float32, copy=False)
                     ).to(self.device)
-                    _, terminal_values, _ = self.model.step(
-                        terminal_observation, next_hidden
-                    )
-                terminal_bootstrap[bootstrap_indices] = terminal_values[
-                    bootstrap_indices
-                ].cpu()
+                    _, terminal_values, _ = self.model.step(terminal_observation, next_hidden)
+                terminal_bootstrap[bootstrap_indices] = terminal_values[bootstrap_indices].cpu()
             self.episode_returns += reward
             for index, info in enumerate(infos):
                 for name, component_value in info.get("reward_components", {}).items():
@@ -269,13 +268,9 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             "episode_seeds": [],
         }
     events = [event for episode in episodes for event in episode.get("events", [])]
-    boss_events = [
-        event for event in events if bool((event.get("data") or {}).get("boss", False))
-    ]
+    boss_events = [event for event in events if bool((event.get("data") or {}).get("boss", False))]
     boss_add_events = [
-        event
-        for event in events
-        if bool((event.get("data") or {}).get("boss_add", False))
+        event for event in events if bool((event.get("data") or {}).get("boss_add", False))
     ]
     statuses = [str(episode.get("status", "")) for episode in episodes]
     boss_types = sorted({int(episode.get("boss_type", 0)) for episode in episodes})
@@ -324,9 +319,7 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
                 if event.get("kind") == "enemy_damage"
             )
         ),
-        "boss_kills": float(
-            sum(event.get("kind") == "enemy_kill" for event in boss_events)
-        ),
+        "boss_kills": float(sum(event.get("kind") == "enemy_kill" for event in boss_events)),
         "boss_add_kills": float(
             sum(event.get("kind") == "enemy_kill" for event in boss_add_events)
         ),
@@ -345,6 +338,8 @@ def evaluate_policy(
     seed: int,
     steps: int,
     action_contract: str = "current",
+    guide_model: PolicyModel | None = None,
+    natural_prefix: NaturalPrefixConfig | None = None,
 ) -> dict[str, float]:
     """Evaluate deterministically on every worker, leaving all workers reset."""
     from autodancer.training.baseline import _evaluate_deterministic_async
@@ -358,6 +353,8 @@ def evaluate_policy(
         device=device,
         dashboard_state=None,
         action_contract=action_contract,
+        guide_model=guide_model,
+        natural_prefix=natural_prefix,
     )
     scores = [float(episode["episode_return"]) for episode in episodes]
     return {
@@ -378,6 +375,18 @@ def train(arguments: argparse.Namespace) -> None:
         gae_lambda=arguments.gae_lambda,
     )
     reward_config = load_reward_config(arguments.reward_config)
+    natural_prefix = (
+        None
+        if arguments.natural_prefix_guide is None
+        else NaturalPrefixConfig(
+            target_phase=arguments.natural_prefix_target_phase,
+            max_guide_turns=arguments.natural_prefix_max_turns,
+            max_attempts=arguments.natural_prefix_max_attempts,
+            deterministic_guide=arguments.natural_prefix_guide_mode == "deterministic",
+            guide_policy_seed=arguments.natural_prefix_policy_seed,
+            recurrent_state_mode=arguments.natural_prefix_recurrent_state,
+        )
+    )
     training_seed_pool = (
         ()
         if arguments.training_seed_pool is None
@@ -408,8 +417,7 @@ def train(arguments: argparse.Namespace) -> None:
     curriculum_metadata = (
         {"curriculum_distribution": curriculum_distribution}
         if arguments.curriculum_mixture is not None
-        else
-        {
+        else {
             "curriculum": {
                 "start_level": arguments.curriculum_start_level,
                 "target_level": arguments.curriculum_target_level,
@@ -417,8 +425,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "reset_semantics": "normal-reset-sequential-goto-reward-reset-v1",
             }
         }
-        if arguments.curriculum_start_level != 1
-        or arguments.curriculum_target_level is not None
+        if arguments.curriculum_start_level != 1 or arguments.curriculum_target_level is not None
         else {}
     )
     if reward_config.discount != ppo_config.gamma:
@@ -439,9 +446,7 @@ def train(arguments: argparse.Namespace) -> None:
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
         curriculum_profile=arguments.curriculum_profile,
-        curriculum_commands_enabled=any(
-            entry.spec.start_level > 1 for entry in curriculum_entries
-        ),
+        curriculum_commands_enabled=any(entry.spec.start_level > 1 for entry in curriculum_entries),
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -582,6 +587,18 @@ def train(arguments: argparse.Namespace) -> None:
                         "max_turns": arguments.max_turns,
                         **seed_checkpoint_metadata,
                         **curriculum_metadata,
+                        **(
+                            {
+                                "natural_prefix": {
+                                    **natural_prefix.specification(),
+                                    "guide_checkpoint": str(
+                                        arguments.natural_prefix_guide.resolve()
+                                    ),
+                                }
+                            }
+                            if natural_prefix is not None
+                            else {}
+                        ),
                         "freeze_base_updates": arguments.freeze_base_updates,
                     },
                 )
@@ -592,15 +609,27 @@ def train(arguments: argparse.Namespace) -> None:
                     algorithm.initialize_from(arguments.initialize_from)
                 elif arguments.fine_tune_from:
                     algorithm.initialize_for_finetune(arguments.fine_tune_from)
+                guide_model: PolicyModel | None = None
+                if arguments.natural_prefix_guide is not None:
+                    guide_payload = torch.load(
+                        arguments.natural_prefix_guide,
+                        map_location=device,
+                        weights_only=False,
+                    )
+                    guide_model = model_from_spec(
+                        guide_payload.get("architecture", {}), initialize=False
+                    ).to(device)
+                    guide_model.load_state_dict(guide_payload["model"])
+                    guide_model.eval()
+                    for parameter in guide_model.parameters():
+                        parameter.requires_grad_(False)
                 if (
                     arguments.resume is not None
                     and arguments.curriculum_mixture is not None
                     and algorithm.global_step > 0
                     and "curriculum_schedule_state" not in resume_metrics
                 ):
-                    raise ValueError(
-                        "The resume checkpoint has no exact curriculum schedule state"
-                    )
+                    raise ValueError("The resume checkpoint has no exact curriculum schedule state")
                 if tracker is not None:
                     tracker.set_resolved(
                         {
@@ -624,9 +653,9 @@ def train(arguments: argparse.Namespace) -> None:
                     training_seed_pool=training_seed_pool,
                     seed_schedule_state=resume_metrics.get("training_seed_schedule_state"),
                     curriculum_entries=curriculum_entries,
-                    curriculum_schedule_state=resume_metrics.get(
-                        "curriculum_schedule_state"
-                    ),
+                    curriculum_schedule_state=resume_metrics.get("curriculum_schedule_state"),
+                    guide_model=guide_model,
+                    natural_prefix=natural_prefix,
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -681,6 +710,8 @@ def train(arguments: argparse.Namespace) -> None:
                                 seed=arguments.seed + algorithm.updates,
                                 steps=arguments.evaluation_steps,
                                 action_contract=arguments.action_contract,
+                                guide_model=guide_model,
+                                natural_prefix=natural_prefix,
                             )
                         )
                         if dashboard_state is not None:
@@ -701,13 +732,11 @@ def train(arguments: argparse.Namespace) -> None:
                             seed_schedule_state=schedule_state,
                             curriculum_entries=curriculum_entries,
                             curriculum_schedule_state=curriculum_schedule_state,
+                            guide_model=guide_model,
+                            natural_prefix=natural_prefix,
                         )
-                        metrics["training_seed_schedule_state"] = (
-                            collector.seed_schedule_state()
-                        )
-                        metrics["curriculum_schedule_state"] = (
-                            collector.curriculum_schedule_state()
-                        )
+                        metrics["training_seed_schedule_state"] = collector.seed_schedule_state()
+                        metrics["curriculum_schedule_state"] = collector.curriculum_schedule_state()
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
                     if dashboard_state is not None:
@@ -741,9 +770,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "action_contract": arguments.action_contract,
                             "max_turns": arguments.max_turns,
                             "training_seed_schedule": (
-                                "uniform-pool-v1"
-                                if training_seed_pool
-                                else "unbounded-random-v1"
+                                "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
                             ),
                             "training_seed_pool": list(training_seed_pool),
                             "curriculum_start_level": arguments.curriculum_start_level,
@@ -884,6 +911,33 @@ def main() -> int:
             "with non-default fixed curriculum arguments"
         ),
     )
+    parser.add_argument(
+        "--natural-prefix-guide",
+        type=Path,
+        help=(
+            "frozen guide checkpoint that reaches a legally observed Death Metal "
+            "phase before learner collection begins"
+        ),
+    )
+    parser.add_argument(
+        "--natural-prefix-target-phase",
+        type=int,
+        choices=(2, 3, 4),
+        default=4,
+    )
+    parser.add_argument("--natural-prefix-max-turns", type=int, default=512)
+    parser.add_argument("--natural-prefix-max-attempts", type=int, default=8)
+    parser.add_argument(
+        "--natural-prefix-guide-mode",
+        choices=("deterministic", "stochastic"),
+        default="stochastic",
+    )
+    parser.add_argument("--natural-prefix-policy-seed", type=int, default=0)
+    parser.add_argument(
+        "--natural-prefix-recurrent-state",
+        choices=NATURAL_PREFIX_RECURRENT_MODES,
+        default="fresh",
+    )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--reward-config",
@@ -943,9 +997,19 @@ def main() -> int:
         or arguments.curriculum_target_level is not None
         or arguments.curriculum_profile != "normal"
     ):
-        parser.error(
-            "--curriculum-mixture is mutually exclusive with fixed curriculum arguments"
-        )
+        parser.error("--curriculum-mixture is mutually exclusive with fixed curriculum arguments")
+    if arguments.natural_prefix_guide is not None:
+        if arguments.curriculum_start_level != 4 or arguments.curriculum_target_level != 5:
+            parser.error(
+                "--natural-prefix-guide currently requires the Zone 1 boss-to-Zone 2 "
+                "curriculum (--curriculum-start-level 4 --curriculum-target-level 5)"
+            )
+        if arguments.curriculum_profile != "normal":
+            parser.error("natural-prefix training rejects state-mutating curriculum profiles")
+        if arguments.curriculum_mixture is not None:
+            parser.error("natural-prefix training does not yet support curriculum mixtures")
+        if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
+            parser.error("natural-prefix turn and attempt limits must be positive")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)

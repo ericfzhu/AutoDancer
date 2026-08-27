@@ -25,6 +25,11 @@ from autodancer.live.protocol import ProtocolError
 from autodancer.progress import deeper_level
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
+from autodancer.training.natural_prefix import (
+    DeathMetalPhaseTracker,
+    NaturalPrefixConfig,
+    NaturalPrefixError,
+)
 from autodancer.training.ppo import RolloutBatch
 from autodancer.training.seed_schedule import TrainingSeedSchedule
 
@@ -47,6 +52,8 @@ class ActorState:
     furthest_zone: int = 0
     furthest_floor: int = 0
     boss_type: int = 0
+    prefix_pending: bool = False
+    prefix_metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.furthest_zone, self.furthest_floor = deeper_level(
@@ -180,8 +187,10 @@ class InferenceScheduler:
                             device=self.device,
                         )
                         actions = (
-                            probabilities.cumsum(dim=-1) < samples.unsqueeze(-1)
-                        ).sum(dim=-1).clamp_max(probabilities.shape[-1] - 1)
+                            (probabilities.cumsum(dim=-1) < samples.unsqueeze(-1))
+                            .sum(dim=-1)
+                            .clamp_max(probabilities.shape[-1] - 1)
+                        )
                     log_probs = distribution.log_prob(actions)
                 for index, request in enumerate(batch):
                     request.future.set_result(
@@ -215,16 +224,20 @@ class VersionedAsyncRolloutCollector:
         seed_schedule_state: dict[str, Any] | None = None,
         curriculum_entries: tuple[WeightedResetSpec, ...] = (),
         curriculum_schedule_state: dict[str, Any] | None = None,
+        guide_model: PolicyModel | None = None,
+        natural_prefix: NaturalPrefixConfig | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
         self.device = device
         self.batch_delay = batch_delay
         self.telemetry_callback = telemetry_callback
+        if (guide_model is None) != (natural_prefix is None):
+            raise ValueError("guide_model and natural_prefix must be supplied together")
+        self.guide_model = guide_model
+        self.natural_prefix = natural_prefix
         self.action_contract = action_contract
-        self.contract_memory = ActionContractMemory(
-            action_contract, environment.num_envs
-        )
+        self.contract_memory = ActionContractMemory(action_contract, environment.num_envs)
         self.base_seed = int(seed)
         self.seed_schedule = TrainingSeedSchedule(
             int(seed), environment.num_envs, tuple(training_seed_pool)
@@ -242,7 +255,8 @@ class VersionedAsyncRolloutCollector:
             [item[0] for item in initial_resets],
             options=[item[1].reset_options() for item in initial_resets],
         )
-        observations = self.contract_memory.reset_batch(observations)
+        if self.natural_prefix is None:
+            observations = self.contract_memory.reset_batch(observations)
         initial_hidden = model.initial_state(environment.num_envs, device=device)
         self.states = [
             ActorState(
@@ -250,6 +264,7 @@ class VersionedAsyncRolloutCollector:
                 infos[index],
                 initial_hidden[index : index + 1],
                 initial_resets[index][1],
+                prefix_pending=self.natural_prefix is not None,
             )
             for index in range(environment.num_envs)
         ]
@@ -262,6 +277,17 @@ class VersionedAsyncRolloutCollector:
         self._recovery_total = 0
         self._last_recovery_error = ""
         self._executor = ThreadPoolExecutor(max_workers=environment.num_envs)
+        self._guide_scheduler = (
+            None
+            if guide_model is None
+            else InferenceScheduler(
+                guide_model,
+                device=device,
+                max_batch=environment.num_envs,
+                batch_delay=batch_delay,
+                deterministic=bool(natural_prefix and natural_prefix.deterministic_guide),
+            )
+        )
         for index, state in enumerate(self.states):
             self._publish_telemetry(index, state.observation, state.info, None, None)
 
@@ -339,10 +365,7 @@ class VersionedAsyncRolloutCollector:
                 sum(fragment.metrics["wall_attempts"] for fragment in fragments)
             ),
             "known_invalid_wall_discoveries": float(
-                sum(
-                    fragment.metrics["known_invalid_wall_discoveries"]
-                    for fragment in fragments
-                )
+                sum(fragment.metrics["known_invalid_wall_discoveries"] for fragment in fragments)
             ),
             "mean_masked_directions": float(
                 np.mean(
@@ -355,18 +378,14 @@ class VersionedAsyncRolloutCollector:
             "mean_effective_masked_directions": float(
                 np.mean(
                     [
-                        fragment.metrics["effective_masked_direction_observations"]
-                        / length
+                        fragment.metrics["effective_masked_direction_observations"] / length
                         for fragment in fragments
                     ]
                 )
             ),
             "navigation_prior_rate": float(
                 np.mean(
-                    [
-                        fragment.metrics["navigation_prior_turns"] / length
-                        for fragment in fragments
-                    ]
+                    [fragment.metrics["navigation_prior_turns"] / length for fragment in fragments]
                 )
             ),
             "max_remembered_hazards": float(
@@ -441,12 +460,14 @@ class VersionedAsyncRolloutCollector:
                     options=state.reset_spec.reset_options(),
                     failure=failure,
                 )
-                observation = self.contract_memory.reset_slot(index, observation)
+                if self.natural_prefix is None:
+                    observation = self.contract_memory.reset_slot(index, observation)
                 self.states[index] = ActorState(
                     observation,
                     info,
                     self.model.initial_state(1, device=self.device),
                     state.reset_spec,
+                    prefix_pending=self.natural_prefix is not None,
                 )
                 self._publish_telemetry(index, observation, info, None, None)
 
@@ -482,6 +503,8 @@ class VersionedAsyncRolloutCollector:
         max_remembered_hazards = 0
         started = time.monotonic()
         for fragment_step in range(length):
+            if state.prefix_pending:
+                state = self._run_natural_prefix(index, state, scheduler)
             for key, value in state.observation.items():
                 observations[key].append(torch.from_numpy(value.copy()))
             observations["previous_action"].append(torch.tensor(state.previous_action))
@@ -513,23 +536,17 @@ class VersionedAsyncRolloutCollector:
                 info,
             )
             info["action_contract"] = contract_diagnostic
-            next_observation = self.contract_memory.apply_slot(
-                index, raw_next_observation
-            )
+            next_observation = self.contract_memory.apply_slot(index, raw_next_observation)
             if str((info.get("action_outcome") or {}).get("category", "")) == "wall_attempt":
                 wall_attempts += 1
             known_invalid_wall_discoveries += int(
                 bool(contract_diagnostic["newly_learned_invalid_wall"])
             )
-            masked_direction_observations += int(
-                contract_diagnostic["masked_direction_count"]
-            )
+            masked_direction_observations += int(contract_diagnostic["masked_direction_count"])
             effective_masked_direction_observations += int(
                 contract_diagnostic["effective_masked_direction_count"]
             )
-            navigation_prior_turns += int(
-                bool(contract_diagnostic["navigation_prior_active"])
-            )
+            navigation_prior_turns += int(bool(contract_diagnostic["navigation_prior_active"]))
             max_remembered_hazards = max(
                 max_remembered_hazards,
                 int(contract_diagnostic.get("remembered_hazards", 0)),
@@ -598,6 +615,7 @@ class VersionedAsyncRolloutCollector:
                         "events": state.episode_events,
                         "curriculum_reset": state.reset_spec.as_dict(),
                         "curriculum_reset_id": state.reset_spec.id,
+                        "natural_prefix": dict(state.prefix_metadata),
                     }
                 )
                 self.curriculum_schedule.record_outcome(
@@ -608,14 +626,14 @@ class VersionedAsyncRolloutCollector:
                     seed=next_seed,
                     options=next_spec.reset_options(),
                 )
-                next_observation = self.contract_memory.reset_slot(
-                    index, next_observation
-                )
+                if self.natural_prefix is None:
+                    next_observation = self.contract_memory.reset_slot(index, next_observation)
                 state = ActorState(
                     next_observation,
                     next_info,
                     self.model.initial_state(1, device=self.device),
                     next_spec,
+                    prefix_pending=self.natural_prefix is not None,
                 )
             else:
                 state.observation = next_observation
@@ -643,18 +661,148 @@ class VersionedAsyncRolloutCollector:
                 "inference_wait_seconds": inference_wait,
                 "environment_wait_seconds": environment_wait,
                 "wall_attempts": float(wall_attempts),
-                "known_invalid_wall_discoveries": float(
-                    known_invalid_wall_discoveries
-                ),
-                "masked_direction_observations": float(
-                    masked_direction_observations
-                ),
+                "known_invalid_wall_discoveries": float(known_invalid_wall_discoveries),
+                "masked_direction_observations": float(masked_direction_observations),
                 "effective_masked_direction_observations": float(
                     effective_masked_direction_observations
                 ),
                 "navigation_prior_turns": float(navigation_prior_turns),
                 "max_remembered_hazards": float(max_remembered_hazards),
             },
+        )
+
+    def _run_natural_prefix(
+        self,
+        index: int,
+        state: ActorState,
+        learner_scheduler: InferenceScheduler,
+    ) -> ActorState:
+        """Run legal guide actions and return the exact reached learner state."""
+
+        config = self.natural_prefix
+        guide_scheduler = self._guide_scheduler
+        if config is None or guide_scheduler is None or self.guide_model is None:
+            return state
+        worker_id = self.environment.worker_ids[index]
+        worker = self.environment.environments[worker_id]
+        seed = int(state.info.get("seed", 0))
+        observation = state.observation
+        info = state.info
+        total_guide_turns = 0
+        failure_summaries: list[dict[str, Any]] = []
+
+        for attempt in range(config.max_attempts):
+            tracker = DeathMetalPhaseTracker(config)
+            tracker.observe(observation, info)
+            guide_hidden = self.guide_model.initial_state(1, device=self.device)
+            learner_hidden = self.model.initial_state(1, device=self.device)
+            previous_action = START_ACTION
+            previous_reward = 0.0
+            last_guide_action = START_ACTION
+            last_guide_reward = 0.0
+
+            for guide_turn in range(config.max_guide_turns):
+                sample = float(
+                    np.random.default_rng(
+                        np.random.SeedSequence(
+                            [
+                                config.guide_policy_seed,
+                                seed,
+                                index,
+                                attempt,
+                                guide_turn,
+                            ]
+                        )
+                    ).random()
+                )
+                action, _, _, next_guide_hidden = guide_scheduler.infer(
+                    observation,
+                    previous_action,
+                    previous_reward,
+                    guide_hidden,
+                    sample,
+                )
+                next_learner_hidden = learner_hidden
+                if config.recurrent_state_mode == "warm":
+                    _, _, _, next_learner_hidden = learner_scheduler.infer(
+                        observation,
+                        previous_action,
+                        previous_reward,
+                        learner_hidden,
+                        0.5,
+                    )
+                next_observation, reward, terminated, truncated, next_info = worker.step(action)
+                total_guide_turns += 1
+                next_info = dict(next_info)
+                next_info["natural_prefix_stage"] = "guide"
+                next_info["natural_prefix_attempt"] = attempt + 1
+                next_info["natural_prefix_guide_turn"] = guide_turn + 1
+                tracker.observe(next_observation, next_info)
+                self._publish_telemetry(index, next_observation, next_info, action, float(reward))
+                last_guide_action = action
+                last_guide_reward = float(reward)
+
+                if tracker.reached and not terminated and not truncated:
+                    metadata = {
+                        **config.specification(),
+                        "attempts": attempt + 1,
+                        "failed_attempts": len(failure_summaries),
+                        "guide_turns": total_guide_turns,
+                        "handoff_sequence": int(next_info.get("sequence", -1)),
+                        "handoff_run_id": str(next_info.get("run_id", "")),
+                        "handoff_seed": int(next_info.get("seed", seed)),
+                        "boundary": tracker.snapshot(),
+                    }
+                    handed_observation, handed_info = worker.begin_learning_segment(
+                        next_info,
+                        metadata=metadata,
+                    )
+                    effective_observation = self.contract_memory.reset_slot(
+                        index, handed_observation
+                    )
+                    warm = config.recurrent_state_mode == "warm"
+                    return ActorState(
+                        effective_observation,
+                        handed_info,
+                        (
+                            next_learner_hidden
+                            if warm
+                            else self.model.initial_state(1, device=self.device)
+                        ),
+                        state.reset_spec,
+                        previous_action=last_guide_action if warm else START_ACTION,
+                        previous_reward=last_guide_reward if warm else 0.0,
+                        episode_start=not warm,
+                        prefix_pending=False,
+                        prefix_metadata=metadata,
+                    )
+
+                observation = next_observation
+                info = next_info
+                guide_hidden = next_guide_hidden
+                learner_hidden = next_learner_hidden
+                previous_action = action
+                previous_reward = float(reward)
+                if terminated or truncated:
+                    break
+
+            failure_summaries.append(
+                {
+                    "attempt": attempt + 1,
+                    "turns": min(guide_turn + 1, config.max_guide_turns),
+                    "status": str(info.get("episode_status", "guide_limit")),
+                    "boundary": tracker.snapshot(),
+                }
+            )
+            if attempt + 1 < config.max_attempts:
+                observation, info = worker.reset(
+                    seed=seed,
+                    options=state.reset_spec.reset_options(),
+                )
+
+        raise NaturalPrefixError(
+            f"{worker_id} failed to reach Death Metal phase {config.target_phase} "
+            f"after {config.max_attempts} legal guide attempts: {failure_summaries[-1]}"
         )
 
     def _bootstrap_values(self) -> Tensor:
@@ -679,3 +827,5 @@ class VersionedAsyncRolloutCollector:
 
     def close(self) -> None:
         self._executor.shutdown(wait=True, cancel_futures=True)
+        if self._guide_scheduler is not None:
+            self._guide_scheduler.close()

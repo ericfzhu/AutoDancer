@@ -4,6 +4,7 @@ import threading
 import time
 
 import numpy as np
+import pytest
 import torch
 
 from autodancer.constants import (
@@ -16,13 +17,18 @@ from autodancer.constants import (
     MAP_SIZE,
     PLAYER_FEATURES,
     Action,
+    ActorKind,
+    BossType,
     GridChannel,
     MapChannel,
+    PlayerFeature,
     Terrain,
 )
 from autodancer.curriculum import EpisodeResetSpec, WeightedResetSpec
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
+from autodancer.training.baseline import _evaluate_model_async
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
+from autodancer.training.natural_prefix import NaturalPrefixConfig, NaturalPrefixError
 from autodancer.training.seed_schedule import TrainingSeedSchedule
 
 
@@ -120,9 +126,94 @@ class AsyncEnvironment:
 
     def recover(self, index: int, seed: int, *, options=None, failure=None):
         del failure
-        return self.environments[self.worker_ids[index]].reset(
-            seed=seed, options=options
+        return self.environments[self.worker_ids[index]].reset(seed=seed, options=options)
+
+
+class PrefixWorker:
+    def __init__(self, slot: int, *, direct_mutation: bool = False) -> None:
+        self.slot = slot
+        self.direct_mutation = direct_mutation
+        self.turn = 0
+        self.handoffs: list[dict] = []
+        self.step_calls = 0
+        self.seed = 0
+        self.run_id = ""
+
+    def _observation(self, health: int, actor_type: int) -> dict[str, np.ndarray]:
+        result = observation(self.slot)
+        result["player"][PlayerFeature.TASK] = int(BossType.DEATH_METAL)
+        result["grid"][10, 11, GridChannel.ACTOR_CLASS] = int(ActorKind.BOSS)
+        result["grid"][10, 11, GridChannel.ACTOR_TYPE] = actor_type
+        result["grid"][10, 11, GridChannel.HEALTH] = health
+        result["grid"][10, 11, GridChannel.MAX_HEALTH] = 9
+        result["grid"][10, 11, GridChannel.VISIBILITY] = 2
+        return result
+
+    def reset(self, *, seed: int, options=None):
+        self.turn = 0
+        self.seed = seed
+        self.run_id = f"run-{self.slot}-{seed}"
+        return self._observation(9, 101), {
+            "seed": seed,
+            "run_id": self.run_id,
+            "sequence": 0,
+            "episode_status": "running",
+            "zone": 1,
+            "floor": 4,
+        }
+
+    def step(self, action: int):
+        del action
+        self.turn += 1
+        self.step_calls += 1
+        if self.direct_mutation:
+            health, actor_type, amount = 1, 101, 0
+        else:
+            phases = [(6, 102, 3), (4, 103, 2), (2, 104, 2)]
+            health, actor_type, amount = phases[min(self.turn - 1, 2)]
+        events = (
+            []
+            if amount == 0
+            else [
+                {
+                    "kind": "enemy_damage",
+                    "amount": amount,
+                    "data": {"boss": True},
+                }
+            ]
         )
+        return (
+            self._observation(health, actor_type),
+            10.0 if self.turn <= 3 else 0.25,
+            False,
+            False,
+            {
+                "seed": self.seed,
+                "run_id": self.run_id,
+                "sequence": self.turn,
+                "episode_status": "running",
+                "zone": 1,
+                "floor": 4,
+                "raw_events": events,
+            },
+        )
+
+    def begin_learning_segment(self, info, *, metadata):
+        self.handoffs.append(dict(metadata))
+        handed = dict(info)
+        handed["turns"] = 0
+        handed["learning_segment"] = dict(metadata)
+        return self._observation(2, 104), handed
+
+
+class PrefixEnvironment(AsyncEnvironment):
+    def __init__(self, *, direct_mutation: bool = False) -> None:
+        self.timeline = []
+        self.environments = {
+            worker_id: PrefixWorker(slot, direct_mutation=direct_mutation)
+            for slot, worker_id in enumerate(self.worker_ids)
+        }
+        self.infrastructure_events = []
 
 
 def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
@@ -170,12 +261,8 @@ def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
 def test_async_collector_routes_weighted_episode_resets_and_records_outcomes() -> None:
     environment = AsyncEnvironment()
     entries = (
-        WeightedResetSpec(
-            EpisodeResetSpec("reduced", 4, 5, "boss1hp-player10"), 0.75
-        ),
-        WeightedResetSpec(
-            EpisodeResetSpec("replay", 4, 5, "boss1hp-player20"), 0.25
-        ),
+        WeightedResetSpec(EpisodeResetSpec("reduced", 4, 5, "boss1hp-player10"), 0.75),
+        WeightedResetSpec(EpisodeResetSpec("replay", 4, 5, "boss1hp-player20"), 0.25),
     )
     for slot, worker_id in enumerate(environment.worker_ids):
         environment.environments[worker_id].step = (  # type: ignore[method-assign]
@@ -613,3 +700,145 @@ def test_stochastic_actions_are_independent_of_worker_timing() -> None:
         first.close()
         second.close()
     np.testing.assert_array_equal(first_rollout.actions, second_rollout.actions)
+
+
+def test_natural_prefix_uses_legal_guide_steps_but_excludes_them_from_rollout() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=100,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(
+            target_phase=4,
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+            recurrent_state_mode="fresh",
+        ),
+    )
+    try:
+        rollout = collector.collect(2)
+    finally:
+        collector.close()
+
+    assert rollout.actions.shape == (2, 2)
+    assert torch.all(rollout.episode_starts[0])
+    for worker in environment.environments.values():
+        assert worker.step_calls == 5  # three guide turns plus two PPO turns
+        assert len(worker.handoffs) == 1
+        handoff = worker.handoffs[0]
+        assert handoff["guide_transitions_in_ppo"] is False
+        assert handoff["boundary"]["reached"] is True
+        assert handoff["boundary"]["observed_actor_types"] == [101, 102, 103, 104]
+    # The guide's deliberately large rewards are absent from learner returns.
+    assert torch.allclose(rollout.rewards, torch.full((2, 2), 0.25))
+
+
+def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=101,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=8,
+            max_attempts=1,
+            recurrent_state_mode="warm",
+        ),
+    )
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+    assert not torch.any(rollout.episode_starts[0])
+    assert torch.any(rollout.hiddens[0] != 0)
+
+
+def test_natural_prefix_rejects_direct_boss_health_mutation() -> None:
+    environment = PrefixEnvironment(direct_mutation=True)
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=102,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
+    )
+    try:
+        with pytest.raises(NaturalPrefixError, match="failed to reach Death Metal phase 4"):
+            collector.collect(1)
+    finally:
+        collector.close()
+
+
+def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    results = _evaluate_model_async(
+        environment,
+        learner,
+        seeds=[9001],
+        max_steps=2,
+        policy_seed=17,
+        device=torch.device("cpu"),
+        dashboard_state=None,
+        action_contract="current",
+        deterministic=True,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+        ),
+    )
+    assert len(results) == 1
+    assert results[0]["turns"] == 2
+    assert environment.environments["worker-0000"].step_calls == 5
+    assert len(environment.environments["worker-0000"].handoffs) == 1

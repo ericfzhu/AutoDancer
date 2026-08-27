@@ -37,6 +37,12 @@ from autodancer.training.action_contract import (
 from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
+from autodancer.training.natural_prefix import (
+    NATURAL_PREFIX_RECURRENT_MODES,
+    DeathMetalPhaseTracker,
+    NaturalPrefixConfig,
+    NaturalPrefixError,
+)
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
 RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step")
@@ -141,9 +147,7 @@ class EpisodeAccumulator:
     def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
         position = self._position(observation, info)
         self.furthest_zone, self.furthest_floor = position[:2]
-        self.boss_type = int(
-            info.get("boss_type") or observation["player"][PlayerFeature.TASK]
-        )
+        self.boss_type = int(info.get("boss_type") or observation["player"][PlayerFeature.TASK])
         self._last_position = position
         self._floor = position[:2]
         self._visited_positions.add(position)
@@ -195,9 +199,7 @@ class EpisodeAccumulator:
             if descent_source == "stairs":
                 self.staircase_exits += 1
                 if self._pending_stair_turn is not None:
-                    self.stair_discovery_to_exit_turns.append(
-                        self.turns - self._pending_stair_turn
-                    )
+                    self.stair_discovery_to_exit_turns.append(self.turns - self._pending_stair_turn)
             elif descent_source == "trapdoor":
                 self.trapdoor_descents += 1
             elif descent_source == "unknown":
@@ -206,9 +208,7 @@ class EpisodeAccumulator:
                 # Backward compatibility for synthetic/legacy observations
                 # that predate action-outcome descent attribution.
                 self.staircase_exits += 1
-                self.stair_discovery_to_exit_turns.append(
-                    self.turns - self._pending_stair_turn
-                )
+                self.stair_discovery_to_exit_turns.append(self.turns - self._pending_stair_turn)
             self._floor = current_floor
             self._stairs_seen_on_floor = False
             self._pending_stair_turn = None
@@ -223,15 +223,11 @@ class EpisodeAccumulator:
         self.known_invalid_wall_discoveries += int(
             bool(contract.get("newly_learned_invalid_wall", False))
         )
-        self.masked_direction_observations += int(
-            contract.get("masked_direction_count", 0) or 0
-        )
+        self.masked_direction_observations += int(contract.get("masked_direction_count", 0) or 0)
         self.effective_masked_direction_observations += int(
             contract.get("effective_masked_direction_count", 0) or 0
         )
-        self.navigation_prior_turns += int(
-            bool(contract.get("navigation_prior_active", False))
-        )
+        self.navigation_prior_turns += int(bool(contract.get("navigation_prior_active", False)))
         self.navigation_masked_direction_observations += len(
             contract.get("navigation_masked_directions", []) or []
         )
@@ -385,9 +381,7 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         raise ValueError("At least one episode is required")
     count = len(episodes)
     progress = [
-        level_progress(
-            int(episode["furthest_zone"]), int(episode["furthest_floor"])
-        )
+        level_progress(int(episode["furthest_zone"]), int(episode["furthest_floor"]))
         for episode in episodes
     ]
     deepest_episode = max(
@@ -422,15 +416,12 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
     )
     action_outcome_counts = {
         name: sum(
-            int(dict(episode.get("action_outcome_counts", {})).get(name, 0))
-            for episode in episodes
+            int(dict(episode.get("action_outcome_counts", {})).get(name, 0)) for episode in episodes
         )
         for name in outcome_names
     }
     boss_type_counts = {
-        str(boss_type): sum(
-            int(episode.get("boss_type", 0)) == boss_type for episode in episodes
-        )
+        str(boss_type): sum(int(episode.get("boss_type", 0)) == boss_type for episode in episodes)
         for boss_type in sorted({int(episode.get("boss_type", 0)) for episode in episodes})
     }
     return {
@@ -464,32 +455,21 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
-        "unique_item_types": sum(
-            int(episode.get("unique_item_types", 0)) for episode in episodes
-        ),
+        "unique_item_types": sum(int(episode.get("unique_item_types", 0)) for episode in episodes),
         "repeat_item_transactions": sum(
             max(
-                int(episode.get("item_pickups", 0))
-                - int(episode.get("unique_item_types", 0)),
+                int(episode.get("item_pickups", 0)) - int(episode.get("unique_item_types", 0)),
                 0,
             )
             for episode in episodes
         ),
-        "currency_pickups": sum(
-            int(episode.get("currency_pickups", 0)) for episode in episodes
-        ),
-        "currency_value": sum(
-            int(episode.get("currency_value", 0)) for episode in episodes
-        ),
+        "currency_pickups": sum(int(episode.get("currency_pickups", 0)) for episode in episodes),
+        "currency_value": sum(int(episode.get("currency_value", 0)) for episode in episodes),
         "enemy_damage": sum(int(episode["enemy_damage"]) for episode in episodes),
         "boss_damage": sum(int(episode.get("boss_damage", 0)) for episode in episodes),
-        "boss_add_damage": sum(
-            int(episode.get("boss_add_damage", 0)) for episode in episodes
-        ),
+        "boss_add_damage": sum(int(episode.get("boss_add_damage", 0)) for episode in episodes),
         "boss_kills": sum(int(episode.get("boss_kills", 0)) for episode in episodes),
-        "boss_add_kills": sum(
-            int(episode.get("boss_add_kills", 0)) for episode in episodes
-        ),
+        "boss_add_kills": sum(int(episode.get("boss_add_kills", 0)) for episode in episodes),
         "player_damage": sum(int(episode["player_damage"]) for episode in episodes),
         "action_counts": action_counts,
         "wait_rate": sum(int(episode.get("wait_actions", 0)) for episode in episodes)
@@ -521,20 +501,16 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         )
         / max(total_turns, 1),
         "action_outcome_counts": action_outcome_counts,
-        "wall_attempt_rate": action_outcome_counts.get("wall_attempt", 0)
-        / max(total_turns, 1),
+        "wall_attempt_rate": action_outcome_counts.get("wall_attempt", 0) / max(total_turns, 1),
         "known_invalid_wall_discoveries": sum(
-            int(episode.get("known_invalid_wall_discoveries", 0))
-            for episode in episodes
+            int(episode.get("known_invalid_wall_discoveries", 0)) for episode in episodes
         ),
         "mean_masked_directions": sum(
-            int(episode.get("masked_direction_observations", 0))
-            for episode in episodes
+            int(episode.get("masked_direction_observations", 0)) for episode in episodes
         )
         / max(total_turns, 1),
         "mean_effective_masked_directions": sum(
-            int(episode.get("effective_masked_direction_observations", 0))
-            for episode in episodes
+            int(episode.get("effective_masked_direction_observations", 0)) for episode in episodes
         )
         / max(total_turns, 1),
         "navigation_prior_rate": sum(
@@ -542,14 +518,11 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         )
         / max(total_turns, 1),
         "mean_navigation_masked_directions": sum(
-            int(episode.get("navigation_masked_direction_observations", 0))
-            for episode in episodes
+            int(episode.get("navigation_masked_direction_observations", 0)) for episode in episodes
         )
         / max(total_turns, 1),
         "mean_max_remembered_wall_states": float(
-            np.mean(
-                [episode.get("max_remembered_wall_states", 0) for episode in episodes]
-            )
+            np.mean([episode.get("max_remembered_wall_states", 0) for episode in episodes])
         ),
         "mean_max_remembered_hazards": float(
             np.mean([episode.get("max_remembered_hazards", 0) for episode in episodes])
@@ -666,6 +639,8 @@ def evaluate_live_policy(
     action_contract: str = "current",
     policy_mode: str = "deterministic",
     recurrent_state_mode: str = "carry",
+    guide_model: PolicyModel | None = None,
+    natural_prefix: NaturalPrefixConfig | None = None,
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -685,7 +660,11 @@ def evaluate_live_policy(
             action_contract=action_contract,
             deterministic=policy_mode == "deterministic",
             recurrent_state_mode=recurrent_state_mode,
+            guide_model=guide_model,
+            natural_prefix=natural_prefix,
         )
+    if natural_prefix is not None or guide_model is not None:
+        raise ValueError("natural-prefix evaluation requires a trained learner model")
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
     parking_seed = 2_000_000_000
@@ -743,8 +722,8 @@ def evaluate_live_policy(
                 actions, next_hidden = _model_actions(
                     model, observation, hidden, device, previous_actions, previous_rewards
                 )
-            raw_next_observation, rewards, terminated, truncated, step_infos = (
-                environment.step(actions)
+            raw_next_observation, rewards, terminated, truncated, step_infos = environment.step(
+                actions
             )
             for index in range(environment.num_envs):
                 step_infos[index]["action_contract"] = contract_memory.observe(
@@ -812,6 +791,126 @@ def evaluate_live_policy(
     return results
 
 
+def _evaluation_natural_prefix(
+    *,
+    worker: Any,
+    worker_id: str,
+    slot: int,
+    seed: int,
+    observation: dict[str, np.ndarray],
+    info: dict[str, Any],
+    guide_model: PolicyModel,
+    learner_model: PolicyModel,
+    guide_scheduler: InferenceScheduler,
+    learner_scheduler: InferenceScheduler,
+    config: NaturalPrefixConfig,
+    device: torch.device,
+    contract_memory: ActionContractMemory,
+    dashboard_state: DashboardState | None,
+) -> tuple[dict[str, np.ndarray], dict[str, Any], Tensor, int, float]:
+    """Acquire the same legal guide boundary used by PPO collection."""
+
+    total_turns = 0
+    failures: list[dict[str, Any]] = []
+    for attempt in range(config.max_attempts):
+        tracker = DeathMetalPhaseTracker(config)
+        tracker.observe(observation, info)
+        guide_hidden = guide_model.initial_state(1, device=device)
+        learner_hidden = learner_model.initial_state(1, device=device)
+        previous_action = START_ACTION
+        previous_reward = 0.0
+        last_action = START_ACTION
+        last_reward = 0.0
+        for guide_turn in range(config.max_guide_turns):
+            sample = float(
+                np.random.default_rng(
+                    np.random.SeedSequence(
+                        [config.guide_policy_seed, seed, slot, attempt, guide_turn]
+                    )
+                ).random()
+            )
+            action, _, _, next_guide_hidden = guide_scheduler.infer(
+                observation,
+                previous_action,
+                previous_reward,
+                guide_hidden,
+                sample,
+            )
+            next_learner_hidden = learner_hidden
+            if config.recurrent_state_mode == "warm":
+                _, _, _, next_learner_hidden = learner_scheduler.infer(
+                    observation,
+                    previous_action,
+                    previous_reward,
+                    learner_hidden,
+                    0.5,
+                )
+            next_observation, reward, terminated, truncated, next_info = worker.step(action)
+            total_turns += 1
+            next_info = dict(next_info)
+            next_info["natural_prefix_stage"] = "guide"
+            next_info["natural_prefix_attempt"] = attempt + 1
+            next_info["natural_prefix_guide_turn"] = guide_turn + 1
+            tracker.observe(next_observation, next_info)
+            if dashboard_state is not None:
+                dashboard_state.update_worker(
+                    slot,
+                    worker_id,
+                    next_observation,
+                    next_info,
+                    action=action,
+                    reward=float(reward),
+                )
+            last_action = action
+            last_reward = float(reward)
+            if tracker.reached and not terminated and not truncated:
+                metadata = {
+                    **config.specification(),
+                    "attempts": attempt + 1,
+                    "failed_attempts": len(failures),
+                    "guide_turns": total_turns,
+                    "handoff_sequence": int(next_info.get("sequence", -1)),
+                    "handoff_run_id": str(next_info.get("run_id", "")),
+                    "handoff_seed": int(next_info.get("seed", seed)),
+                    "boundary": tracker.snapshot(),
+                }
+                handed_observation, handed_info = worker.begin_learning_segment(
+                    next_info,
+                    metadata=metadata,
+                )
+                effective = contract_memory.reset_slot(slot, handed_observation)
+                if config.recurrent_state_mode == "warm":
+                    return effective, handed_info, next_learner_hidden, last_action, last_reward
+                return (
+                    effective,
+                    handed_info,
+                    learner_model.initial_state(1, device=device),
+                    START_ACTION,
+                    0.0,
+                )
+            observation = next_observation
+            info = next_info
+            guide_hidden = next_guide_hidden
+            learner_hidden = next_learner_hidden
+            previous_action = action
+            previous_reward = float(reward)
+            if terminated or truncated:
+                break
+        failures.append(
+            {
+                "attempt": attempt + 1,
+                "status": str(info.get("episode_status", "guide_limit")),
+                "boundary": tracker.snapshot(),
+            }
+        )
+        if attempt + 1 < config.max_attempts:
+            observation, info = worker.reset(seed=seed)
+    raise NaturalPrefixError(
+        f"{worker_id} failed to reach Death Metal phase {config.target_phase} "
+        f"after {config.max_attempts} legal guide attempts: {failures[-1]}"
+    )
+
+
 def _evaluate_model_async(
     environment: AutoDancerVectorEnv,
     model: PolicyModel,
@@ -824,10 +923,14 @@ def _evaluate_model_async(
     action_contract: str,
     deterministic: bool,
     recurrent_state_mode: str = "carry",
+    guide_model: PolicyModel | None = None,
+    natural_prefix: NaturalPrefixConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
     if recurrent_state_mode not in RECURRENT_STATE_MODES:
         raise ValueError(f"Unknown recurrent-state mode: {recurrent_state_mode}")
+    if (guide_model is None) != (natural_prefix is None):
+        raise ValueError("guide_model and natural_prefix must be supplied together")
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -838,13 +941,25 @@ def _evaluate_model_async(
         reset_seeds = [*wave_seeds, *range(parking_seed, parking_seed + padding)]
         parking_seed += padding
         observations, infos = environment.reset(reset_seeds)
-        observations = contract_memory.reset_batch(observations)
+        if natural_prefix is None:
+            observations = contract_memory.reset_batch(observations)
         scheduler = InferenceScheduler(
             model,
             device=device,
             max_batch=max(len(wave_seeds), 1),
             batch_delay=0.002,
             deterministic=deterministic,
+        )
+        guide_scheduler = (
+            None
+            if guide_model is None
+            else InferenceScheduler(
+                guide_model,
+                device=device,
+                max_batch=max(len(wave_seeds), 1),
+                batch_delay=0.002,
+                deterministic=bool(natural_prefix and natural_prefix.deterministic_guide),
+            )
         )
 
         def run_slot(
@@ -853,6 +968,7 @@ def _evaluate_model_async(
             observations: dict[str, np.ndarray] = observations,
             infos: list[dict[str, Any]] = infos,
             scheduler: InferenceScheduler = scheduler,
+            guide_scheduler: InferenceScheduler | None = guide_scheduler,
         ) -> dict[str, Any]:
             seed = wave_seeds[index]
             worker_id = environment.worker_ids[index]
@@ -863,6 +979,45 @@ def _evaluate_model_async(
             previous_reward = 0.0
             attempts = 0
             while True:
+                if (
+                    natural_prefix is not None
+                    and guide_model is not None
+                    and guide_scheduler is not None
+                ):
+                    try:
+                        observation, info, hidden, previous_action, previous_reward = (
+                            _evaluation_natural_prefix(
+                                worker=environment.environments[worker_id],
+                                worker_id=worker_id,
+                                slot=index,
+                                seed=seed,
+                                observation=observation,
+                                info=info,
+                                guide_model=guide_model,
+                                learner_model=model,
+                                guide_scheduler=guide_scheduler,
+                                learner_scheduler=scheduler,
+                                config=natural_prefix,
+                                device=device,
+                                contract_memory=contract_memory,
+                                dashboard_state=dashboard_state,
+                            )
+                        )
+                    except (TimeoutError, NativePipeError, ProtocolError) as error:
+                        attempts += 1
+                        failure = environment._failure(
+                            index,
+                            error,
+                            operation="natural_prefix_evaluation",
+                            context={"seed": seed, "attempt": attempts},
+                        )
+                        if attempts >= 3:
+                            raise
+                        observation, info = environment.recover(index, seed, failure=failure)
+                        hidden = model.initial_state(1, device=device)
+                        previous_action = START_ACTION
+                        previous_reward = 0.0
+                        continue
                 # An infrastructure retry replays the same game seed and exact
                 # policy sample stream from turn zero.
                 accumulator = EpisodeAccumulator(
@@ -915,9 +1070,7 @@ def _evaluate_model_async(
                             raw_next_observation,
                             step_info,
                         )
-                        next_observation = contract_memory.apply_slot(
-                            index, raw_next_observation
-                        )
+                        next_observation = contract_memory.apply_slot(index, raw_next_observation)
                         if dashboard_state is not None:
                             dashboard_state.update_worker(
                                 index,
@@ -951,9 +1104,7 @@ def _evaluate_model_async(
                         index,
                         error,
                         operation=(
-                            "deterministic_evaluation"
-                            if deterministic
-                            else "stochastic_evaluation"
+                            "deterministic_evaluation" if deterministic else "stochastic_evaluation"
                         ),
                         context={"seed": seed, "attempt": attempts},
                     )
@@ -970,6 +1121,8 @@ def _evaluate_model_async(
                 results.extend(executor.map(run_slot, range(len(wave_seeds))))
         finally:
             scheduler.close()
+            if guide_scheduler is not None:
+                guide_scheduler.close()
     return results
 
 
@@ -992,6 +1145,8 @@ def _evaluate_deterministic_async(
     device: torch.device,
     dashboard_state: DashboardState | None,
     action_contract: str,
+    guide_model: PolicyModel | None = None,
+    natural_prefix: NaturalPrefixConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Compatibility entry point used by the controller qualification suite."""
     return _evaluate_model_async(
@@ -1004,6 +1159,8 @@ def _evaluate_deterministic_async(
         dashboard_state=dashboard_state,
         action_contract=action_contract,
         deterministic=True,
+        guide_model=guide_model,
+        natural_prefix=natural_prefix,
     )
 
 
@@ -1025,6 +1182,30 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
+    natural_prefix = (
+        None
+        if arguments.natural_prefix_guide is None
+        else NaturalPrefixConfig(
+            target_phase=arguments.natural_prefix_target_phase,
+            max_guide_turns=arguments.natural_prefix_max_turns,
+            max_attempts=arguments.natural_prefix_max_attempts,
+            deterministic_guide=arguments.natural_prefix_guide_mode == "deterministic",
+            guide_policy_seed=arguments.natural_prefix_policy_seed,
+            recurrent_state_mode=arguments.natural_prefix_recurrent_state,
+        )
+    )
+    guide_model: PolicyModel | None = None
+    if arguments.natural_prefix_guide is not None:
+        guide_payload = torch.load(
+            arguments.natural_prefix_guide,
+            map_location=device,
+            weights_only=False,
+        )
+        guide_model = model_from_spec(guide_payload.get("architecture", {}), initialize=False).to(
+            device
+        )
+        guide_model.load_state_dict(guide_payload["model"])
+        guide_model.eval()
     reward_config = load_reward_config(arguments.reward_config)
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
@@ -1087,6 +1268,8 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     action_contract=arguments.action_contract,
                     policy_mode=arguments.policy_mode,
                     recurrent_state_mode=arguments.recurrent_state_mode,
+                    guide_model=guide_model,
+                    natural_prefix=natural_prefix,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -1130,6 +1313,15 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "curriculum_start_level": arguments.curriculum_start_level,
         "curriculum_target_level": arguments.curriculum_target_level,
         "curriculum_profile": arguments.curriculum_profile,
+        "natural_prefix": (
+            None
+            if natural_prefix is None
+            else {
+                **natural_prefix.specification(),
+                "guide_checkpoint": str(arguments.natural_prefix_guide.resolve()),
+                "guide_checkpoint_sha256": _checkpoint_hash(arguments.natural_prefix_guide),
+            }
+        ),
         "worker_restarts": restarts,
         "controller_valid": restarts == 0 and not infrastructure_events,
         "infrastructure_events": infrastructure_events,
@@ -1308,6 +1500,21 @@ def main() -> int:
         default="normal",
         help="qualification-only assistance applied on the curriculum start level",
     )
+    parser.add_argument("--natural-prefix-guide", type=Path)
+    parser.add_argument("--natural-prefix-target-phase", type=int, choices=(2, 3, 4), default=4)
+    parser.add_argument("--natural-prefix-max-turns", type=int, default=512)
+    parser.add_argument("--natural-prefix-max-attempts", type=int, default=8)
+    parser.add_argument(
+        "--natural-prefix-guide-mode",
+        choices=("deterministic", "stochastic"),
+        default="stochastic",
+    )
+    parser.add_argument("--natural-prefix-policy-seed", type=int, default=0)
+    parser.add_argument(
+        "--natural-prefix-recurrent-state",
+        choices=NATURAL_PREFIX_RECURRENT_MODES,
+        default="fresh",
+    )
     parser.add_argument("--experiment-id", help="registered immutable experiment id")
     parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
     parser.add_argument("--trial-id", help="stable evaluation trial label")
@@ -1332,6 +1539,18 @@ def main() -> int:
         and arguments.curriculum_target_level <= arguments.curriculum_start_level
     ):
         parser.error("--curriculum-target-level must be after --curriculum-start-level")
+    if arguments.natural_prefix_guide is not None:
+        if not arguments.trained_only:
+            parser.error("natural-prefix evaluation requires --trained-only")
+        if arguments.curriculum_start_level != 4 or arguments.curriculum_target_level != 5:
+            parser.error(
+                "--natural-prefix-guide requires --curriculum-start-level 4 "
+                "--curriculum-target-level 5"
+            )
+        if arguments.curriculum_profile != "normal":
+            parser.error("natural-prefix evaluation rejects state-mutating profiles")
+        if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
+            parser.error("natural-prefix turn and attempt limits must be positive")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     report = run_baseline(arguments)

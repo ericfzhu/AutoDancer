@@ -250,6 +250,44 @@ def test_live_environment_applies_client_turn_limit() -> None:
     assert not any(event.get("kind") == "failure" for event in info["raw_events"])
 
 
+def test_natural_prefix_handoff_rebases_only_client_accounting() -> None:
+    source = QueueTurnSource(
+        [
+            record(0, "reset"),
+            record(1, "turn", requested_action=Action.UP),
+            record(2, "turn", requested_action=Action.RIGHT),
+            record(3, "turn", requested_action=Action.DOWN),
+        ]
+    )
+    environment = AutoDancerLiveEnv(
+        turn_source=source,
+        bridge=FakeBridge(),
+        max_turns=2,
+    )
+    observation, _ = environment.reset(seed=7)
+    first_observation, _, _, first_truncated, first_info = environment.step(Action.UP)
+    assert not first_truncated
+    handed_observation, handed_info = environment.begin_learning_segment(
+        first_info,
+        metadata={"kind": "death-metal-natural-prefix-v1", "guide_turns": 1},
+    )
+    assert handed_observation is first_observation
+    assert handed_observation is observation or np.array_equal(
+        handed_observation["player"], observation["player"]
+    )
+    assert handed_info["run_id"] == "run-7"
+    assert handed_info["seed"] == 7
+    assert handed_info["turns"] == 0
+
+    _, _, _, truncated, info = environment.step(Action.RIGHT)
+    assert not truncated
+    assert info["turns"] == 1
+    assert info["learning_segment"]["guide_turns"] == 1
+    _, _, _, truncated, info = environment.step(Action.DOWN)
+    assert truncated
+    assert info["turns"] == 2
+
+
 def test_curriculum_reset_jumps_sequentially_without_reward_and_terminates_at_target() -> None:
     sender = FakeBridge()
     target = record(4, "turn", requested_action=Action.UP, command_id=1)
@@ -405,9 +443,7 @@ def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> N
     environment.reset(seed=7)
     _, reward, terminated, truncated, info = environment.step(Action.UP)
     assert not terminated and not truncated
-    damage_events = [
-        event for event in info["raw_events"] if event.get("kind") == "player_damage"
-    ]
+    damage_events = [event for event in info["raw_events"] if event.get("kind") == "player_damage"]
     assert len(damage_events) == 1
     assert damage_events[0]["amount"] == 4
     assert damage_events[0]["data"] == {"raw_damage": 1001, "event_count": 2}
@@ -427,9 +463,7 @@ def test_live_environment_derives_item_pickups_from_inventory_delta() -> None:
     )
     environment.reset(seed=7)
     _, _, _, _, info = environment.step(Action.UP)
-    assert [
-        event for event in info["raw_events"] if event.get("kind") == "item_collected"
-    ] == [
+    assert [event for event in info["raw_events"] if event.get("kind") == "item_collected"] == [
         {
             "kind": "item_collected",
             "amount": 1,
