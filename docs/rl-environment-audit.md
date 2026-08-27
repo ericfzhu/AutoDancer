@@ -297,6 +297,27 @@ change. If it cannot improve unseen-seed floor progress, proceed to the declared
 finite seed distribution or floor curriculum rather than adding stronger
 heuristic masking post hoc.
 
+### Boss calibration exposes an action-contract diagnostic gap
+
+The nine assisted Death Metal calibration episodes made `723` wall attempts in
+`3,950` turns (`18.3%`). Every attempt was counted as a newly learned exact
+wall-state signature. That does **not** prove 723 cache failures: a policy can
+legitimately probe different walls and directions from different positions. The
+aggregate unique-position counts only prove a lower bound of 15 signature
+reopenings (one position has at most four physical directional probes), while
+the existing report discards the per-turn keys needed to identify the rest.
+
+Do not alter `map-navigation-prior-v1` during EXP-0016. Before declaring a v2,
+record two identities for every authoritative wall attempt: the current full
+invalidation signature and a diagnostic physical key containing level, player
+position, direction, target terrain/object/actor identity, and relevant digging
+equipment. Report first physical probes, exact repeats, reopened physical probes,
+and which dynamic signature fields changed. A v2 may remove facing or beat-state
+fields only when traces prove they reopen physically identical, still-invalid
+actions; confusion, charge, target occupancy, terrain, and equipment changes
+must continue to reopen the direction. This turns the 18.3% waste signal into a
+causal mask test rather than another heuristic adjustment.
+
 ## EXP-0010 evidence and newly demonstrated design flaws
 
 The corrected A2 replication completed 250,880 transitions and nine held-out
