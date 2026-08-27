@@ -2,7 +2,7 @@
   "schema_version": 1,
   "experiment_id": "EXP-0016",
   "decided_at": "2026-08-27T17:45:30.872796+00:00",
-  "outcome": "passed",
+  "outcome": "accepted",
   "decision": "advance_to_player10_with_mastered_replay",
   "selected_training_seed": 68002,
   "selected_checkpoint": "runs/assisted-death-metal/training/seed-68002/final.pt",
