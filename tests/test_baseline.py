@@ -18,6 +18,7 @@ from autodancer.training.baseline import (
     compare_summaries,
     evaluate_live_policy,
     masked_random_actions,
+    recurrent_state_after_transition,
     recurrent_state_for_action,
     stochastic_policy_sample,
     summarize_episodes,
@@ -149,6 +150,47 @@ def test_recurrent_state_ablation_rejects_unknown_mode() -> None:
             "forget-sometimes",
             device=torch.device("cpu"),
         )
+
+
+def test_recurrent_state_can_reset_only_at_floor_boundaries() -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.initial_state_calls = 0
+
+        def initial_state(self, batch_size: int, *, device: torch.device) -> torch.Tensor:
+            self.initial_state_calls += 1
+            return torch.zeros(batch_size, 3, device=device)
+
+    model = FakeModel()
+    carried = torch.ones(1, 3)
+    within_floor = recurrent_state_after_transition(  # type: ignore[arg-type]
+        model,
+        carried,
+        "reset-on-floor-transition",
+        previous_level=(1, 1),
+        next_level=(1, 1),
+        device=torch.device("cpu"),
+    )
+    next_floor = recurrent_state_after_transition(  # type: ignore[arg-type]
+        model,
+        carried,
+        "reset-on-floor-transition",
+        previous_level=(1, 1),
+        next_level=(1, 2),
+        device=torch.device("cpu"),
+    )
+    next_zone = recurrent_state_after_transition(  # type: ignore[arg-type]
+        model,
+        carried,
+        "reset-on-floor-transition",
+        previous_level=(1, 4),
+        next_level=(2, 1),
+        device=torch.device("cpu"),
+    )
+    assert within_floor is carried
+    assert torch.equal(next_floor, torch.zeros(1, 3))
+    assert torch.equal(next_zone, torch.zeros(1, 3))
+    assert model.initial_state_calls == 2
 
 
 def test_live_evaluation_uses_partial_final_wave_without_counting_padding() -> None:

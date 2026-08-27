@@ -39,6 +39,8 @@ from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
+RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step")
+
 
 @dataclass(slots=True)
 class EpisodeAccumulator:
@@ -616,11 +618,28 @@ def recurrent_state_for_action(
     device: torch.device,
 ) -> Tensor:
     """Select carried memory or a fresh state for a single policy decision."""
-    if mode == "carry":
+    if mode in {"carry", "reset-on-floor-transition"}:
         return hidden
     if mode == "reset-every-step":
         return model.initial_state(1, device=device)
     raise ValueError(f"Unknown recurrent-state mode: {mode}")
+
+
+def recurrent_state_after_transition(
+    model: PolicyModel,
+    next_hidden: Tensor,
+    mode: str,
+    *,
+    previous_level: tuple[int, int],
+    next_level: tuple[int, int],
+    device: torch.device,
+) -> Tensor:
+    """Optionally clear temporal memory at an observed floor boundary."""
+    if mode not in RECURRENT_STATE_MODES:
+        raise ValueError(f"Unknown recurrent-state mode: {mode}")
+    if mode == "reset-on-floor-transition" and next_level != previous_level:
+        return model.initial_state(1, device=device)
+    return next_hidden
 
 
 def evaluate_live_policy(
@@ -795,7 +814,7 @@ def _evaluate_model_async(
     recurrent_state_mode: str = "carry",
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
-    if recurrent_state_mode not in {"carry", "reset-every-step"}:
+    if recurrent_state_mode not in RECURRENT_STATE_MODES:
         raise ValueError(f"Unknown recurrent-state mode: {recurrent_state_mode}")
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
@@ -869,6 +888,14 @@ def _evaluate_model_async(
                         raw_next_observation, reward, terminated, truncated, step_info = (
                             environment.environments[worker_id].step(action)
                         )
+                        previous_level = (
+                            int(observation["player"][PlayerFeature.ZONE]),
+                            int(observation["player"][PlayerFeature.FLOOR]),
+                        )
+                        next_level = (
+                            int(raw_next_observation["player"][PlayerFeature.ZONE]),
+                            int(raw_next_observation["player"][PlayerFeature.FLOOR]),
+                        )
                         step_info["action_contract"] = contract_memory.observe(
                             index,
                             observation,
@@ -891,7 +918,14 @@ def _evaluate_model_async(
                         accumulator.observe(next_observation, float(reward), step_info, int(action))
                         observation = next_observation
                         info = step_info
-                        hidden = next_hidden
+                        hidden = recurrent_state_after_transition(
+                            model,
+                            next_hidden,
+                            recurrent_state_mode,
+                            previous_level=previous_level,
+                            next_level=next_level,
+                            device=device,
+                        )
                         previous_action = action
                         previous_reward = float(reward)
                         if terminated or truncated:
@@ -1238,9 +1272,12 @@ def main() -> int:
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
     parser.add_argument(
         "--recurrent-state-mode",
-        choices=("carry", "reset-every-step"),
+        choices=RECURRENT_STATE_MODES,
         default="carry",
-        help="carry recurrent state normally or ablate it before every policy action",
+        help=(
+            "carry recurrent state normally, clear it only after a floor transition, "
+            "or ablate it before every policy action"
+        ),
     )
     parser.add_argument(
         "--curriculum-start-level",

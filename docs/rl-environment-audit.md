@@ -147,17 +147,20 @@ behavior or held-out progression at acceptable learner cost. Research on POMDPs
 also cautions that recurrence itself does not make long histories easy to learn
 ([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
 
-The live evaluator now exposes a controlled recurrent-state ablation. Its normal
-`carry` mode is unchanged; `reset-every-step` supplies a fresh zero LSTM state to
-every decision while retaining the same observation, previous action, previous
-reward, policy sampling stream, seed, and action contract. Reports and lineage
-record the selected mode so the two conditions cannot be silently pooled. A
-matched-seed comparison therefore answers the narrow causal question "does this
-checkpoint's behavior depend on accumulated recurrent state?" It does not by
-itself identify whether a difference comes from useful memory, stale memory, or
-shorter-gradient optimization, so any positive dependence must be followed by a
-delayed-information probe or hidden-state drift measurement before changing the
-architecture.
+The live evaluator now exposes controlled recurrent-state ablations. Its normal
+`carry` mode is unchanged; `reset-on-floor-transition` clears hidden and cell state
+only after an observed `(zone, floor)` change, while `reset-every-step` supplies a
+fresh zero LSTM state to every decision. Both retain the same observation,
+previous action, previous reward, policy sampling stream, seed, and action
+contract. Reports and lineage record the selected mode so conditions cannot be
+silently pooled. A matched-seed carry-versus-floor-reset comparison answers whether
+old-floor temporal context helps or hurts downstream play without removing useful
+within-floor memory. The every-step comparison asks the narrower question "does
+this checkpoint's behavior depend on accumulated recurrent state at all?" Neither
+test by itself identifies whether a difference comes from useful memory, stale
+memory, or shorter-gradient optimization, so any positive dependence must be
+followed by a delayed-information probe or hidden-state drift measurement before
+changing the architecture.
 
 There is a second recurrent approximation in the current collector. Actor hidden
 states persist across learner updates, so policy version `v+1` initially acts
