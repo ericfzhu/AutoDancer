@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "player8",
+      "start_level": 4,
+      "target_level": 5,
+      "profile": "boss1hp-player8",
+      "weight": 0.8
+    },
+    {
+      "id": "mastered-player10-replay",
+      "start_level": 4,
+      "target_level": 5,
+      "profile": "boss1hp-player10",
+      "weight": 0.2
+    }
+  ]
+}
