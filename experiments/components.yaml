@@ -26,6 +26,7 @@ blocks:
     versions:
       legacy-A2: Local grid, player, inventory, entities, and action mask.
       schema9-rich: Persistent floor memory and richer stacked cell semantics.
+      schema10-corrected-memory-boss: Correct current visibility, retain a complete 65x65 floor in 129x129 player-relative memory, and expose official boss type plus boss-objective telemetry without expanding A2's input width.
   controller:
     versions:
       historical-live: Live bridge predating the schema-10 hard qualification.
@@ -35,9 +36,11 @@ blocks:
     versions:
       truncation-damage-events-v2: Time limits bootstrap rather than terminalize, player damage uses actual health loss, and item/currency/descent events have distinct meanings.
       curriculum-level-start-v1: A normal seeded reset followed by sequential real-game level transitions, with map/reward/recurrent state reset at the declared start and an explicit target-level subtask terminal.
+      assisted-single-boss-curriculum-v2: A tagged training-only real-game boss start which may set the player's starting health and current boss-objective health; assistance applies once at setup, emits no trajectory transition, and completion still requires the live game to enter the next zone.
   learner-diagnostics:
     versions:
       critic-health-v2: Explained variance plus value, return, raw-advantage, reward-scale, and pre-clipping gradient diagnostics.
+      boss-objective-v3: Critic-health diagnostics plus separate boss, boss-add, and generic-enemy damage and kill attribution, official boss identity, curriculum completion, and episode-horizon lineage.
   action-contract:
     versions:
       legacy-11: Earlier eleven-action masking behavior.
@@ -58,6 +61,7 @@ blocks:
       A8-horizon-continuation: Resume the qualified 30,720-transition A2 and A8 states and extend both to 250,880 transitions without resetting optimizer or RNG state.
       250880-transition-single-seed: Warm-start non-critic A2 weights, reset critic/optimizer/RNG, and train one full 250,880-transition causal replication.
       boss-curriculum-function-preserving-a2-vs-a8-v1: Fine-tune function-identical A2 and zero-projected A8 policies on the same finite boss curriculum, with A8 base weights frozen for its first ten updates.
+      single-boss-assisted-a2-v1: Warm-start the A2 encoder, recurrent policy, and actor from the corrected promoted checkpoint while resetting critic and optimizer, then train three independent 51,200-transition trials on one assisted boss distribution.
   training-level-distribution:
     versions:
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
@@ -78,3 +82,4 @@ blocks:
       map-navigation-contract-v4: Action-outcome evaluation plus navigation-prior activation, effective directional masking, staircase conversion, traversal diversity, and valid-cycle diagnostics.
       curriculum-feasibility-v5: Frozen-policy evaluation from a declared real-game sequential level with explicit target completion, corrected level-pair metrics, and normal-start evidence kept separate.
       boss-curriculum-learning-v6: Held-out boss-start evaluation across deterministic and two turn-keyed stochastic policy streams, with Zone 2 entry as the sole success event.
+      single-boss-assisted-v7: Evaluate deterministic and turn-keyed stochastic policies on a predeclared, telemetry-selected held-out set of one boss type; report distinct successful seeds, completion rate/time, boss attribution, deaths, and controller validity separately from shaped return.

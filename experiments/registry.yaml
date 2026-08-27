@@ -91,3 +91,9 @@ experiments:
     historical: false
     registered_at: '2026-08-27T01:02:00+00:00'
     updated_at: '2026-08-27T05:10:00+00:00'
+  EXP-0015:
+    spec: experiments/EXP-0015/experiment.yaml
+    spec_sha256: 56ad5dff59a3c4528a507b067c2e9dec9107c50eff6d116bc51ba307f25abcd1
+    status: planned
+    historical: false
+    registered_at: '2026-08-27T04:37:30.4672267+00:00'

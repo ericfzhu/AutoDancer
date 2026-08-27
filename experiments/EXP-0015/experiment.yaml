@@ -1,0 +1,87 @@
+schema_version: 1
+id: EXP-0015
+title: Assisted Death Metal good-start acquisition
+question: Can the corrected A2 policy learn repeatable Death Metal completion when real-game starts provide a calibrated intermediate success probability?
+hypothesis: Restricting training to one boss and using one-hit boss objectives plus 20 starting health will raise the calibrated 1-of-9 frozen-policy signal into repeatable held-out Zone 2 entry; this establishes a learnable good-start distribution before assistance is reduced.
+changed_blocks: [reward, observation, environment-semantics, learner-diagnostics, action-contract, optimization-schedule, training-level-distribution, evaluation]
+component_versions:
+  reward: V4A
+  architecture: A2
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: assisted-single-boss-curriculum-v2
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: single-boss-assisted-a2-v1
+  training-level-distribution: uniform-finite-pool-v1
+  runtime: async-native-pipe-v1
+  evaluation: single-boss-assisted-v7
+invariants:
+  - all trials begin from identical non-critic A2 weights and use a fresh critic, optimizer, and RNG stream
+  - Bard normal seeded All Zones identity followed by a real-game sequential GOTO to Zone 1 Floor 4
+  - curriculum assistance applies only at setup and emits no reward or trajectory transition
+  - every training seed is telemetry-confirmed as Death Metal before the experiment
+  - boss and boss-add objectives start at one health and Bard starts with 20 health
+  - entry to Zone 2 Floor 1 is the curriculum terminal and only success outcome
+  - exactly eight fixed-capacity workers and the freshly qualified controller hashes
+  - identical finite game-seed pool, transition budget, horizon, PPO settings, reward, action contract, and evaluation suite across trials
+  - Reward V4A contains no renewable turn, revisit, or inactivity term
+  - shaped return never selects a trial or advances the curriculum
+  - assisted boss-start outcomes cannot promote a normal-start policy
+arms:
+  - id: a2-death-metal-1hp-player20
+    description: Three independent A2 trials on the calibrated assisted Death Metal start using the hybrid map-navigation action contract.
+    component_versions:
+      architecture: A2
+      observation: schema10-corrected-memory-boss
+      environment-semantics: assisted-single-boss-curriculum-v2
+      action-contract: map-navigation-prior-v1
+calibration:
+  evidence: runs/boss-profile-calibration/death-metal-boss1hp-player20-map-nav-97001.json
+  frozen_policy_result: 1 completion in 9 Death Metal seeds (11.1 percent)
+  successful_seed: 64018
+  successful_turns: 128
+  interpretation: intermediate but nontrivial success probability suitable for reverse-curriculum learning; not learned or normal-start evidence
+training:
+  source_checkpoint: runs/corrected-a2-replication/training/seed-39001/checkpoint-00061440.pt
+  source_checkpoint_sha256: dbea9bf9bcd65489057524b6cac82e5d6a6fdb55e9b290b1f0e8d24b73114b38
+  initialization: warm-start non-critic A2 weights; reset critic, optimizer, recurrent episode state, and RNG
+  training_seeds: [68001, 68002, 68003]
+  game_seed_pool: [64001, 64002, 64012, 64013, 64016, 64018, 64020, 64026, 64027]
+  boss_type: DEATH_METAL
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: boss1hp-player20
+  max_turns_per_episode: 500
+  workers: 8
+  device: cuda
+  transition_budget_per_trial: 51200
+  checkpoint_steps: [25600, 51200]
+  reward_config: configs/reward-v4a.json
+  reward_config_sha256: 42b373a1704151a4dab22abfb88e7df31d5052284a57351e4bb8ebd4a557fab7
+evaluation:
+  candidate_seed_range: 67001-67128
+  heldout_selection: ascending first 12 seeds whose official boss_type telemetry is DEATH_METAL; exclude every training and calibration seed
+  selected_game_seeds: recorded before training in the run manifest
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: boss1hp-player20
+  max_turns: 500
+  workers: 8
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 98001
+    - mode: stochastic
+      policy_seed: 98002
+  primary_outcome: distinct held-out seeds entering Zone 2 Floor 1
+  diagnostics:
+    - completion rate and distinct successful seeds by policy mode and training trial
+    - completion-time distribution and discovery-to-completion behavior
+    - deaths, player damage, boss damage, boss-add damage, generic kills, and items
+    - training completion rate by update quartile
+    - entropy, explained variance, policy loss, value loss, KL, clipping, and gradient norm
+    - exact episode horizon, controller validity, capacity, restarts, and infrastructure events
+decision_rule: The arm passes acquisition only if the three final checkpoints aggregate at least three distinct held-out Death Metal seeds entering Zone 2, at least two training trials produce a held-out success, aggregate completion is at least 20 percent, and controller validity is exact with no natural restart. If it passes, select the trial lexicographically by distinct successful seeds, aggregate completion rate, death rate, and median completion time, then predeclare a separate player10 assistance-reduction experiment. If it fails, reject this good-start distribution rather than changing rewards or architecture post hoc. No result from this experiment constitutes normal-start Zone 2 evidence.
