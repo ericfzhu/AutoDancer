@@ -1,0 +1,59 @@
+schema_version: 1
+id: EXP-0013
+title: Frozen A2 boss-to-Zone-2 feasibility
+question: Does the strongest frozen A2 checkpoint already contain enough local combat competence to cross the Zone 1 boss boundary when early-floor navigation is removed?
+hypothesis: Starting from the real Zone 1 boss will shorten the causal horizon enough for the frozen local policy to produce measurable Zone 2 entries, distinguishing a navigation bottleneck from a boss-combat bottleneck.
+changed_blocks: [environment-semantics, training-level-distribution, evaluation]
+component_versions:
+  action-contract: current-11
+  environment-semantics: curriculum-level-start-v1
+  learner-diagnostics: critic-health-v2
+  reward: V2
+  architecture: A2
+  observation: legacy-A2
+  controller: schema10-requalified-current-hashes
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: frozen-policy
+  training-level-distribution: reverse-curriculum-sequential-goto-v1
+  runtime: async-native-pipe-v1
+  evaluation: curriculum-feasibility-v5
+invariants:
+  - frozen EXP-0010 61,440-transition checkpoint
+  - Bard normal seeded All Zones run identity
+  - sequential real-game GOTO transitions from level 1 to level 4
+  - no reward or trajectory transition for curriculum setup
+  - reward, map, recurrent state, and episode counters reset at level 4
+  - target success is entry to sequential level 5, Zone 2 Floor 1
+  - exactly eight fixed-capacity workers
+  - Reward V2, current-11 action contract, and no optimizer updates
+  - identical development game seeds across policy modes
+  - curriculum outcomes cannot promote a normal-start policy
+arms:
+  - id: boss-start-a2
+    description: Frozen A2 evaluated from the real Zone 1 boss with default run state and target termination on entering Zone 2.
+    component_versions:
+      training-level-distribution: reverse-curriculum-sequential-goto-v1
+checkpoint:
+  path: runs/corrected-a2-replication/training/seed-39001/checkpoint-00061440.pt
+  sha256: dbea9bf9bcd65489057524b6cac82e5d6a6fdb55e9b290b1f0e8d24b73114b38
+  global_step: 61440
+evaluation:
+  game_seeds: 63001-63024
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  max_turns: 1000
+  workers: 8
+  execution_trials:
+    - mode: deterministic
+      policy_seed: 0
+    - mode: stochastic
+      policy_seed: 95001
+    - mode: stochastic
+      policy_seed: 95002
+  primary_outcome: curriculum completion by entering Zone 2 Floor 1
+  diagnostics:
+    - target completion rate and distinct successful game seeds
+    - boss damage, kills, player damage, deaths, and turns to completion
+    - corrected lexicographic level pair and sequential progress
+    - controller validity, worker restarts, and infrastructure events
+decision_rule: Existing boss competence is supported only if at least three distinct seeds enter Zone 2 and the direction appears in at least two policy modes. Otherwise the result identifies boss combat as an independent bottleneck and authorizes a separately declared boss-to-Zone-2 curriculum training experiment. No curriculum-start result can promote the agent; normal-start Zone 2 acceptance remains unchanged.

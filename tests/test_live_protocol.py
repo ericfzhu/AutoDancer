@@ -46,6 +46,7 @@ class FakeBridge:
     def __init__(self) -> None:
         self.actions: list[Action] = []
         self.restarts = 0
+        self.gotos: list[int] = []
 
     def send_action(self, action: Action) -> BridgeCommand:
         self.actions.append(action)
@@ -54,6 +55,17 @@ class FakeBridge:
     def reset(self, seed: int) -> BridgeCommand:
         self.restarts += 1
         return BridgeCommand("test-session", self.restarts, None, "RESET", "worker-0000", seed)
+
+    def goto_level(self, level: int) -> BridgeCommand:
+        self.gotos.append(level)
+        return BridgeCommand(
+            "test-session",
+            self.restarts + len(self.gotos),
+            None,
+            "GOTO",
+            "worker-0000",
+            target_level=level,
+        )
 
     def restart(self) -> BridgeCommand:
         return self.reset(7)
@@ -126,6 +138,21 @@ def record(
             "observed_action": 1,
         },
     }
+
+
+def goto_record(sequence: int, level: int, zone: int, floor: int) -> dict:
+    payload = record(sequence, "turn")
+    payload["zone"] = zone
+    payload["floor"] = floor
+    payload["observation"]["player"][PlayerFeature.ZONE] = zone
+    payload["observation"]["player"][PlayerFeature.FLOOR] = floor
+    payload["bridge"] = {
+        "kind": "GOTO",
+        "session_id": "test-session",
+        "command_id": level,
+        "target_level": level,
+    }
+    return payload
 
 
 def test_native_pipe_source_accepts_large_schema10_records_without_log_markers() -> None:
@@ -204,6 +231,43 @@ def test_live_environment_applies_client_turn_limit() -> None:
     assert reward == pytest.approx(0.0)
     assert "aborted" not in info["reward_components"]
     assert not any(event.get("kind") == "failure" for event in info["raw_events"])
+
+
+def test_curriculum_reset_jumps_sequentially_without_reward_and_terminates_at_target() -> None:
+    sender = FakeBridge()
+    target = record(4, "turn", requested_action=Action.UP, command_id=1)
+    target["zone"] = 2
+    target["floor"] = 1
+    target["observation"]["player"][PlayerFeature.ZONE] = 2
+    target["observation"]["player"][PlayerFeature.FLOOR] = 1
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                goto_record(1, 2, 1, 2),
+                goto_record(2, 3, 1, 3),
+                goto_record(3, 4, 1, 4),
+                target,
+            ]
+        ),
+        bridge=sender,
+        curriculum_start_level=4,
+        curriculum_target_level=5,
+    )
+
+    observation, reset_info = environment.reset(seed=7)
+    assert sender.gotos == [2, 3, 4]
+    assert tuple(observation["player"][[PlayerFeature.ZONE, PlayerFeature.FLOOR]]) == (1, 4)
+    assert reset_info["curriculum_start_level"] == 4
+    assert reset_info["curriculum_target_level"] == 5
+
+    _, _, terminated, truncated, info = environment.step(Action.UP)
+    assert terminated and not truncated
+    assert info["episode_status"] == "curriculum_complete"
+    assert info["curriculum_completed"] is True
+    assert info["completed"] == 0
+    assert info["deaths"] == 0
+    assert "zone_complete" in info["reward_components"]
 
 
 def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> None:

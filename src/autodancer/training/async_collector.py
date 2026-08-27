@@ -16,10 +16,10 @@ from torch.distributions import Categorical
 
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
+from autodancer.progress import deeper_level
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.ppo import RolloutBatch
-from autodancer.training.progress import deeper_level
 from autodancer.training.seed_schedule import TrainingSeedSchedule
 
 

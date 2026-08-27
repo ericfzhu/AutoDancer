@@ -31,6 +31,7 @@ from autodancer.live.protocol import (
 from autodancer.memory import FloorMapMemory
 from autodancer.observation import observation_space
 from autodancer.outcomes import classify_action_outcome
+from autodancer.progress import level_progress
 from autodancer.rewards import RewardConfig, RewardTracker
 
 
@@ -54,6 +55,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         session_id: str | None = None,
         launch_id: str | None = None,
         reward_config: RewardConfig | None = None,
+        curriculum_start_level: int = 1,
+        curriculum_target_level: int | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         if turn_source is None and log_path is None:
@@ -73,6 +76,19 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self.max_turns = int(max_turns)
         if self.max_turns <= 0:
             raise ValueError("max_turns must be positive")
+        self.curriculum_start_level = int(curriculum_start_level)
+        self.curriculum_target_level = (
+            None if curriculum_target_level is None else int(curriculum_target_level)
+        )
+        if self.curriculum_start_level <= 0:
+            raise ValueError("curriculum_start_level must be positive")
+        if (
+            self.curriculum_target_level is not None
+            and self.curriculum_target_level <= self.curriculum_start_level
+        ):
+            raise ValueError("curriculum_target_level must be after curriculum_start_level")
+        if self.attach_existing and self.curriculum_start_level != 1:
+            raise ValueError("attach_existing cannot perform a curriculum level start")
         self.action_space = gym.spaces.Discrete(ACTION_COUNT)
         self.observation_space = observation_space()
         self._last_observation: dict[str, np.ndarray] | None = None
@@ -122,7 +138,6 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                     if "must start with a reset record" not in str(error):
                         raise
             self._verify_acknowledgement(record, command)
-            reset_latency = time.monotonic() - command_started
         validate_record(record)
         if not self.attach_existing and record["kind"] != "reset":
             raise ProtocolError("The first record after RESTART must have kind 'reset'")
@@ -131,8 +146,13 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._episode_seed = int(record.get("seed", 0))
         self._run_id = str(record["run_id"])
         observation, info = self._accept_record(record)
+        if self.curriculum_start_level > 1:
+            for target_level in range(2, self.curriculum_start_level + 1):
+                observation, info = self._goto_level(target_level)
         if not self.attach_existing:
-            info["reset_latency_seconds"] = reset_latency
+            info["reset_latency_seconds"] = time.monotonic() - command_started
+        info["curriculum_start_level"] = self.curriculum_start_level
+        info["curriculum_target_level"] = self.curriculum_target_level
         self.reward_tracker.reset(observation, info)
         if self.progress_callback is not None:
             self.progress_callback(info)
@@ -179,6 +199,19 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
         truncated = status == "aborted"
+        current_level = level_progress(
+            int(info.get("zone") or 0), int(info.get("floor") or 0)
+        )
+        curriculum_complete = bool(
+            self.curriculum_target_level is not None
+            and current_level >= self.curriculum_target_level
+        )
+        if curriculum_complete and not terminated and not truncated:
+            terminated = True
+            status = "curriculum_complete"
+            info["episode_status"] = status
+            info["curriculum_completed"] = True
+            info["curriculum_target_level"] = self.curriculum_target_level
         if not terminated and not truncated and self._episode_steps >= self.max_turns:
             truncated = True
             status = "time_limit"
@@ -273,8 +306,14 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self, level: int
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Load a real run-sequence level for qualification-only boundary checks."""
+        return self._goto_level(level)
+
+    def _goto_level(
+        self, level: int
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Load the next real run-sequence level without inventing a transition."""
         if self._episode_done or self._run_id is None or self._episode_seed is None:
-            raise RuntimeError("qualification_goto_level() requires an active reset run")
+            raise RuntimeError("goto_level() requires an active reset run")
         source, bridge = self._dependencies()
         command = bridge.goto_level(level)
         record = source.read(self.reset_timeout)

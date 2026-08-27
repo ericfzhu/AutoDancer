@@ -27,6 +27,7 @@ from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.progress import deeper_level, level_progress
 from autodancer.rewards import load_reward_config
 from autodancer.training.action_contract import (
     ACTION_CONTRACTS,
@@ -35,7 +36,6 @@ from autodancer.training.action_contract import (
 from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
-from autodancer.training.progress import deeper_level, level_progress
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
 
@@ -389,6 +389,10 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "policy": policy,
         "episodes": count,
         "completion_rate": sum(episode["status"] == "won" for episode in episodes) / count,
+        "curriculum_completion_rate": sum(
+            episode["status"] == "curriculum_complete" for episode in episodes
+        )
+        / count,
         "death_rate": sum(episode["status"] == "dead" for episode in episodes) / count,
         "abort_rate": sum(episode["status"] == "aborted" for episode in episodes) / count,
         "step_limit_rate": sum(episode["status"] == "step_limit" for episode in episodes) / count,
@@ -906,6 +910,8 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         reward_config=reward_config,
         affinity_policy=arguments.affinity,
         diagnostic_root=arguments.output.parent / "controller-diagnostics",
+        curriculum_start_level=arguments.curriculum_start_level,
+        curriculum_target_level=arguments.curriculum_target_level,
     )
     dashboard_state = DashboardState() if arguments.dashboard is not None else None
     dashboard_server = (
@@ -973,7 +979,11 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "game_version": SUPPORTED_GAME_VERSION,
         "steam_build": SUPPORTED_STEAM_BUILD,
         "character": "Bard",
-        "mode": "AllZonesSeeded",
+        "mode": (
+            "AllZonesSeeded"
+            if arguments.curriculum_start_level == 1
+            else "AllZonesSeededCurriculum"
+        ),
         "checkpoint": str(arguments.checkpoint.resolve()),
         "checkpoint_sha256": _checkpoint_hash(arguments.checkpoint),
         "checkpoint_global_step": int(payload.get("global_step", 0)),
@@ -987,6 +997,8 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "policy_seed": arguments.policy_seed,
         "policy_mode": arguments.policy_mode,
         "action_contract": arguments.action_contract,
+        "curriculum_start_level": arguments.curriculum_start_level,
+        "curriculum_target_level": arguments.curriculum_target_level,
         "worker_restarts": restarts,
         "controller_valid": restarts == 0 and not infrastructure_events,
         "infrastructure_events": infrastructure_events,
@@ -1032,6 +1044,8 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "policy_seed": arguments.policy_seed,
                 "policy_mode": arguments.policy_mode,
                 "action_contract": arguments.action_contract,
+                "curriculum_start_level": arguments.curriculum_start_level,
+                "curriculum_target_level": arguments.curriculum_target_level,
                 "trained_only": arguments.trained_only,
                 "reward_lineage_version": arguments.reward_lineage_version,
                 "reward_config": (
@@ -1135,6 +1149,17 @@ def main() -> int:
     parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
+    parser.add_argument(
+        "--curriculum-start-level",
+        type=int,
+        default=1,
+        help="sequential All Zones level to start from after a normal seeded reset",
+    )
+    parser.add_argument(
+        "--curriculum-target-level",
+        type=int,
+        help="terminate successfully after entering this sequential level",
+    )
     parser.add_argument("--experiment-id", help="registered immutable experiment id")
     parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
     parser.add_argument("--trial-id", help="stable evaluation trial label")
@@ -1150,6 +1175,13 @@ def main() -> int:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.num_instances <= 0 or arguments.max_steps <= 0:
         parser.error("--num-instances and --max-steps must be positive")
+    if arguments.curriculum_start_level <= 0:
+        parser.error("--curriculum-start-level must be positive")
+    if (
+        arguments.curriculum_target_level is not None
+        and arguments.curriculum_target_level <= arguments.curriculum_start_level
+    ):
+        parser.error("--curriculum-target-level must be after --curriculum-start-level")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     report = run_baseline(arguments)

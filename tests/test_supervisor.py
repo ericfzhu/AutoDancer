@@ -69,6 +69,17 @@ def test_qualification_startup_fault_slot_must_be_inside_capacity(
         )
 
 
+def test_curriculum_target_must_follow_start_level(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="after curriculum_start_level"):
+        SupervisorConfig(
+            tmp_path / "game",
+            tmp_path / "mod",
+            num_instances=1,
+            curriculum_start_level=4,
+            curriculum_target_level=4,
+        )
+
+
 def test_start_recovers_a_worker_that_fails_after_handle_creation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

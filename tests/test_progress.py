@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from autodancer.training.progress import deeper_level, level_progress
+from autodancer.progress import deeper_level, level_progress
 
 
 def test_level_progress_orders_boss_before_next_zone() -> None:

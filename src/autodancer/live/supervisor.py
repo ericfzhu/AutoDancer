@@ -86,6 +86,8 @@ class SupervisorConfig:
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
     qualification_mode: bool = False
+    curriculum_start_level: int = 1
+    curriculum_target_level: int | None = None
     qualification_startup_fault_slot: int | None = None
 
     def __post_init__(self) -> None:
@@ -103,6 +105,13 @@ class SupervisorConfig:
             raise ValueError("the supported worker profile is 'symbolic'")
         if self.affinity_policy not in {"auto", "none", "spread"}:
             raise ValueError("affinity_policy must be auto, none, or spread")
+        if self.curriculum_start_level <= 0:
+            raise ValueError("curriculum_start_level must be positive")
+        if (
+            self.curriculum_target_level is not None
+            and self.curriculum_target_level <= self.curriculum_start_level
+        ):
+            raise ValueError("curriculum_target_level must be after curriculum_start_level")
         if (
             self.qualification_startup_fault_slot is not None
             and not 0 <= self.qualification_startup_fault_slot < self.num_instances
@@ -233,7 +242,9 @@ class AutoDancerSupervisor:
         environment["AUTODANCER_SUPERVISOR_SESSION"] = self.session_id
         environment["AUTODANCER_PIPE"] = transport.name
         environment["AUTODANCER_QUALIFICATION"] = (
-            "1" if self.config.qualification_mode else "0"
+            "1"
+            if self.config.qualification_mode or self.config.curriculum_start_level > 1
+            else "0"
         )
         return subprocess.Popen(
             [str(self.config.executable), *arguments],
@@ -427,6 +438,8 @@ class AutoDancerSupervisor:
             reward_config=self.config.reward_config,
             session_id=self.session_id,
             launch_id=handle.launch_id,
+            curriculum_start_level=self.config.curriculum_start_level,
+            curriculum_target_level=self.config.curriculum_target_level,
             progress_callback=record_progress,
         )
 

@@ -331,6 +331,18 @@ def train(arguments: argparse.Namespace) -> None:
         if training_seed_pool
         else {}
     )
+    curriculum_metadata = (
+        {
+            "curriculum": {
+                "start_level": arguments.curriculum_start_level,
+                "target_level": arguments.curriculum_target_level,
+                "reset_semantics": "normal-reset-sequential-goto-reward-reset-v1",
+            }
+        }
+        if arguments.curriculum_start_level != 1
+        or arguments.curriculum_target_level is not None
+        else {}
+    )
     if reward_config.discount != ppo_config.gamma:
         raise ValueError("Reward potential discount must match PPO gamma")
     supervisor_config = SupervisorConfig(
@@ -346,6 +358,8 @@ def train(arguments: argparse.Namespace) -> None:
         worker_profile=arguments.worker_profile,
         affinity_policy=arguments.affinity,
         diagnostic_root=arguments.run_dir / "controller-diagnostics",
+        curriculum_start_level=arguments.curriculum_start_level,
+        curriculum_target_level=arguments.curriculum_target_level,
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -389,6 +403,8 @@ def train(arguments: argparse.Namespace) -> None:
                     "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
                 ),
                 "training_seed_pool": list(training_seed_pool),
+                "curriculum_start_level": arguments.curriculum_start_level,
+                "curriculum_target_level": arguments.curriculum_target_level,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -410,7 +426,13 @@ def train(arguments: argparse.Namespace) -> None:
             )
             if training_seed_pool:
                 tracker.validate_component_versions(
-                    {"training-level-distribution": "uniform-finite-pool-v1"},
+                    {
+                        "training-level-distribution": (
+                            "reverse-curriculum-sequential-goto-v1"
+                            if arguments.curriculum_start_level != 1
+                            else "uniform-finite-pool-v1"
+                        )
+                    },
                     require_declared=True,
                 )
         except BaseException as error:
@@ -471,6 +493,7 @@ def train(arguments: argparse.Namespace) -> None:
                         "reward": reward_config.specification(),
                         "action_contract": arguments.action_contract,
                         **seed_checkpoint_metadata,
+                        **curriculum_metadata,
                         "freeze_base_updates": arguments.freeze_base_updates,
                     },
                 )
@@ -614,6 +637,8 @@ def train(arguments: argparse.Namespace) -> None:
                                 else "unbounded-random-v1"
                             ),
                             "training_seed_pool": list(training_seed_pool),
+                            "curriculum_start_level": arguments.curriculum_start_level,
+                            "curriculum_target_level": arguments.curriculum_target_level,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
@@ -715,6 +740,17 @@ def main() -> int:
         "--training-seed-pool",
         help="finite `start-end` or comma-separated game-seed pool sampled on resets",
     )
+    parser.add_argument(
+        "--curriculum-start-level",
+        type=int,
+        default=1,
+        help="sequential All Zones level to start from after each normal seeded reset",
+    )
+    parser.add_argument(
+        "--curriculum-target-level",
+        type=int,
+        help="terminate the curriculum episode successfully on entering this level",
+    )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--reward-config",
@@ -760,6 +796,13 @@ def main() -> int:
         parser.error("--freeze-base-updates cannot be negative")
     if arguments.freeze_base_updates and arguments.architecture != 8:
         parser.error("--freeze-base-updates is only valid for Architecture 8")
+    if arguments.curriculum_start_level <= 0:
+        parser.error("--curriculum-start-level must be positive")
+    if (
+        arguments.curriculum_target_level is not None
+        and arguments.curriculum_target_level <= arguments.curriculum_start_level
+    ):
+        parser.error("--curriculum-target-level must be after --curriculum-start-level")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)

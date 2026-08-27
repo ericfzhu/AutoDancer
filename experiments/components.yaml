@@ -34,6 +34,7 @@ blocks:
   environment-semantics:
     versions:
       truncation-damage-events-v2: Time limits bootstrap rather than terminalize, player damage uses actual health loss, and item/currency/descent events have distinct meanings.
+      curriculum-level-start-v1: A normal seeded reset followed by sequential real-game level transitions, with map/reward/recurrent state reset at the declared start and an explicit target-level subtask terminal.
   learner-diagnostics:
     versions:
       critic-health-v2: Explained variance plus value, return, raw-advantage, reward-scale, and pre-clipping gradient diagnostics.
@@ -60,6 +61,7 @@ blocks:
     versions:
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
       uniform-finite-pool-v1: Each worker samples from one declared finite seed pool; independent streams and exact next-draw state are checkpointed.
+      reverse-curriculum-sequential-goto-v1: Finite-pool training starts at a declared later real-game sequential level, then expands starts backward while final evaluation remains normal-start.
       prioritized-level-replay-v1: Planned finite-pool replay weighted by measured learning potential; not yet implemented or authorized for an experiment.
   runtime:
     versions:
@@ -73,3 +75,4 @@ blocks:
       deterministic-plus-turn-keyed-stochastic-v2: Corrected-metric evaluation using argmax and two reproducible sampled-policy streams with explicit descent and item/currency attribution.
       action-outcome-contract-v3: V2 evaluation plus authoritative action-outcome counts, wall-attempt rate, learned invalid-wall signatures, and effective-mask diagnostics.
       map-navigation-contract-v4: Action-outcome evaluation plus navigation-prior activation, effective directional masking, staircase conversion, traversal diversity, and valid-cycle diagnostics.
+      curriculum-feasibility-v5: Frozen-policy evaluation from a declared real-game sequential level with explicit target completion, corrected level-pair metrics, and normal-start evidence kept separate.
