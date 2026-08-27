@@ -121,6 +121,11 @@ Two defects were found after EXP-0012:
   Zone 1 boss to Zone 2 Floor 1 could be represented as the impossible pair
   `(Zone 2, Floor 4)`. Progress tracking now keeps the deepest lexicographic
   zone/floor pair from one real state.
+- The aggregate report's legacy `furthest_floor` field stores a sequential level
+  index, so Zone 2 Floor 1 appears as `5`. Reports now also expose
+  `furthest_level=5` and the unambiguous paired fields
+  `deepest_zone=2, deepest_floor=1`; the legacy field remains only for historical
+  comparator and checkpoint compatibility.
 - Raw item pickup counts include repeated inventory swaps. In EXP-0012 seed
   62023, one looping episode recorded 2,485 pickups but only one newly acquired
   item type. Reports now expose repeated item transactions; selection should use

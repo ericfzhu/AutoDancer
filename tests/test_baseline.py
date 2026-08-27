@@ -441,6 +441,8 @@ def test_episode_progress_keeps_zone_and_floor_from_the_same_level() -> None:
     assert (result["furthest_zone"], result["furthest_floor"]) == (2, 1)
     assert summary["mean_progress"] == 5
     assert summary["furthest_floor"] == 5
+    assert summary["furthest_level"] == 5
+    assert (summary["deepest_zone"], summary["deepest_floor"]) == (2, 1)
 
 
 def test_episode_summary_marks_repeated_item_transactions() -> None:

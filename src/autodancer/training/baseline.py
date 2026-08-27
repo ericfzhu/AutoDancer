@@ -390,6 +390,13 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         )
         for episode in episodes
     ]
+    deepest_episode = max(
+        episodes,
+        key=lambda episode: level_progress(
+            int(episode["furthest_zone"]), int(episode["furthest_floor"])
+        ),
+    )
+    furthest_level = max(progress)
     total_turns = sum(int(episode["turns"]) for episode in episodes)
     action_counts = [
         sum(int(episode.get("action_counts", [0] * ACTION_COUNT)[index]) for episode in episodes)
@@ -446,8 +453,13 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         ),
         "mean_turns": float(np.mean([episode["turns"] for episode in episodes])),
         "mean_progress": float(np.mean(progress)),
-        "furthest_zone": max(int(episode["furthest_zone"]) for episode in episodes),
-        "furthest_floor": max(progress),
+        # ``furthest_floor`` historically stores the one-based sequential level.
+        # Keep it for report/checkpoint compatibility and expose unambiguous names.
+        "furthest_zone": int(deepest_episode["furthest_zone"]),
+        "furthest_floor": furthest_level,
+        "furthest_level": furthest_level,
+        "deepest_zone": int(deepest_episode["furthest_zone"]),
+        "deepest_floor": int(deepest_episode["furthest_floor"]),
         "boss_type_counts": boss_type_counts,
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
