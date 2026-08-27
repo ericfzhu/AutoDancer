@@ -574,6 +574,21 @@ competence-based selection; running separate fixed-profile jobs and warm-startin
 between them is not equivalent because it provides no within-update protection
 against forgetting.
 
+Assistance application also needs stronger evidence and narrower targeting. The
+current Lua profile runs immediately before the first assisted observation, so a
+successful GOTO record proves that its assertions did not fail. It does not,
+however, report the pre/post health values or number and kind of affected
+entities. Moreover, `boss1hp-*` currently sets both `boss` and `bossAdd`
+entities to one health. That is harmless for the recorded Death Metal calibration
+(it recorded no boss-add damage or kills), but it would silently simplify
+mechanics-critical adds when the curriculum expands to other boss types. A
+future profile acknowledgement must include observed player health and a stable
+summary of each affected objective's kind, current health, and maximum health.
+Boss-objective health and boss-add health must become separate assistance
+dimensions, defaulting to unmodified adds unless an experiment explicitly
+declares otherwise. The learner must use the observed applied values—not merely
+the requested profile label—for curriculum identity and lineage validation.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
