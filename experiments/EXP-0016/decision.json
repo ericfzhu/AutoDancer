@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0016",
+  "decided_at": "2026-08-27T17:45:30.872796+00:00",
+  "outcome": "passed",
+  "decision": "advance_to_player10_with_mastered_replay",
+  "selected_training_seed": 68002,
+  "selected_checkpoint": "runs/assisted-death-metal/training/seed-68002/final.pt",
+  "aggregate": {
+    "episodes": 108,
+    "successes": 65,
+    "completion_rate": 0.6018518518518519,
+    "successful_training_trials": 3,
+    "distinct_successful_seeds": [
+      67012,
+      67019,
+      67021,
+      67022,
+      67023,
+      67025,
+      67028,
+      67039,
+      67041,
+      67046,
+      67052,
+      67061
+    ],
+    "controller_valid": true,
+    "natural_restarts": 0
+  },
+  "selected_trial": {
+    "episodes": 36,
+    "successes": 25,
+    "completion_rate": 0.6944444444444444,
+    "death_rate": 0.3055555555555556,
+    "distinct_successful_seeds": 11,
+    "deterministic_successes": 6,
+    "stochastic_98001_successes": 10,
+    "stochastic_98002_successes": 9
+  },
+  "diagnostic_warnings": [
+    {
+      "kind": "boss_kill_without_boss_damage",
+      "training_seed": 68001,
+      "policy_mode": "stochastic-98002",
+      "game_seed": 67039,
+      "status": "dead",
+      "selection_impact": "none; curriculum completion and level telemetry are authoritative"
+    }
+  ],
+  "normal_start_promotable": false,
+  "rationale": "The predeclared acquisition gate passed by a wide margin: all three independent training trials succeeded, the aggregate completion rate was 60.2 percent, all 12 unseen Death Metal seeds reached Zone 2 in at least one policy trial, and controller validity was exact with zero restarts. Seed 68002 wins the predeclared lexicographic ordering because all trials tied at 11 distinct successful seeds and it had the highest aggregate completion rate. This proves the assisted boss subskill only, not normal-start Zone 2 competence.",
+  "evidence": [
+    "experiments/EXP-0016/experiment.yaml",
+    "runs/assisted-death-metal/comparison.json",
+    "runs/assisted-death-metal/training/seed-68002/final.pt",
+    "runs/controller-qualification-memory-fix/qualification.json"
+  ]
+}
