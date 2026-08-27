@@ -680,6 +680,18 @@ def test_lua_inventory_uses_the_gameplay_cooldown_component() -> None:
     assert "priceTagCostHealth.costMultiplier" not in source
 
 
+def test_lua_telemetry_reuses_the_built_observation_and_bounds_collection() -> None:
+    source = (
+        Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "AutoDancer.lua"
+    ).read_text(encoding="utf-8")
+    status_start = source.index("local function observationForStatus")
+    status_end = source.index("\nend", status_start)
+    status_function = source[status_start:status_end]
+    assert "clone(" not in status_function
+    assert "local result = observation or emptyObservation()" in status_function
+    assert "local TELEMETRY_COLLECTION_INTERVAL = 1000" in source
+
+
 def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
     root = Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts"
     telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")

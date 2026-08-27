@@ -25,7 +25,7 @@ local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
 local ACTION_COUNT = 11
 local SCHEMA_VERSION = 10
-local TELEMETRY_COLLECTION_INTERVAL = 10000
+local TELEMETRY_COLLECTION_INTERVAL = 1000
 
 -- Replace these values with the values shown by the installed game and Steam.
 local GAME_VERSION = "v4.2.1-b5713"
@@ -703,7 +703,11 @@ local function beginRunIfNeeded()
 end
 
 local function observationForStatus(observation, status)
-    local result = clone(observation or emptyObservation())
+    -- buildObservation() already returns a record-owned table.  Reusing it here
+    -- avoids deep-cloning the 21x21x29 grid on every transition.  Terminal
+    -- records intentionally update the retained last observation in place: once
+    -- an episode has ended it must not be reused as a running observation.
+    local result = observation or emptyObservation()
     result.player[15] = status == "won" and 1 or 0
     result.player[16] = status == "dead" and 1 or 0
     return result
@@ -753,8 +757,9 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
     -- every turn.  The game normally lets Lua's collector choose when to return
     -- that memory, which can look like sustained worker growth during long,
     -- headless runs.  Collect on reset and at a sparse fixed cadence so a worker
-    -- with an unusually long episode is bounded too.  The cadence is far below
-    -- the p99 sample rate and does not change game state or protocol content.
+    -- with an unusually long episode is bounded too.  One collection per 1000
+    -- records keeps short-lived JSON allocations from raising the long-run heap
+    -- high-water mark without changing game state or protocol content.
     recordsSinceCollection = recordsSinceCollection + 1
     if kind == "initial" or recordsSinceCollection >= TELEMETRY_COLLECTION_INTERVAL then
         assert(Native.collect(), "AutoDancer telemetry garbage collection failed")
