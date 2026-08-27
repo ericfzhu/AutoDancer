@@ -440,6 +440,74 @@ def test_architecture_eight_finetune_preserves_a2_then_opens_adapter(tmp_path: P
     )
 
 
+def test_architecture_eight_actor_warm_start_resets_reward_critic(tmp_path: Path) -> None:
+    source = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            map_size=0,
+        )
+    ).eval()
+    with torch.no_grad():
+        for parameter in source.critic.parameters():
+            parameter.fill_(7)
+    path = tmp_path / "architecture-2.pt"
+    torch.save(
+        {
+            "model": source.state_dict(),
+            "architecture": source.architecture_spec(),
+            "checkpoint_metadata": {"reward": {"version": 4}},
+        },
+        path,
+    )
+    target = ProjectedAdapterActorCritic(
+        AdapterConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            tactical_size=16,
+            map_size=16,
+            player_size=8,
+            inventory_size=8,
+        )
+    ).eval()
+    critic_before = {
+        name: value.clone()
+        for name, value in target.base.critic.state_dict().items()
+    }
+    algorithm = RecurrentPPO(
+        target,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    provenance = algorithm.initialize_from(path)
+    value = {key: tensor[0] for key, tensor in observations(1, 2).items()}
+    value["grid"][..., int(GridChannel.FACING) :] = 2
+    value["map_memory"].fill_(1)
+    value["player"][:, 16:].fill_(3)
+    value["inventory"][:, 8:].fill_(1)
+    state = source.initial_state(2)
+    with torch.inference_mode():
+        source_logits, _, source_state = source.step(value, state)
+        target_logits, _, target_state = target.step(value, state)
+
+    assert provenance["architecture_upgrade"] == "v2_to_v8_actor_parity_fresh_critic"
+    assert torch.equal(source_logits, target_logits)
+    assert torch.equal(source_state, target_state)
+    assert torch.count_nonzero(target.adapter_projection.weight) == 0
+    assert all(
+        torch.equal(value, critic_before[name])
+        for name, value in target.base.critic.state_dict().items()
+    )
+
+
 def test_architecture_four_checkpoint_can_initialize_interaction_policy(
     tmp_path: Path,
 ) -> None:

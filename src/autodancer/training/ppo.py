@@ -289,6 +289,52 @@ class RecurrentPPO:
         payload = torch.load(path, map_location=self.device, weights_only=False)
         source_spec = payload.get("architecture")
         target_spec = self.model.architecture_spec()
+        v2_to_v8 = (
+            isinstance(source_spec, dict)
+            and source_spec.get("version") == 2
+            and target_spec.get("version") == 8
+            and source_spec.get("config")
+            == {
+                key: target_spec["config"][key]
+                for key in (
+                    "cell_size",
+                    "spatial_size",
+                    "hidden_size",
+                    "entity_limit",
+                    "attention_layers",
+                    "attention_heads",
+                )
+            }
+        )
+        if v2_to_v8:
+            source = dict(payload["model"])
+            target = self.model.state_dict()
+            transferred = {
+                f"base.{name}": value
+                for name, value in source.items()
+                if not name.startswith("critic.")
+            }
+            missing, unexpected = self.model.load_state_dict(transferred, strict=False)
+            allowed_missing = {
+                name
+                for name in target
+                if name.startswith(
+                    ("base.critic.", "adapter.", "adapter_projection.")
+                )
+            }
+            if unexpected or set(missing) != allowed_missing:
+                raise ValueError(
+                    "Architecture-2 checkpoint did not populate the A8 actor with a fresh critic"
+                )
+            provenance = {
+                "path": str(path.resolve()),
+                "global_step": int(payload.get("global_step", 0)),
+                "updates": int(payload.get("updates", 0)),
+                "reward": payload.get("checkpoint_metadata", {}).get("reward"),
+                "architecture_upgrade": "v2_to_v8_actor_parity_fresh_critic",
+            }
+            self.checkpoint_metadata["initialization"] = provenance
+            return provenance
         v2_to_v7 = (
             isinstance(source_spec, dict)
             and source_spec.get("version") == 2
