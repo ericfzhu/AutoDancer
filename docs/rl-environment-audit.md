@@ -861,6 +861,30 @@ into PPO as though they came from the current policy. Shaped return must not be 
 priority score because its scale differs across curriculum stages and can reward
 activity without task completion.
 
+Checkpoint time is another selection dimension and must be treated like a
+hyperparameter. EXP-0018 trained each trial on only nine Death Metal seeds and
+judged only its final 51,200-transition checkpoint. One optimizer seed reached
+64.6 percent sampled player6 completion on held-out seeds while the other two
+ended at 43.8 and 33.3 percent. This does not prove an earlier checkpoint was
+better, but final-only evaluation cannot distinguish "never learned" from
+"learned and was subsequently overwritten." The queued EXP-0019 contract remains
+final-only because changing its gate after seeing EXP-0018 would invalidate the
+controlled comparison; its larger 24-seed training pool addresses the more direct
+generalization weakness first.
+
+If EXP-0019 fails, an intermediate-checkpoint follow-up must be declared before
+opening new evaluation results. Candidate steps (the already saved 25,600 and
+51,200 checkpoints initially), game seeds, policy-sampling streams, and ordering
+must be fixed in advance. Select a checkpoint using a fresh development bank and
+then confirm it once on a second untouched bank; do not choose the maximum from
+the final acceptance seeds. Future training arms should save candidates on a
+fixed schedule and explicitly separate checkpoint-tuning seeds from final test
+seeds. This follows evidence that RL choices can overfit a tuning seed and that
+single seeds exhibit unusually good or collapsing learning curves
+([Eimer et al., 2023](https://proceedings.mlr.press/v202/eimer23a.html)), while
+procedural RL benchmarks require standardized, held-out end-to-end evaluation
+([Mohanty et al., 2021](https://proceedings.mlr.press/v133/mohanty21a.html)).
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
