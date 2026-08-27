@@ -79,6 +79,7 @@ class EpisodeAccumulator:
     navigation_prior_turns: int = 0
     navigation_masked_direction_observations: int = 0
     max_remembered_wall_states: int = 0
+    max_remembered_hazards: int = 0
     max_repeated_direction_streak: int = 0
     staircase_discoveries: int = 0
     staircase_exits: int = 0
@@ -236,6 +237,10 @@ class EpisodeAccumulator:
             self.max_remembered_wall_states,
             int(contract.get("remembered_wall_states", 0) or 0),
         )
+        self.max_remembered_hazards = max(
+            self.max_remembered_hazards,
+            int(contract.get("remembered_hazards", 0) or 0),
+        )
         unchanged = position == self._last_position
         if unchanged:
             self.unchanged_position_turns += 1
@@ -351,6 +356,7 @@ class EpisodeAccumulator:
                 self.navigation_masked_direction_observations
             ),
             "max_remembered_wall_states": self.max_remembered_wall_states,
+            "max_remembered_hazards": self.max_remembered_hazards,
             "max_repeated_direction_streak": self.max_repeated_direction_streak,
             "unique_positions": len(self._visited_positions),
             "staircase_discoveries": self.staircase_discoveries,
@@ -530,6 +536,9 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
             np.mean(
                 [episode.get("max_remembered_wall_states", 0) for episode in episodes]
             )
+        ),
+        "mean_max_remembered_hazards": float(
+            np.mean([episode.get("max_remembered_hazards", 0) for episode in episodes])
         ),
         "mean_max_repeated_direction_streak": float(
             np.mean([episode.get("max_repeated_direction_streak", 0) for episode in episodes])

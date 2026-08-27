@@ -381,6 +381,27 @@ its lineage specification declares that changed block. Uniform replay isolates
 the effect of repeated exposure; TD-error prioritization remains a later,
 separately versioned intervention rather than being bundled into the first test.
 
+`map-navigation-prior-v2` now implements the narrower follow-up authorized by the
+EXP-0012 failure analysis, but it is not promoted by implementation alone. It
+routes over Bard's remembered revealed terrain toward known stairs, otherwise
+toward the nearest reachable reveal frontier. Unlike v1, a merely visible distant
+enemy does not disable the route. Control returns to the learned policy for an
+enemy within two Manhattan steps, any visible dragon or boss, an active tell or
+explosive state, and the entire boss floor. Each worker also remembers observed
+trap coordinates for the current floor and excludes them from strategic routes;
+the memory clears on a natural floor transition as well as reset. If no complete
+route is known, the conservative v1 least-visited fallback remains available.
+
+The prior constrains the action mask before inference, so PPO still records the
+probability of the action under the exact effective policy rather than replacing
+an already sampled action. Reports expose activation rate, masked directions, and
+maximum remembered hazards. A future frozen-policy ablation must compare v2 with
+v1 and the unmodified contract on identical unseen normal starts. Promotion
+requires more staircase exits and Floor 2 entries in at least two policy streams,
+lower step-limit/loop behavior, and no material loss of combat survival when the
+local-threat handoff activates. It must not be selected merely because it moves
+more often.
+
 ## Why a floor curriculum is likely necessary
 
 The live transition budget is extremely small relative to published hard-

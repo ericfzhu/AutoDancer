@@ -227,3 +227,164 @@ def test_map_navigation_prior_applies_independently_to_batched_slots() -> None:
     assert effective["action_mask"][1, Action.UP] == 0
     assert effective["action_mask"][0, Action.UP] == 1
     assert effective["action_mask"][1, Action.RIGHT] == 1
+
+
+def test_navigation_v2_routes_to_frontier_despite_far_visible_enemy() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    live = _observation()
+    map_centre = MAP_SIZE // 2
+    grid_centre = GRID_SIZE // 2
+    live["map_memory"][..., MapChannel.TERRAIN_CLASS] = Terrain.WALL
+    live["map_memory"][map_centre, map_centre : map_centre + 4, MapChannel.TERRAIN_CLASS] = (
+        Terrain.FLOOR
+    )
+    live["map_memory"][map_centre - 1, map_centre, MapChannel.TERRAIN_CLASS] = (
+        Terrain.FLOOR
+    )
+    live["map_memory"][map_centre - 1, map_centre, MapChannel.VISIT_COUNT] = 0
+    live["map_memory"][map_centre, map_centre + 1, MapChannel.VISIT_COUNT] = 9
+    live["map_memory"][
+        map_centre, map_centre + 4, MapChannel.TERRAIN_CLASS
+    ] = Terrain.UNKNOWN
+    live["grid"][grid_centre - 5, grid_centre, GridChannel.ACTOR_CLASS] = ActorKind.SKELETON
+    live["player"][PlayerFeature.VISIBLE_ENEMIES] = 1
+
+    effective = memory.reset_slot(0, live)
+
+    assert effective["action_mask"][Action.RIGHT] == 1
+    assert np.all(
+        effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]]
+        == 0
+    )
+
+
+def test_navigation_v2_yields_to_nearby_enemy_and_boss_floor() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    nearby = _observation()
+    centre = GRID_SIZE // 2
+    nearby["grid"][centre, centre + 2, GridChannel.ACTOR_CLASS] = ActorKind.SKELETON
+    assert np.all(memory.reset_slot(0, nearby)["action_mask"] == 1)
+
+    boss_floor = _observation()
+    boss_floor["player"][PlayerFeature.FLOOR] = 4
+    assert np.all(memory.reset_slot(0, boss_floor)["action_mask"] == 1)
+
+
+def test_navigation_v2_remembers_visible_trap_and_routes_around_it() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    live = _observation()
+    map_centre = MAP_SIZE // 2
+    grid_centre = GRID_SIZE // 2
+    path = (
+        (0, 0),
+        (0, -1),
+        (1, -1),
+        (2, -1),
+        (2, 0),
+        (1, 0),
+    )
+    for dx, dy in path:
+        live["map_memory"][
+            map_centre + dy, map_centre + dx, MapChannel.TERRAIN_CLASS
+        ] = Terrain.FLOOR
+    live["map_memory"][
+        map_centre, map_centre + 2, MapChannel.TERRAIN_CLASS
+    ] = Terrain.STAIRS
+    live["grid"][grid_centre, grid_centre + 1, GridChannel.VISIBILITY] = 2
+    live["grid"][grid_centre, grid_centre + 1, GridChannel.TRAP] = 1
+
+    effective = memory.reset_slot(0, live)
+    diagnostic = memory.observe(
+        0,
+        effective,
+        Action.UP,
+        live,
+        {"action_outcome": {"category": "move"}},
+    )
+
+    assert effective["action_mask"][Action.UP] == 1
+    assert effective["action_mask"][Action.RIGHT] == 0
+    assert diagnostic["remembered_hazards"] == 1
+
+
+def test_navigation_v2_warned_hazard_is_slot_local_and_clears_on_reset() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 2)
+    trap = _observation()
+    centre = GRID_SIZE // 2
+    trap["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
+    trap["grid"][centre, centre + 1, GridChannel.TRAP] = 1
+    memory.reset_slot(0, trap)
+    diagnostic = memory.observe(
+        0,
+        trap,
+        Action.UP,
+        trap,
+        {"action_outcome": {"category": "move"}},
+    )
+    assert diagnostic["remembered_hazards"] == 1
+
+    safe = _observation(x=20, y=30)
+    safe_diagnostic = memory.observe(
+        1,
+        safe,
+        Action.UP,
+        safe,
+        {"action_outcome": {"category": "move"}},
+    )
+    assert safe_diagnostic["remembered_hazards"] == 0
+    memory.reset_slot(0, safe)
+    cleared = memory.observe(
+        0,
+        safe,
+        Action.UP,
+        safe,
+        {"action_outcome": {"category": "move"}},
+    )
+    assert cleared["remembered_hazards"] == 0
+
+
+def test_navigation_v2_clears_hazards_on_natural_floor_transition() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    trap = _observation(x=12, y=15)
+    centre = GRID_SIZE // 2
+    trap["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
+    trap["grid"][centre, centre + 1, GridChannel.TRAP] = 1
+    memory.reset_slot(0, trap)
+    assert memory.observe(
+        0,
+        trap,
+        Action.UP,
+        trap,
+        {"action_outcome": {"category": "move"}},
+    )["remembered_hazards"] == 1
+
+    next_floor = _observation(x=12, y=15)
+    next_floor["player"][PlayerFeature.FLOOR] = 2
+    diagnostic = memory.observe(
+        0,
+        trap,
+        Action.UP,
+        next_floor,
+        {"action_outcome": {"category": "floor_transition"}},
+    )
+    assert diagnostic["remembered_hazards"] == 0
+
+
+def test_navigation_v2_revealed_offscreen_tile_does_not_erase_hazard() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    visible_trap = _observation(x=12, y=15)
+    centre = GRID_SIZE // 2
+    visible_trap["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
+    visible_trap["grid"][centre, centre + 1, GridChannel.TRAP] = 1
+    memory.reset_slot(0, visible_trap)
+
+    remembered_only = _observation(x=12, y=15)
+    remembered_only["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 1
+    diagnostic = memory.observe(
+        0,
+        visible_trap,
+        Action.UP,
+        remembered_only,
+        {"action_outcome": {"category": "move"}},
+    )
+    assert diagnostic["remembered_hazards"] == 1

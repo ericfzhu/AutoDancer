@@ -369,6 +369,9 @@ class VersionedAsyncRolloutCollector:
                     ]
                 )
             ),
+            "max_remembered_hazards": float(
+                max(fragment.metrics["max_remembered_hazards"] for fragment in fragments)
+            ),
             **{
                 f"collector_recovery_{name}": float(count - counts_before.get(name, 0))
                 for name, count in recovery_counts.items()
@@ -476,6 +479,7 @@ class VersionedAsyncRolloutCollector:
         masked_direction_observations = 0
         effective_masked_direction_observations = 0
         navigation_prior_turns = 0
+        max_remembered_hazards = 0
         started = time.monotonic()
         for fragment_step in range(length):
             for key, value in state.observation.items():
@@ -525,6 +529,10 @@ class VersionedAsyncRolloutCollector:
             )
             navigation_prior_turns += int(
                 bool(contract_diagnostic["navigation_prior_active"])
+            )
+            max_remembered_hazards = max(
+                max_remembered_hazards,
+                int(contract_diagnostic.get("remembered_hazards", 0)),
             )
             step_latency = time.monotonic() - environment_started
             environment_wait += step_latency
@@ -645,6 +653,7 @@ class VersionedAsyncRolloutCollector:
                     effective_masked_direction_observations
                 ),
                 "navigation_prior_turns": float(navigation_prior_turns),
+                "max_remembered_hazards": float(max_remembered_hazards),
             },
         )
 
