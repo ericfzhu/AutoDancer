@@ -515,6 +515,48 @@ reproducible successful action traces for a separately declared demonstration
 bootstrap, or introduce a boss-local hierarchical option. The normal-start goal
 remains repeatable Zone 2 entry on multiple unseen seeds.
 
+### Correction: assistance must be reduced along both health dimensions
+
+The current assisted profiles all set the boss objective to one health and vary
+only Bard's starting health (`boss1hp-player20`, `boss1hp-player10`, and
+`boss1hp-player6`). Consequently, the previously proposed player-health-only
+sequence is incomplete. It can teach arena traversal and a finishing hit, but
+it never exposes the policy to Death Metal's earlier multi-hit behavior before
+the final discontinuous jump to an unmodified boss. Passing EXP-0016 therefore
+proves acquisition of a one-hit finishing subskill, not full boss competence.
+
+After the current hash-qualified experiment, the bridge should support a
+versioned two-dimensional assistance ladder. Each stage must record the requested
+and telemetry-observed initial player health and boss-objective health. Boss
+health should progress monotonically from one hit through intermediate observed
+health values to the unmodified live value; player health should separately move
+from 20 through lower assisted values to the unmodified live value. The exact
+ladder must be calibrated from live telemetry rather than assuming an undocumented
+maximum or changing both dimensions at once. Every assisted transition remains
+excluded from normal-start success evidence.
+
+Curriculum movement also needs a sampling contract rather than a single pass/fail
+checkpoint. Reverse Curriculum Generation estimates success probabilities from
+multiple trajectories per start and mixes previously useful starts back into
+training to prevent forgetting. For AutoDancer, the atomic start identity is
+`(boss type, game seed, assistance profile)`, not merely a game seed. Before a
+stage is promoted, each candidate identity should receive at least three
+independent policy rollouts; training should concentrate on identities with
+intermediate success probability while reserving a predeclared nonzero fraction
+for mastered earlier stages. The initial replay fraction should be fixed before
+seeing held-out results (25 percent is a reasonable first isolated arm), logged
+per rollout, and evaluated against a no-replay control if sample budget permits.
+This follows the intermediate-difficulty and old-start replay mechanisms in
+[Reverse Curriculum Generation](https://proceedings.mlr.press/v78/florensa17a.html),
+while later seed selection can use learning-potential and staleness signals from
+[Prioritized Level Replay](https://proceedings.mlr.press/v139/jiang21b.html).
+
+The resulting backward path is therefore: acquire one-hit completion; reduce
+player-health assistance; raise boss health in calibrated increments while
+replaying mastered starts; demonstrate unassisted boss completion on multiple
+unseen boss seeds; then move the start backward to Floor 3, Floor 2, and normal
+Floor 1. A stage may advance only on gameplay success, never shaped return.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
