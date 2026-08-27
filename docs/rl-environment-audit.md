@@ -716,6 +716,30 @@ it deliberately does not depend on actor timing or policy-update boundaries.
 Running separate fixed-profile jobs and warm-starting between them remains
 non-equivalent because it provides no within-update protection against forgetting.
 
+### Entity identity hashing needs an empirical collision audit
+
+Schema 10 currently converts each entity, item, object, terrain, and currency
+type name to one of 4,095 nonzero IDs with a deterministic polynomial hash. This
+keeps identities stable across independently launched workers, but it is not an
+injective mapping. Two distinct types can therefore share an embedding row. The
+coarser class and numeric channels can still distinguish many such pairs, so a
+collision is not automatically an observation defect; the relevant question is
+whether policy-relevant types collide within the same semantic channel and remain
+otherwise observationally aliased.
+
+Do not change this representation during a qualified experiment. After the
+current controller qualification and EXP-0019 chain, enumerate the registered
+type catalog through Synchrony's documented read-only
+`Entities.getEntityTypesWithComponents`/`prototypesWithComponents` API, reproduce
+the exact Lua hash in an offline audit, and report collisions by semantic channel.
+If a harmful collision exists, retain the old hashed channel for checkpoint
+compatibility while adding a deterministic collision-free ID channel generated
+from the sorted isolated-profile catalog. Include a catalog signature in worker
+readiness, require all workers to match it, unit-test ordering across launches,
+and requalify the observation schema before training. If no harmful collision is
+present in the supported build and content profile, preserve the existing hash
+and record that result rather than changing the representation speculatively.
+
 EXP-0016 supplied the missing acquisition evidence: three independent assisted
 Death Metal trials produced 65 Zone 2 entries in 108 held-out episodes (60.2
 percent), and every one of 12 unseen boss seeds succeeded in at least one policy
