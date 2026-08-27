@@ -884,6 +884,29 @@ explicit player health, with boss and boss-add state untouched. That assistance
 is guide-only, must be recorded at handoff, and must later be reduced; it is not
 normal-start promotion evidence.
 
+The guide horizon is itself a curriculum variable, not a permanent shortcut.
+The first learner may take over at the legally observed phase-4 boundary, but a
+successful chain must then move the handoff backward to phase 3, phase 2, and
+finally the ordinary boss start while keeping the guide checkpoint frozen within
+each declared experiment. This matches the central mechanism of
+[Jump-Start RL](https://proceedings.mlr.press/v202/uchendu23a.html): the guide
+induces useful reachable starts while its rollout horizon is reduced as the
+exploration policy improves. For every attempted seed, reports must retain guide
+acquisition success, guide turns, phase depth, authoritative boss damage, player
+health, boss/add health summaries, and the learner's downstream outcome.
+Acquisition failures remain in the denominator; silently evaluating only seeds
+on which the guide reaches the handoff would select an easier conditional task.
+
+If boss-only PPO fine-tuning acquires a guide but destroys the A2 policy's local
+combat competence, the evidence-backed next arm is teacher regularization, not a
+reward-weight search. [Kickstarting Deep RL](https://arxiv.org/abs/1803.03835)
+uses a teacher-policy distillation loss while allowing the student to surpass the
+teacher. In AutoDancer that would mean a separately declared, annealed KL loss
+to the frozen A2 action distribution during guide acquisition, evaluated both on
+Death Metal and the broad normal-floor bank. It should be introduced only after
+the unregularized player-health-only guide arm establishes whether forgetting is
+actually the limiting failure mode.
+
 Death Metal is also only one quarter of the ordinary Zone 1 boss task. Mastering
 it can validate the curriculum mechanism, but it cannot establish robust normal
 All Zones competence. Before normal-start promotion, repeat isolated acquisition
