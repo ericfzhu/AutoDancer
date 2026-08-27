@@ -441,3 +441,76 @@ separate follow-ups if the calibrated local task still fails.
   tactical grid, extended player, and inventory inputs all materially affect
   the network. A8's failure is not explained by disconnected inputs, though it
   may still reflect how those inputs are optimized or used.
+
+## EXP-0016 acquisition audit and limits
+
+The corrected frozen A2 policy completed assisted Death Metal once in nine
+seeds, entering Zone 2 on seed 64018 in 128 turns. That establishes possibility
+and gives PPO at least one real successful trajectory, but it is a noisy estimate
+of the start distribution's success probability. Reverse Curriculum Generation
+usually estimates a start using multiple trajectories and retains starts in an
+intermediate-success band rather than treating one sample as ground truth
+([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+EXP-0016 therefore uses three independent optimizer/action RNG trials and a
+held-out boss-seed suite. It is an acquisition test, not evidence that the
+assistance level is correctly calibrated in advance.
+
+The following properties were inspected before starting EXP-0016:
+
+1. **The navigation prior remains on-policy.** It changes the action mask before
+   categorical sampling. Inference returns the selected action and its log
+   probability under that exact constrained distribution, and PPO stores both.
+   There is no post-sampling action replacement or stale likelihood ratio.
+   Assistance removal can still create a deployment distribution shift, so each
+   later curriculum stage must explicitly test reduced action assistance rather
+   than silently evaluating an unconstrained policy.
+2. **Nine boss seeds are a skill-acquisition pool, not a generalization pool.**
+   Repetition is intentional while sparse success is being acquired, and the
+   twelve held-out Death Metal seeds prevent training-set completion from passing
+   the experiment. They do not establish broad procedural robustness. Procgen
+   found that diverse level distributions are essential and reported that its
+   environments commonly needed hundreds of training levels to generalize
+   ([Cobbe et al., 2020](https://proceedings.mlr.press/v119/cobbe20a.html)).
+   After local competence, the boss pool must expand substantially; later normal-
+   floor training should use hundreds of seeds or an effectively unbounded stream
+   while preserving a fixed unseen test bank.
+3. **Uniform replay wastes samples once seed difficulty separates.** A seed the
+   policy always solves and one it never solves supply less learning signal than
+   a seed near the competence boundary. Prioritized Level Replay uses estimated
+   learning potential to revisit informative procedural levels and improves both
+   sample efficiency and generalization
+   ([Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)).
+   EXP-0016 deliberately keeps uniform sampling to avoid changing two mechanisms
+   at once. If acquisition is real, assistance reduction should add a versioned
+   competence-based sampler rather than continue uniform nine-seed replay.
+4. **Terminal credit is short relative to the successful trajectory.** With
+   `gamma=.99` and `lambda=.95`, the direct GAE coefficient is `.9405`; terminal
+   credit 128 turns earlier is only about `.00039`. The boss strike, boss-kill
+   event, and zone transition are locally adjacent, so the assisted subtask can
+   still teach combat decisions, while the navigation prior supplies arena
+   traversal. This configuration cannot by itself assign a Zone 2 reward to
+   decisions thousands of turns earlier on Floor 1. Backward start expansion,
+   retained intermediate milestones, or a separately tested longer-horizon/
+   hierarchical learner remains necessary.
+5. **The explicit map removes an informational disadvantage but not a planning
+   objective.** Corrected 129x129 memory can losslessly retain a 65x65 floor,
+   distinguishes current sight from remembered cells, and records visits. A2
+   does not encode that tensor; its temporary navigation prior consumes it
+   outside the learned network. A future end-to-end policy must either promote a
+   map-aware architecture without losing A2 competence or treat navigation as a
+   separately learned option. Merely enlarging the LSTM does not expose the map.
+6. **Shaping and task success remain distinct.** Reward V4A bounds exploration,
+   combat, and item credit below the floor milestone and uses potential-based
+   stair guidance. The completion decision ignores shaped return. This preserves
+   the purpose of potential shaping—accelerating learning without redefining the
+   task—described by
+   [Ng, Harada, and Russell (1999)](https://ai.stanford.edu/~ang/papers/shaping-icml99.pdf).
+
+If EXP-0016 passes, the next causal test is assistance reduction on the same boss:
+player health 20 → 10 → 6 → normal, while retaining a controlled fraction of the
+last mastered starts to detect forgetting. Only then should the start move to
+Floor 3, Floor 2, and normal Floor 1. If it fails, the correct response is not a
+new arbitrary reward weight: either create nearer real-game good starts, obtain
+reproducible successful action traces for a separately declared demonstration
+bootstrap, or introduce a boss-local hierarchical option. The normal-start goal
+remains repeatable Zone 2 entry on multiple unseen seeds.
