@@ -839,6 +839,25 @@ boss-stratified evaluation seeds. If reverse-curriculum transfer remains unstabl
 the next evidence-backed fallback is a qualified live demonstration recorder and
 a separately versioned behavior-cloning warm start—not another reward change.
 
+The fixed `80/20` new-stage/mastered-stage mixture in EXP-0019 is consequently a
+controlled first arm, not an assumed optimum. Prioritized Level Replay finds that
+the learning value of a procedural level changes with the current policy and uses
+that signal to revisit useful levels
+([Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)); replay-based
+continual RL similarly treats retained prior-task exposure as protection against
+forgetting
+([Caccia et al., 2023](https://proceedings.mlr.press/v232/caccia23a.html)). If the
+fixed mixture fails, the next sampler should update probabilities from gameplay
+completion learning progress while enforcing a nonzero mastered-stage floor. It
+must publish one immutable distribution per PPO policy version, after all eight
+fragments finish. Updating shared probabilities immediately when an asynchronous
+actor ends would make subsequent reset choices depend on worker latency, violating
+the controller's timing-independent seed/action contract. Start-state replay must
+continue to generate fresh on-policy episodes; old transitions cannot be inserted
+into PPO as though they came from the current policy. Shaped return must not be the
+priority score because its scale differs across curriculum stages and can reward
+activity without task completion.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
