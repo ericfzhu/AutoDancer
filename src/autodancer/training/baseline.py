@@ -461,6 +461,11 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "deepest_floor": int(deepest_episode["furthest_floor"]),
         "boss_type_counts": boss_type_counts,
         "natural_prefix_episodes": len(prefixes),
+        "natural_prefix_acquisition_rate": (
+            float(np.mean([bool(prefix.get("acquired", False)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
         "natural_prefix_mean_guide_turns": (
             float(np.mean([int(prefix.get("guide_turns", 0)) for prefix in prefixes]))
             if prefixes
@@ -472,7 +477,11 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
             else 0.0
         ),
         "natural_prefix_boundaries_valid": bool(prefixes)
-        and all(bool((prefix.get("boundary") or {}).get("reached")) for prefix in prefixes),
+        and all(
+            not bool(prefix.get("acquired", False))
+            or bool((prefix.get("boundary") or {}).get("reached"))
+            for prefix in prefixes
+        ),
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
@@ -887,6 +896,7 @@ def _evaluation_natural_prefix(
             if tracker.reached and not terminated and not truncated:
                 metadata = {
                     **config.specification(),
+                    "acquired": True,
                     "attempts": attempt + 1,
                     "failed_attempts": len(failures),
                     "guide_turns": total_turns,
@@ -927,8 +937,12 @@ def _evaluation_natural_prefix(
         if attempt + 1 < config.max_attempts:
             observation, info = worker.reset(seed=seed)
     raise NaturalPrefixError(
-        f"{worker_id} failed to reach Death Metal phase {config.target_phase} "
-        f"after {config.max_attempts} legal guide attempts: {failures[-1]}"
+        worker_id,
+        config,
+        failures=failures,
+        guide_turns=total_turns,
+        observation=observation,
+        info=info,
     )
 
 
@@ -1039,6 +1053,25 @@ def _evaluate_model_async(
                         previous_action = START_ACTION
                         previous_reward = 0.0
                         continue
+                    except NaturalPrefixError as error:
+                        accumulator = EpisodeAccumulator(
+                            seed=seed,
+                            worker_id=worker_id,
+                            run_id=str(error.info.get("run_id", "")),
+                            furthest_zone=int(error.info.get("zone") or 0),
+                            furthest_floor=int(error.info.get("floor") or 0),
+                            max_gold=int(error.observation["player"][PlayerFeature.GOLD]),
+                        )
+                        accumulator.initialize(error.observation, error.info)
+                        accumulator.natural_prefix = {
+                            **error.config.specification(),
+                            "acquired": False,
+                            "attempts": len(error.failures),
+                            "guide_turns": error.guide_turns,
+                            "failures": error.failures,
+                            "boundary": error.failures[-1].get("boundary", {}),
+                        }
+                        return accumulator.finish("prefix_failed")
                 # An infrastructure retry replays the same game seed and exact
                 # policy sample stream from turn zero.
                 accumulator = EpisodeAccumulator(

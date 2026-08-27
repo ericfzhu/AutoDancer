@@ -22,6 +22,27 @@ NATURAL_PREFIX_RECURRENT_MODES = ("fresh", "warm")
 class NaturalPrefixError(RuntimeError):
     """Raised when a legal guide prefix cannot reach its declared boundary."""
 
+    def __init__(
+        self,
+        worker_id: str,
+        config: NaturalPrefixConfig,
+        *,
+        failures: list[dict[str, Any]],
+        guide_turns: int,
+        observation: Mapping[str, np.ndarray],
+        info: Mapping[str, Any],
+    ) -> None:
+        self.worker_id = worker_id
+        self.config = config
+        self.failures = failures
+        self.guide_turns = guide_turns
+        self.observation = {key: value.copy() for key, value in observation.items()}
+        self.info = dict(info)
+        super().__init__(
+            f"{worker_id} failed to reach Death Metal phase {config.target_phase} "
+            f"after {config.max_attempts} legal guide attempts: {failures[-1]}"
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class NaturalPrefixConfig:

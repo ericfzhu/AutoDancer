@@ -745,6 +745,7 @@ class VersionedAsyncRolloutCollector:
                 if tracker.reached and not terminated and not truncated:
                     metadata = {
                         **config.specification(),
+                        "acquired": True,
                         "attempts": attempt + 1,
                         "failed_attempts": len(failure_summaries),
                         "guide_turns": total_guide_turns,
@@ -801,8 +802,12 @@ class VersionedAsyncRolloutCollector:
                 )
 
         raise NaturalPrefixError(
-            f"{worker_id} failed to reach Death Metal phase {config.target_phase} "
-            f"after {config.max_attempts} legal guide attempts: {failure_summaries[-1]}"
+            worker_id,
+            config,
+            failures=failure_summaries,
+            guide_turns=total_guide_turns,
+            observation=observation,
+            info=info,
         )
 
     def _bootstrap_values(self) -> Tensor:

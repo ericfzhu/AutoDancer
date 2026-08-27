@@ -301,6 +301,11 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "time_limits": float(sum(status == "time_limit" for status in statuses)),
         "natural_prefix_episodes": float(len(prefixes)),
+        "natural_prefix_acquisition_rate": (
+            float(np.mean([bool(prefix.get("acquired", False)) for prefix in prefixes]))
+            if prefixes
+            else 0.0
+        ),
         "natural_prefix_mean_guide_turns": (
             float(np.mean([int(prefix.get("guide_turns", 0)) for prefix in prefixes]))
             if prefixes
@@ -313,7 +318,11 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "natural_prefix_boundaries_valid": float(
             bool(prefixes)
-            and all(bool((prefix.get("boundary") or {}).get("reached")) for prefix in prefixes)
+            and all(
+                not bool(prefix.get("acquired", False))
+                or bool((prefix.get("boundary") or {}).get("reached"))
+                for prefix in prefixes
+            )
         ),
         "episode_seeds": sorted(
             {int(episode["seed"]) for episode in episodes if "seed" in episode}

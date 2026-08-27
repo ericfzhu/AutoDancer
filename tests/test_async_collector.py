@@ -842,3 +842,37 @@ def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
     assert results[0]["turns"] == 2
     assert environment.environments["worker-0000"].step_calls == 5
     assert len(environment.environments["worker-0000"].handoffs) == 1
+
+
+def test_natural_prefix_evaluation_reports_guide_failure_as_gameplay_outcome() -> None:
+    environment = PrefixEnvironment(direct_mutation=True)
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    results = _evaluate_model_async(
+        environment,
+        learner,
+        seeds=[9002],
+        max_steps=2,
+        policy_seed=18,
+        device=torch.device("cpu"),
+        dashboard_state=None,
+        action_contract="current",
+        deterministic=True,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
+    )
+    assert len(results) == 1
+    assert results[0]["status"] == "prefix_failed"
+    assert results[0]["turns"] == 0
+    assert results[0]["natural_prefix"]["acquired"] is False
+    assert results[0]["natural_prefix"]["boundary"]["reached"] is False
+    assert environment.infrastructure_events == []
