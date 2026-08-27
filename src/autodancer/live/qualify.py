@@ -19,6 +19,7 @@ import psutil
 
 from autodancer.constants import Action, GridChannel, PlayerFeature
 from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.diagnose import LiveMechanicProbes
 from autodancer.live.explore import LiveExplorer
 from autodancer.live.native_pipe import NativePipeError
@@ -213,6 +214,63 @@ def conformance(arguments: argparse.Namespace) -> dict[str, Any]:
                 "zone": first_action_info.get("zone"),
                 "floor": first_action_info.get("floor"),
             },
+        }
+        profile_seed = 64_001
+        control_observation, _ = environment.reset(
+            seed=profile_seed,
+            options={
+                "curriculum": {
+                    "id": "player-health-control",
+                    "start_level": 4,
+                    "target_level": 5,
+                    "profile": "normal",
+                }
+            },
+        )
+        control = _normalized_observation(control_observation)
+        centre = control["grid"].shape[0] // 2
+        control["player"][[PlayerFeature.HEALTH, PlayerFeature.MAX_HEALTH]] = 0
+        control["grid"][
+            centre,
+            centre,
+            [GridChannel.HEALTH, GridChannel.MAX_HEALTH],
+        ] = 0
+        applications: dict[str, Any] = {}
+        for profile in CURRICULUM_PROFILES:
+            if profile == "normal":
+                continue
+            assisted_observation, assisted_info = environment.reset(
+                seed=profile_seed,
+                options={
+                    "curriculum": {
+                        "id": f"{profile}-conformance",
+                        "start_level": 4,
+                        "target_level": 5,
+                        "profile": profile,
+                    }
+                },
+            )
+            assisted = _normalized_observation(assisted_observation)
+            assisted["player"][[PlayerFeature.HEALTH, PlayerFeature.MAX_HEALTH]] = 0
+            assisted["grid"][
+                centre,
+                centre,
+                [GridChannel.HEALTH, GridChannel.MAX_HEALTH],
+            ] = 0
+            differences = {
+                key: int(np.count_nonzero(control[key] != assisted[key]))
+                for key in control
+            }
+            if any(differences.values()):
+                raise QualificationFailure(
+                    f"{profile} changed non-player curriculum state: {differences}"
+                )
+            applications[profile] = assisted_info.get("curriculum_application")
+        report["player_health_profiles"] = {
+            "passed": True,
+            "seed": profile_seed,
+            "profiles": applications,
+            "non_player_observation_differences": 0,
         }
         environment.close()
     passed = bool(

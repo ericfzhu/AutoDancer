@@ -15,10 +15,10 @@ from autodancer.curriculum import (
 def entries() -> tuple[WeightedResetSpec, ...]:
     return (
         WeightedResetSpec(
-            EpisodeResetSpec("reduced", 4, 5, "boss1hp-player10"), 0.8
+            EpisodeResetSpec("reduced", 4, 5, "player10"), 0.8
         ),
         WeightedResetSpec(
-            EpisodeResetSpec("mastered-replay", 4, 5, "boss1hp-player20"), 0.2
+            EpisodeResetSpec("mastered-replay", 4, 5, "player20"), 0.2
         ),
     )
 

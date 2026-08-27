@@ -86,7 +86,7 @@ def test_assisted_curriculum_profile_requires_a_later_start(tmp_path: Path) -> N
             tmp_path / "game",
             tmp_path / "mod",
             num_instances=1,
-            curriculum_profile="boss1hp-player20",
+            curriculum_profile="player20",
         )
 
 

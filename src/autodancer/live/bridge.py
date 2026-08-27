@@ -13,10 +13,10 @@ from autodancer.constants import Action
 
 CURRICULUM_PROFILES = (
     "normal",
-    "boss1hp-player20",
-    "boss1hp-player10",
-    "boss1hp-player8",
-    "boss1hp-player6",
+    "player20",
+    "player10",
+    "player8",
+    "player6",
 )
 
 

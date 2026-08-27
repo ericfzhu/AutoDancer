@@ -884,6 +884,17 @@ explicit player health, with boss and boss-add state untouched. That assistance
 is guide-only, must be recorded at handoff, and must later be reduced; it is not
 normal-start promotion evidence.
 
+The bridge remediation is now a hard profile cut. The retired `boss1hp-player*`
+identifiers are rejected; the only assisted identifiers are `player20`,
+`player10`, `player8`, and `player6`. Lua snapshots every boss and boss-add type,
+current health, and maximum health immediately before and after changing Bard's
+health, asserts exact equality, and includes both snapshots in the GOTO
+acknowledgement. Python rejects missing, mismatched, or changed evidence. The
+controller qualification additionally replays one confirmed Death Metal seed
+under normal and every player-health profile and requires all non-player
+observation values to match. No experiment may use the remediated profiles until
+that new repository hash has passed the complete controller qualification.
+
 The guide horizon is itself a curriculum variable, not a permanent shortcut.
 The first learner may take over at the legally observed phase-4 boundary, but a
 successful chain must then move the handoff backward to phase 3, phase 2, and

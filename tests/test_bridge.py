@@ -46,10 +46,10 @@ def test_native_pipe_bridge_routes_commands_without_files() -> None:
 @pytest.mark.parametrize(
     "profile",
     (
-        "boss1hp-player20",
-        "boss1hp-player10",
-        "boss1hp-player8",
-        "boss1hp-player6",
+        "player20",
+        "player10",
+        "player8",
+        "player6",
     ),
 )
 def test_native_pipe_bridge_routes_assisted_curriculum_profile(profile: str) -> None:
@@ -70,6 +70,12 @@ def test_bridge_rejects_unknown_curriculum_profile(tmp_path: Path) -> None:
     bridge = FileCommandBridge(tmp_path / "bridge.txt", session_id="session-profile")
     with pytest.raises(ValueError, match="curriculum_profile"):
         bridge.goto_level(4, "make-boss-disappear")
+
+
+def test_bridge_rejects_retired_direct_boss_health_profile(tmp_path: Path) -> None:
+    bridge = FileCommandBridge(tmp_path / "bridge.txt", session_id="session-profile")
+    with pytest.raises(ValueError, match="curriculum_profile"):
+        bridge.goto_level(4, "boss1hp-player20")
 
 
 def test_file_bridge_publishes_monotonic_action_commands(tmp_path: Path) -> None:

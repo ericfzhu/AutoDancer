@@ -359,25 +359,84 @@ local function combatEventData(entity)
     }
 end
 
+local function objectiveHealthSnapshot()
+    local result = {}
+    for entity in Entities.entitiesWithComponents({ "health" }) do
+        local role = nil
+        if hasComponent(entity, "boss") then
+            role = "boss"
+        elseif hasComponent(entity, "bossAdd") then
+            role = "boss_add"
+        end
+        if role then
+            result[#result + 1] = {
+                role = role,
+                type = typeID(entity.name),
+                health = entity.health.health or 0,
+                max_health = entity.health.maxHealth or 0,
+            }
+        end
+    end
+    table.sort(result, function(left, right)
+        if left.role ~= right.role then
+            return left.role < right.role
+        elseif left.type ~= right.type then
+            return left.type < right.type
+        elseif left.health ~= right.health then
+            return left.health < right.health
+        end
+        return left.max_health < right.max_health
+    end)
+    return result
+end
+
+local function objectiveSnapshotsEqual(left, right)
+    if #left ~= #right then
+        return false
+    end
+    for index = 1, #left do
+        local first = left[index]
+        local second = right[index]
+        if first.role ~= second.role
+            or first.type ~= second.type
+            or first.health ~= second.health
+            or first.max_health ~= second.max_health then
+            return false
+        end
+    end
+    return true
+end
+
 local function applyCurriculumProfile(command)
     local profile = command and command.curriculum_profile
     if not profile or profile == "normal" then
         return
     end
-    local playerHealth = tonumber(string.match(profile, "^boss1hp%-player(%d+)$"))
-    assert(playerHealth, "Unsupported AutoDancer curriculum profile: " .. tostring(profile))
+    local playerHealth = tonumber(string.match(profile, "^player(%d+)$"))
+    assert(
+        playerHealth == 6 or playerHealth == 8 or playerHealth == 10 or playerHealth == 20,
+        "Unsupported AutoDancer curriculum profile: " .. tostring(profile)
+    )
     local player = Player.getPlayerEntity(1)
     assert(player and player.health, "Curriculum profile requires a living player")
+    local objectivesBefore = objectiveHealthSnapshot()
+    assert(#objectivesBefore > 0, "Curriculum profile did not find a boss objective")
+    local playerBeforeHealth = player.health.health or 0
+    local playerBeforeMaxHealth = player.health.maxHealth or 0
     player.health.maxHealth = playerHealth
     player.health.health = playerHealth
-    local objectives = 0
-    for entity in Entities.entitiesWithComponents({ "health" }) do
-        if hasComponent(entity, "boss") or hasComponent(entity, "bossAdd") then
-            entity.health.health = 1
-            objectives = objectives + 1
-        end
-    end
-    assert(objectives > 0, "Curriculum profile did not find a boss objective")
+    local objectivesAfter = objectiveHealthSnapshot()
+    local objectivesUnchanged = objectiveSnapshotsEqual(objectivesBefore, objectivesAfter)
+    assert(objectivesUnchanged, "Player-health curriculum changed a boss objective")
+    command.curriculum_application = {
+        player_before_health = playerBeforeHealth,
+        player_before_max_health = playerBeforeMaxHealth,
+        player_health = player.health.health or 0,
+        player_max_health = player.health.maxHealth or 0,
+        objective_state_unchanged = objectivesUnchanged,
+        objectives_before = objectivesBefore,
+        objectives_after = objectivesAfter,
+    }
 end
 
 local function itemKind(entity)

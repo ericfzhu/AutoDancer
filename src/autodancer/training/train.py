@@ -1033,8 +1033,6 @@ def main() -> int:
                 "--natural-prefix-guide currently requires the Zone 1 boss-to-Zone 2 "
                 "curriculum (--curriculum-start-level 4 --curriculum-target-level 5)"
             )
-        if arguments.curriculum_profile != "normal":
-            parser.error("natural-prefix training rejects state-mutating curriculum profiles")
         if arguments.curriculum_mixture is not None:
             parser.error("natural-prefix training does not yet support curriculum mixtures")
         if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:

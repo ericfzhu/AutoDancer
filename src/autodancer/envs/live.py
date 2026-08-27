@@ -194,6 +194,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 )
             info["curriculum_observed_player_health"] = observed_health
             info["curriculum_observed_player_max_health"] = observed_max_health
+            info["curriculum_application"] = dict(
+                (info.get("bridge") or {}).get("curriculum_application") or {}
+            )
         if not self.attach_existing:
             info["reset_latency_seconds"] = time.monotonic() - command_started
         info["curriculum_reset"] = reset_spec.as_dict()
@@ -452,6 +455,30 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             if command.curriculum_profile is not None:
                 received.append(acknowledgement.get("curriculum_profile"))
                 expected.append(command.curriculum_profile)
+            if command.curriculum_profile not in (None, "normal"):
+                application = acknowledgement.get("curriculum_application")
+                if not isinstance(application, dict):
+                    raise ProtocolError(
+                        "Lua did not report the curriculum application evidence"
+                    )
+                expected_health = int(command.curriculum_profile.removeprefix("player"))
+                if (
+                    application.get("player_health") != expected_health
+                    or application.get("player_max_health") != expected_health
+                ):
+                    raise ProtocolError(
+                        "Lua curriculum application reported unexpected player health"
+                    )
+                if application.get("objective_state_unchanged") is not True:
+                    raise ProtocolError(
+                        "Lua curriculum application did not preserve boss objective state"
+                    )
+                if application.get("objectives_before") != application.get(
+                    "objectives_after"
+                ):
+                    raise ProtocolError(
+                        "Lua curriculum application changed boss or boss-add state"
+                    )
         if received != expected:
             raise ProtocolError(
                 f"Bridge acknowledgement mismatch: expected {expected}, received {received}"

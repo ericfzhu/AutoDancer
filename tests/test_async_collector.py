@@ -261,8 +261,8 @@ def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
 def test_async_collector_routes_weighted_episode_resets_and_records_outcomes() -> None:
     environment = AsyncEnvironment()
     entries = (
-        WeightedResetSpec(EpisodeResetSpec("reduced", 4, 5, "boss1hp-player10"), 0.75),
-        WeightedResetSpec(EpisodeResetSpec("replay", 4, 5, "boss1hp-player20"), 0.25),
+        WeightedResetSpec(EpisodeResetSpec("reduced", 4, 5, "player10"), 0.75),
+        WeightedResetSpec(EpisodeResetSpec("replay", 4, 5, "player20"), 0.25),
     )
     for slot, worker_id in enumerate(environment.worker_ids):
         environment.environments[worker_id].step = (  # type: ignore[method-assign]

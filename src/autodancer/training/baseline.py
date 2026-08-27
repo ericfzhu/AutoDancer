@@ -1661,8 +1661,6 @@ def main() -> int:
                 "--natural-prefix-guide requires --curriculum-start-level 4 "
                 "--curriculum-target-level 5"
             )
-        if arguments.curriculum_profile != "normal":
-            parser.error("natural-prefix evaluation rejects state-mutating profiles")
         if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
             parser.error("natural-prefix turn and attempt limits must be positive")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):

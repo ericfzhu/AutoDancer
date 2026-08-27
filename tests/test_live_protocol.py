@@ -165,6 +165,16 @@ def goto_record(
     if profile is not None:
         payload["bridge"]["curriculum_profile"] = profile
         expected_health = int(profile.rsplit("player", 1)[1])
+        objectives = [
+            {"role": "boss", "type": 101, "health": 9, "max_health": 9}
+        ]
+        payload["bridge"]["curriculum_application"] = {
+            "player_health": expected_health,
+            "player_max_health": expected_health,
+            "objective_state_unchanged": True,
+            "objectives_before": [dict(value) for value in objectives],
+            "objectives_after": [dict(value) for value in objectives],
+        }
         payload["observation"]["player"][PlayerFeature.HEALTH] = expected_health
         payload["observation"]["player"][PlayerFeature.MAX_HEALTH] = expected_health
     return payload
@@ -338,25 +348,25 @@ def test_curriculum_profile_is_routed_only_to_the_start_floor() -> None:
                 record(0, "reset"),
                 goto_record(1, 2, 1, 2),
                 goto_record(2, 3, 1, 3),
-                goto_record(3, 4, 1, 4, "boss1hp-player20"),
+                goto_record(3, 4, 1, 4, "player20"),
             ]
         ),
         bridge=sender,
         curriculum_start_level=4,
         curriculum_target_level=5,
-        curriculum_profile="boss1hp-player20",
+        curriculum_profile="player20",
     )
     _, info = environment.reset(seed=7)
     assert sender.gotos == [2, 3, 4]
-    assert sender.goto_profiles == [None, None, "boss1hp-player20"]
-    assert info["curriculum_profile"] == "boss1hp-player20"
+    assert sender.goto_profiles == [None, None, "player20"]
+    assert info["curriculum_profile"] == "player20"
     assert info["curriculum_observed_player_health"] == 20
     assert info["curriculum_observed_player_max_health"] == 20
 
 
 def test_curriculum_profile_rejects_unapplied_player_health() -> None:
     sender = FakeBridge()
-    assisted = goto_record(3, 4, 1, 4, "boss1hp-player8")
+    assisted = goto_record(3, 4, 1, 4, "player8")
     assisted["observation"]["player"][PlayerFeature.HEALTH] = 6
     assisted["observation"]["player"][PlayerFeature.MAX_HEALTH] = 6
     environment = AutoDancerLiveEnv(
@@ -371,10 +381,34 @@ def test_curriculum_profile_rejects_unapplied_player_health() -> None:
         bridge=sender,
         curriculum_start_level=4,
         curriculum_target_level=5,
-        curriculum_profile="boss1hp-player8",
+        curriculum_profile="player8",
     )
 
     with pytest.raises(ProtocolError, match="application mismatch"):
+        environment.reset(seed=7)
+
+
+def test_curriculum_profile_rejects_mutated_boss_objective_evidence() -> None:
+    sender = FakeBridge()
+    assisted = goto_record(3, 4, 1, 4, "player8")
+    assisted["bridge"]["curriculum_application"]["objectives_after"][0]["health"] = 1
+    assisted["bridge"]["curriculum_application"]["objective_state_unchanged"] = False
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                goto_record(1, 2, 1, 2),
+                goto_record(2, 3, 1, 3),
+                assisted,
+            ]
+        ),
+        bridge=sender,
+        curriculum_start_level=4,
+        curriculum_target_level=5,
+        curriculum_profile="player8",
+    )
+
+    with pytest.raises(ProtocolError, match="preserve boss objective state"):
         environment.reset(seed=7)
 
 
@@ -386,7 +420,7 @@ def test_per_episode_reset_options_override_fixed_defaults_and_are_reported() ->
                 record(0, "reset"),
                 goto_record(1, 2, 1, 2),
                 goto_record(2, 3, 1, 3),
-                goto_record(3, 4, 1, 4, "boss1hp-player10"),
+                goto_record(3, 4, 1, 4, "player10"),
             ]
         ),
         bridge=sender,
@@ -398,18 +432,18 @@ def test_per_episode_reset_options_override_fixed_defaults_and_are_reported() ->
                 "id": "reduced",
                 "start_level": 4,
                 "target_level": 5,
-                "profile": "boss1hp-player10",
+                "profile": "player10",
             }
         },
     )
     assert sender.gotos == [2, 3, 4]
-    assert sender.goto_profiles == [None, None, "boss1hp-player10"]
+    assert sender.goto_profiles == [None, None, "player10"]
     assert info["curriculum_reset_id"] == "reduced"
     assert info["curriculum_reset"] == {
         "id": "reduced",
         "start_level": 4,
         "target_level": 5,
-        "profile": "boss1hp-player10",
+        "profile": "player10",
     }
 
 
@@ -799,6 +833,20 @@ def test_lua_telemetry_reuses_the_built_observation_and_bounds_collection() -> N
     assert "clone(" not in status_function
     assert "local result = observation or emptyObservation()" in status_function
     assert "local TELEMETRY_COLLECTION_INTERVAL = 1000" in source
+
+
+def test_lua_player_health_profiles_preserve_boss_and_boss_add_state() -> None:
+    source = (
+        Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "AutoDancer.lua"
+    ).read_text(encoding="utf-8")
+    start = source.index("local function applyCurriculumProfile")
+    end = source.index("\nlocal function itemKind", start)
+    application = source[start:end]
+    assert 'string.match(profile, "^player(%d+)$")' in application
+    assert "entity.health.health = 1" not in application
+    assert "objectiveHealthSnapshot" in application
+    assert "objective_state_unchanged" in application
+    assert 'hasComponent(entity, "bossAdd")' in source
 
 
 def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
