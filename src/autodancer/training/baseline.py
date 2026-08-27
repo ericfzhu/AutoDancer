@@ -18,6 +18,8 @@ from torch import Tensor
 from autodancer.constants import (
     ACTION_COUNT,
     Action,
+    ActorKind,
+    BossType,
     GridChannel,
     InventoryFeature,
     PlayerFeature,
@@ -72,6 +74,9 @@ class EpisodeAccumulator:
     extrinsic_return: float = 0.0
     shaping_return: float = 0.0
     natural_prefix: dict[str, Any] = field(default_factory=dict)
+    boss_actor_types: set[int] = field(default_factory=set)
+    initial_boss_health: int | None = None
+    minimum_boss_health: int | None = None
     action_counts: list[int] = field(default_factory=lambda: [0] * ACTION_COUNT)
     unchanged_position_turns: int = 0
     max_unchanged_position_streak: int = 0
@@ -145,6 +150,31 @@ class EpisodeAccumulator:
             counts[item_type] = counts.get(item_type, 0) + quantity
         return counts
 
+    def _observe_boss_state(self, observation: dict[str, np.ndarray]) -> None:
+        grid = observation.get("grid")
+        if grid is None:
+            return
+        mask = (
+            (grid[..., GridChannel.ACTOR_CLASS] == int(ActorKind.BOSS))
+            & (grid[..., GridChannel.HEALTH] > 0)
+            & (grid[..., GridChannel.VISIBILITY] == 2)
+        )
+        cells = np.argwhere(mask)
+        if not len(cells):
+            return
+        health = min(int(grid[row, column, GridChannel.HEALTH]) for row, column in cells)
+        self.initial_boss_health = (
+            health if self.initial_boss_health is None else max(self.initial_boss_health, health)
+        )
+        self.minimum_boss_health = (
+            health if self.minimum_boss_health is None else min(self.minimum_boss_health, health)
+        )
+        self.boss_actor_types.update(
+            int(grid[row, column, GridChannel.ACTOR_TYPE])
+            for row, column in cells
+            if int(grid[row, column, GridChannel.ACTOR_TYPE]) != 0
+        )
+
     def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
         position = self._position(observation, info)
         self.furthest_zone, self.furthest_floor = position[:2]
@@ -155,6 +185,7 @@ class EpisodeAccumulator:
         self._inventory_quantities = self._inventory_counts(observation)
         self._seen_item_types = set(self._inventory_quantities)
         self.natural_prefix = dict(info.get("learning_segment") or {})
+        self._observe_boss_state(observation)
         if self._has_visible_stairs(observation):
             self._stairs_seen_on_floor = True
             self.staircase_discoveries = 1
@@ -191,6 +222,7 @@ class EpisodeAccumulator:
         self._collected_item_types.update(set(inventory) - self._seen_item_types)
         self._seen_item_types.update(inventory)
         self._inventory_quantities = inventory
+        self._observe_boss_state(observation)
         if 0 <= action < ACTION_COUNT:
             self.action_counts[action] += 1
         position = self._position(observation, info)
@@ -333,6 +365,17 @@ class EpisodeAccumulator:
             "boss_add_damage": self.boss_add_damage,
             "boss_kills": self.boss_kills,
             "boss_add_kills": self.boss_add_kills,
+            "boss_actor_types": sorted(self.boss_actor_types),
+            "boss_phase_depth": min(len(self.boss_actor_types), 4),
+            "initial_boss_health": self.initial_boss_health,
+            "minimum_boss_health": self.minimum_boss_health,
+            "death_metal_phase4_reached": bool(
+                self.boss_type == int(BossType.DEATH_METAL)
+                and len(self.boss_actor_types) >= 4
+                and self.minimum_boss_health is not None
+                and self.minimum_boss_health <= 2
+                and self.boss_damage >= 7
+            ),
             "player_damage": self.player_damage,
             "action_counts": self.action_counts,
             "wait_actions": self.action_counts[int(Action.WAIT)],
@@ -427,6 +470,11 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         str(boss_type): sum(int(episode.get("boss_type", 0)) == boss_type for episode in episodes)
         for boss_type in sorted({int(episode.get("boss_type", 0)) for episode in episodes})
     }
+    death_metal_episodes = [
+        episode
+        for episode in episodes
+        if int(episode.get("boss_type", 0)) == int(BossType.DEATH_METAL)
+    ]
     prefixes = [
         dict(episode.get("natural_prefix") or {})
         for episode in episodes
@@ -500,6 +548,18 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "boss_add_damage": sum(int(episode.get("boss_add_damage", 0)) for episode in episodes),
         "boss_kills": sum(int(episode.get("boss_kills", 0)) for episode in episodes),
         "boss_add_kills": sum(int(episode.get("boss_add_kills", 0)) for episode in episodes),
+        "death_metal_phase4_rate": (
+            sum(
+                bool(episode.get("death_metal_phase4_reached", False))
+                for episode in death_metal_episodes
+            )
+            / len(death_metal_episodes)
+            if death_metal_episodes
+            else 0.0
+        ),
+        "mean_boss_phase_depth": float(
+            np.mean([int(episode.get("boss_phase_depth", 0)) for episode in episodes])
+        ),
         "player_damage": sum(int(episode["player_damage"]) for episode in episodes),
         "action_counts": action_counts,
         "wait_rate": sum(int(episode.get("wait_actions", 0)) for episode in episodes)

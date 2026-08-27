@@ -8,6 +8,8 @@ from autodancer.constants import (
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
     Action,
+    ActorKind,
+    BossType,
     GridChannel,
     InventoryFeature,
     PlayerFeature,
@@ -343,6 +345,79 @@ def test_episode_diagnostics_separate_boss_and_add_combat() -> None:
     assert summary["boss_add_damage"] == 1
     assert summary["boss_kills"] == 0
     assert summary["boss_add_kills"] == 1
+
+
+def _death_metal_observation(*, actor_type: int, health: int) -> dict[str, np.ndarray]:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    grid[10, 11, GridChannel.ACTOR_CLASS] = int(ActorKind.BOSS)
+    grid[10, 11, GridChannel.ACTOR_TYPE] = actor_type
+    grid[10, 11, GridChannel.HEALTH] = health
+    grid[10, 11, GridChannel.MAX_HEALTH] = 9
+    grid[10, 11, GridChannel.VISIBILITY] = 2
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 4
+    player[PlayerFeature.TASK] = int(BossType.DEATH_METAL)
+    return {"grid": grid, "player": player}
+
+
+def test_death_metal_phase4_requires_authoritative_damage_and_four_phase_types() -> None:
+    accumulator = EpisodeAccumulator(17, "worker-0000", "run-17")
+    accumulator.initialize(
+        _death_metal_observation(actor_type=101, health=9),
+        {"zone": 1, "floor": 4, "boss_type": int(BossType.DEATH_METAL)},
+    )
+    for actor_type, health, damage in ((102, 6, 3), (103, 4, 2), (104, 2, 2)):
+        accumulator.observe(
+            _death_metal_observation(actor_type=actor_type, health=health),
+            0.0,
+            {
+                "zone": 1,
+                "floor": 4,
+                "boss_type": int(BossType.DEATH_METAL),
+                "raw_events": [
+                    {"kind": "enemy_damage", "amount": damage, "data": {"boss": True}}
+                ],
+            },
+            int(Action.RIGHT),
+        )
+
+    result = accumulator.finish("running")
+    assert result["boss_actor_types"] == [101, 102, 103, 104]
+    assert result["boss_phase_depth"] == 4
+    assert result["initial_boss_health"] == 9
+    assert result["minimum_boss_health"] == 2
+    assert result["boss_damage"] == 7
+    assert result["death_metal_phase4_reached"] is True
+    summary = summarize_episodes([result], "checkpoint")
+    assert summary["death_metal_phase4_rate"] == 1.0
+    assert summary["mean_boss_phase_depth"] == 4.0
+
+
+def test_direct_health_drop_does_not_count_as_death_metal_phase_progression() -> None:
+    accumulator = EpisodeAccumulator(18, "worker-0000", "run-18")
+    accumulator.initialize(
+        _death_metal_observation(actor_type=101, health=9),
+        {"zone": 1, "floor": 4, "boss_type": int(BossType.DEATH_METAL)},
+    )
+    accumulator.observe(
+        _death_metal_observation(actor_type=101, health=2),
+        0.0,
+        {
+            "zone": 1,
+            "floor": 4,
+            "boss_type": int(BossType.DEATH_METAL),
+            "raw_events": [
+                {"kind": "enemy_damage", "amount": 7, "data": {"boss": True}}
+            ],
+        },
+        int(Action.RIGHT),
+    )
+
+    result = accumulator.finish("running")
+    assert result["boss_phase_depth"] == 1
+    assert result["death_metal_phase4_reached"] is False
+    assert summarize_episodes([result], "checkpoint")["death_metal_phase4_rate"] == 0.0
 
 
 def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
