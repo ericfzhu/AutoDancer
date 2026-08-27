@@ -150,6 +150,27 @@ real terminal observation. This is partial-episode bootstrapping as prescribed
 for training-only time limits by
 [Pardo et al. 2018](https://proceedings.mlr.press/v80/pardo18a.html).
 
+### 8. Several shaping terms depend on hidden reward history
+
+V2 decides whether a position, tile, staircase, or item type is new by consulting
+episode/floor history inside `RewardTracker`. It can therefore assign different
+rewards to the same apparent observation and action depending on facts that A2
+cannot reconstruct exactly. Floor-level caps in later rewards create the same
+issue. The game is already partially observable, but adding a second hidden
+reward state makes value learning harder for reasons unrelated to gameplay.
+
+Future reward work should either expose a compact, human-compatible reward-memory
+state (for example visited-map state and acquired-item history), express guidance
+as a proper potential on observable augmented state, or remove the history-based
+term. Reward machines formalize this idea by compressing non-Markovian event
+history into state that can be composed with the observation
+([Bourel et al. 2023](https://proceedings.mlr.press/v206/bourel23a.html)).
+Potential shaping is attractive where applicable because it preserves the task
+policy rather than allowing intrinsic return to replace task progress
+([Skalse et al. 2023](https://proceedings.mlr.press/v202/skalse23a.html)). The
+current boss curriculum intentionally leaves V2 fixed; boss damage, death, and
+Zone 2 entry are short-horizon signals and let us isolate representation first.
+
 ## Next controlled sequence
 
 1. Add a curriculum-only real-game level start that performs sequential `GOTO`
