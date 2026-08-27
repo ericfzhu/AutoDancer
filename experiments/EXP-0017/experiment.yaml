@@ -29,6 +29,21 @@ invariants:
   - Reward V4A, A2, map-navigation-prior-v1, PPO settings, training pool, horizon, and budget are identical across optimization trials
   - gameplay completion, death, and mastered-profile retention select outcomes; shaped return never does
   - no assisted boss result promotes the policy as normal-start Zone 2 evidence
+arms:
+  - id: frozen-player10-transfer
+    description: Evaluate the unchanged selected EXP-0016 parent on fresh player10 Death Metal starts before authorizing any optimizer update.
+    component_versions:
+      architecture: A2
+      environment-semantics: assisted-single-boss-curriculum-v2
+      optimization-schedule: frozen-policy
+      training-level-distribution: reverse-curriculum-sequential-goto-v1
+  - id: mixed-player10-replay
+    description: Conditional three-trial fine-tuning arm using 80 percent player10 episodes and 20 percent mastered player20 replay.
+    component_versions:
+      architecture: A2
+      environment-semantics: mixed-assisted-curriculum-v3
+      optimization-schedule: assistance-reduction-with-replay-v1
+      training-level-distribution: mixed-curriculum-replay-v1
 calibration:
   plan: experiments/EXP-0017/calibration-plan.md
   result: experiments/EXP-0017/calibration-result.json
