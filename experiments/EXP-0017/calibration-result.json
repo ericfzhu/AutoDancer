@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0017",
+  "calibration_role": "design-only-development-history",
+  "source_checkpoint": "runs/assisted-death-metal/training/seed-68002/final.pt",
+  "source_checkpoint_sha256": "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5",
+  "profile": "boss1hp-player10",
+  "game_seeds": [
+    67012,
+    67019,
+    67021,
+    67022,
+    67023,
+    67025,
+    67028,
+    67039,
+    67041,
+    67046,
+    67052,
+    67061
+  ],
+  "results": {
+    "deterministic": {
+      "successes": 4,
+      "episodes": 12,
+      "completion_rate": 0.3333333333333333,
+      "death_rate": 0.6666666666666666
+    },
+    "stochastic_99001": {
+      "successes": 10,
+      "episodes": 12,
+      "completion_rate": 0.8333333333333334,
+      "death_rate": 0.16666666666666666
+    },
+    "stochastic_99002": {
+      "successes": 7,
+      "episodes": 12,
+      "completion_rate": 0.5833333333333334,
+      "death_rate": 0.4166666666666667
+    },
+    "sampled_aggregate": {
+      "successes": 17,
+      "episodes": 24,
+      "completion_rate": 0.7083333333333334
+    }
+  },
+  "predeclared_rule_selected": "80-percent-player10-20-percent-mastered-player20",
+  "acceptance_eligible": false,
+  "reason": "These seeds were consumed by EXP-0016 and select only the next training distribution. EXP-0017 acceptance uses fresh seeds.",
+  "evidence": [
+    "experiments/EXP-0017/calibration-plan.md",
+    "runs/player10-parent-calibration/deterministic.json",
+    "runs/player10-parent-calibration/stochastic-99001.json",
+    "runs/player10-parent-calibration/stochastic-99002.json",
+    "runs/mixed-reset-conformance.json"
+  ],
+  "mixed_reset_conformance": {
+    "passed": true,
+    "workers": 8,
+    "waves": 2,
+    "validated_resets": 16,
+    "invalid_resets": 0,
+    "worker_restarts": 0,
+    "infrastructure_events": 0
+  }
+}
