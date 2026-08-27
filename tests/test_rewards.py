@@ -354,3 +354,26 @@ def test_reward_components_split_task_and_shaping_returns() -> None:
     )
     assert extrinsic == pytest.approx(4.0)
     assert shaping == pytest.approx(0.005)
+
+
+def test_death_metal_guide_reward_is_bounded_and_progress_dominant() -> None:
+    config = load_reward_config("configs/reward-death-metal-guide-v1.json")
+    assert config.turn == 0
+    assert config.new_position == 0
+    assert config.revisit == 0
+    assert config.stair_potential_max == 0
+    assert config.max_combat_reward_per_floor == 5.0
+    assert config.max_combat_reward_per_floor < config.floor_complete + config.zone_complete
+    tracker = RewardTracker(config)
+    components: dict[str, float] = {}
+    for entity_id in range(20):
+        tracker._score_event(
+            {
+                "kind": "enemy_damage",
+                "entity_id": entity_id + 1,
+                "amount": 9,
+                "data": {"boss": entity_id == 0},
+            },
+            components,
+        )
+    assert sum(components.values()) == pytest.approx(5.0)
