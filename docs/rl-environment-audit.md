@@ -807,33 +807,35 @@ fails despite adequate successful examples at the easier cap, that is the trigge
 for the tactical-only representation test described above—not for changing the
 reward at the same time.
 
-### Reachable boss states, natural prefixes, and boss coverage
+### Proven invalid: direct boss-health mutation bypasses Death Metal phases
 
-The phase-aligned health sequence above is a hypothesis, not yet a valid reset
-distribution. `boss1hp-*` assigns the health component directly after level load.
-That operation does not prove that the rest of the entity state matches a fight
-which reached the same health through legal damage. In particular, an event-driven
-phase flag, summon counter, shield state, position, surrounding enemies, and the
-player's recurrent history can all differ. The learner also sees the conspicuous
-pair `current_health=1, max_health=9`. A policy trained on that pair can specialize
-to finishing the fight without learning how to create it.
+Static inspection of the pinned supported game module has now resolved the
+earlier reachability hypothesis. Death Metal's normal maximum health is 9 and
+its thresholds are 6, 4, and 2. Phase selection occurs in the
+`objectTakeDamage/deathMetalHitTriggers` handler, which converts the live entity
+to distinct phase-2, phase-3, or phase-4 types. Those variants change AI, spells,
+cooldowns, beat delay, shield behavior, teleport behavior, and summons.
+`boss1hp-*` writes the health field directly after level load, so it bypasses the
+damage handler and leaves a phase-1 entity at phase-4 health. It also mutates
+boss adds. This is conclusively outside the ordinary transition distribution,
+not merely an unverified approximation. The pinned hashes and pre-execution
+decision are recorded in `experiments/EXP-0019/static-invalidity.md`.
+
+Accordingly, the 65 assisted Zone 2 entries from EXP-0016 and the subsequent
+health-transfer experiments prove only behavior on the explicitly mutated
+profile. They do not prove acquisition of a reachable late-fight Death Metal
+subskill. EXP-0019 was stopped before calibration or optimization; none of its
+seed banks were consumed. The independent controller qualification remains
+valid because its natural soak does not use this profile.
 
 This is a stronger form of the arrival-state mismatch: the curriculum may place
 the agent in a state outside the transition distribution of the target task.
 [Reverse Curriculum Generation](https://proceedings.mlr.press/v78/florensa17a.html)
 expands from feasible nearby states, and
 [Jump-Start RL](https://proceedings.mlr.press/v202/uchendu23a.html) uses a guide
-policy to produce the state from which the learning policy takes over. The next
-boss-health experiment must therefore precede training with a live equivalence
-probe:
-
-1. on matched seeds, record a directly mutated health-cap state;
-2. separately reach the same health by legal actions and boss damage;
-3. compare boss/player positions, health, status and timing fields, boss adds,
-   action masks, and several subsequent no-op-independent transition responses;
-4. reject direct mutation if any policy-relevant field or response differs.
-
-If direct mutation fails, replace health caps with a **natural-prefix handoff**.
+policy to produce the state from which the learning policy takes over. Direct
+mutation has failed its equivalence requirement and must be replaced with a
+**natural-prefix handoff**.
 A qualified guide executes legal actions from the ordinary boss start until the
 declared health boundary, then the PPO actor takes control of that exact running
 game. Record the complete guide prefix but exclude it from PPO reward and return.
