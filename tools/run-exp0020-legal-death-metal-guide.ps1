@@ -111,7 +111,10 @@ Set-Location -LiteralPath $guideRepo
 
 if ($QualificationPid -gt 0) {
     Write-Output ((Get-Date).ToString("o") + " waiting for qualification PID $QualificationPid")
-    while (Get-Process -Id $QualificationPid -ErrorAction SilentlyContinue) {
+    while (
+        -not (Test-Path $guideQualification) -and
+        (Get-Process -Id $QualificationPid -ErrorAction SilentlyContinue)
+    ) {
         Start-Sleep -Seconds 30
     }
 }

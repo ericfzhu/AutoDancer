@@ -92,3 +92,4 @@ def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
     assert '"--freeze-base-updates", "10"' in source
     assert "controller-qualification-player-health-only-world-ready" in source
     assert "$guideTotalSteps = 122880" in source
+    assert "-not (Test-Path $guideQualification)" in source
