@@ -40,8 +40,16 @@ def boss_observation(*, health: int, actor_type: int) -> dict[str, np.ndarray]:
     }
 
 
-def damage(amount: int) -> dict:
-    return {"raw_events": [{"kind": "enemy_damage", "amount": amount, "data": {"boss": True}}]}
+def damage(amount: int, actor_type: int = 0) -> dict:
+    return {
+        "raw_events": [
+            {
+                "kind": "enemy_damage",
+                "amount": amount,
+                "data": {"boss": True, "actor_type": actor_type},
+            }
+        ]
+    }
 
 
 def test_death_metal_phase4_requires_health_damage_and_four_entity_types() -> None:
@@ -68,6 +76,19 @@ def test_phase_handoff_fails_closed_on_type_hash_collision() -> None:
     tracker.observe(boss_observation(health=6, actor_type=101), damage(3))
     tracker.observe(boss_observation(health=4, actor_type=101), damage(2))
     assert not tracker.reached
+
+
+def test_phase_tracker_retains_authoritative_damage_event_types_offscreen() -> None:
+    tracker = DeathMetalPhaseTracker(NaturalPrefixConfig(target_phase=4))
+    tracker.observe(boss_observation(health=9, actor_type=101))
+    tracker.observe(boss_observation(health=6, actor_type=102), damage(3, 102))
+    tracker.observe(boss_observation(health=4, actor_type=103), damage(2, 103))
+    observation = boss_observation(health=2, actor_type=104)
+    observation["grid"][..., GridChannel.VISIBILITY] = 0
+    tracker.observe(observation, damage(2, 104))
+
+    assert tracker.reached
+    assert tracker.snapshot()["observed_actor_types"] == [101, 102, 103, 104]
 
 
 def test_non_death_metal_observation_does_not_advance_tracker() -> None:

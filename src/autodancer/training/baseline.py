@@ -336,6 +336,19 @@ class EpisodeAccumulator:
                 self.enemy_damage += amount
                 if is_boss:
                     self.boss_damage += amount
+                    actor_type = int(data.get("actor_type", 0) or 0)
+                    if actor_type:
+                        self.boss_actor_types.add(actor_type)
+                    if self.initial_boss_health is not None:
+                        inferred_health = max(
+                            self.initial_boss_health - self.boss_damage,
+                            0,
+                        )
+                        self.minimum_boss_health = (
+                            inferred_health
+                            if self.minimum_boss_health is None
+                            else min(self.minimum_boss_health, inferred_health)
+                        )
                 if is_boss_add:
                     self.boss_add_damage += amount
             elif kind == "player_damage":

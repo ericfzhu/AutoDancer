@@ -140,6 +140,16 @@ class DeathMetalPhaseTracker:
             data = event.get("data") or {}
             if event.get("kind") == "enemy_damage" and bool(data.get("boss")):
                 self.boss_damage += max(int(event.get("amount", 0) or 0), 0)
+                actor_type = int(data.get("actor_type", 0) or 0)
+                if actor_type:
+                    self.observed_actor_types.add(actor_type)
+                if self.initial_health is not None:
+                    inferred_health = max(self.initial_health - self.boss_damage, 0)
+                    self.minimum_health = (
+                        inferred_health
+                        if self.minimum_health is None
+                        else min(self.minimum_health, inferred_health)
+                    )
 
     @property
     def reached(self) -> bool:

@@ -420,6 +420,55 @@ def test_direct_health_drop_does_not_count_as_death_metal_phase_progression() ->
     assert summarize_episodes([result], "checkpoint")["death_metal_phase4_rate"] == 0.0
 
 
+def test_death_metal_diagnostics_keep_authoritative_offscreen_phase_type() -> None:
+    accumulator = EpisodeAccumulator(19, "worker-0000", "run-19")
+    accumulator.initialize(
+        _death_metal_observation(actor_type=101, health=9),
+        {"zone": 1, "floor": 4, "boss_type": int(BossType.DEATH_METAL)},
+    )
+    for actor_type, health, amount in ((102, 6, 3), (103, 4, 2)):
+        accumulator.observe(
+            _death_metal_observation(actor_type=actor_type, health=health),
+            0.0,
+            {
+                "zone": 1,
+                "floor": 4,
+                "boss_type": int(BossType.DEATH_METAL),
+                "raw_events": [
+                    {
+                        "kind": "enemy_damage",
+                        "amount": amount,
+                        "data": {"boss": True, "actor_type": actor_type},
+                    }
+                ],
+            },
+            int(Action.RIGHT),
+        )
+    observation = _death_metal_observation(actor_type=104, health=2)
+    observation["grid"][..., GridChannel.VISIBILITY] = 0
+    accumulator.observe(
+        observation,
+        0.0,
+        {
+            "zone": 1,
+            "floor": 4,
+            "boss_type": int(BossType.DEATH_METAL),
+            "raw_events": [
+                {
+                    "kind": "enemy_damage",
+                    "amount": 2,
+                    "data": {"boss": True, "actor_type": 104},
+                }
+            ],
+        },
+        int(Action.RIGHT),
+    )
+
+    result = accumulator.finish("running")
+    assert result["boss_actor_types"] == [101, 102, 103, 104]
+    assert result["death_metal_phase4_reached"] is True
+
+
 def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
     grid = np.zeros((21, 21, 29), dtype=np.int16)
     player = np.zeros(21, dtype=np.int32)
