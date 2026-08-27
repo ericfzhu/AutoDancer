@@ -510,6 +510,18 @@ EXP-0016 therefore uses three independent optimizer/action RNG trials and a
 held-out boss-seed suite. It is an acquisition test, not evidence that the
 assistance level is correctly calibrated in advance.
 
+The calibration evidence is narrower still: seed 64018 succeeded only under the
+single stochastic policy stream `97001` with `map-navigation-prior-v1`; the
+same nine seeds had zero completions under the current and known-wall contracts,
+and no second map-prior policy stream or deterministic map-prior replication was
+run. EXP-0016's three training trials therefore also test whether positive
+trajectories recur under new action streams. If all three receive no success,
+the correct conclusion is that this start distribution was not reliably
+calibrated—not that recurrent PPO has disproved boss-skill learning. The next
+start must move closer to a reproducible intermediate-success region or use a
+recorded successful trace, then be calibrated with at least three rollouts per
+`(seed, assistance)` identity before another acquisition experiment.
+
 The following properties were inspected before starting EXP-0016:
 
 1. **The navigation prior remains on-policy.** It changes the action mask before
