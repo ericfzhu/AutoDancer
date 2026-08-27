@@ -1075,6 +1075,16 @@ must bootstrap rather than invent a terminal MDP state, following
 outside the gameplay process and invalidate their fragment instead of becoming
 death, abort, or reward.
 
+The EXP-0020 phase detector was also made conservative without depending on the
+boss remaining inside the 21x21 visible grid after a conversion. Visible boss
+cells still establish the initial objective health and directly observed entity
+types. Effective boss-damage events now additionally retain their authoritative
+actor type, and cumulative effective damage supplies a lower health bound when
+the converted boss teleports offscreen. Phase 4 still requires four distinct
+types and at least seven real damage points, so a direct health write cannot
+satisfy the gate. This keeps an evaluation visibility accident from rejecting a
+legally reached phase while preserving the original fail-closed mutation test.
+
 Action masking has the same semantic requirement. Invalid-action masking is a
 valid policy-gradient operation when the mask is truly state-dependent legality
 ([Huang and Ontanon, 2020](https://arxiv.org/abs/2006.14171)), but a false-positive
