@@ -7,6 +7,7 @@ local Bridge = require "AutoDancer.scripts.Bridge"
 
 local Music = require "necro.audio.Music"
 local AnimationTimer = require "necro.render.AnimationTimer"
+local Boss = require "necro.game.level.Boss"
 local CurrentLevel = require "necro.game.level.CurrentLevel"
 local Action = require "necro.game.system.Action"
 local Map = require "necro.game.object.Map"
@@ -18,7 +19,7 @@ local Native = require "system.game.AutoDancerNative"
 
 local GRID_SIZE = 21
 local GRID_CHANNELS = 29
-local MAP_SIZE = 65
+local REVEALED_MAP_SIZE = 65
 local PLAYER_FEATURES = 21
 local INVENTORY_SLOTS = 13
 local INVENTORY_FEATURES = 8
@@ -39,9 +40,6 @@ local playerDead = false
 local terminalEmitted = false
 local lastObservation = nil
 local lastContext = nil
-local mapOriginX = nil
-local mapOriginY = nil
-local mapLevelIdentity = ""
 local recordsSinceCollection = 0
 
 local function isLocalPlayer(entity)
@@ -167,15 +165,6 @@ local function currentLevelIdentity()
         .. ":" .. tostring(CurrentLevel.getSequentialNumber())
 end
 
-local function ensureMapOrigin(player)
-    local identity = currentLevelIdentity()
-    if identity ~= mapLevelIdentity then
-        mapLevelIdentity = identity
-        mapOriginX = player.position.x
-        mapOriginY = player.position.y
-    end
-end
-
 local function playerHasMap(player)
     local slots = player.inventory and player.inventory.itemSlots or {}
     for _, slot in pairs(slots) do
@@ -197,13 +186,12 @@ local function buildRevealedMap(player)
     if sequence % 32 ~= 0 and not playerHasMap(player) then
         return nil
     end
-    ensureMapOrigin(player)
-    local result = zeroMatrix(MAP_SIZE, MAP_SIZE)
-    local half = math.floor(MAP_SIZE / 2)
-    for row = 1, MAP_SIZE do
-        for column = 1, MAP_SIZE do
-            local x = mapOriginX + column - half - 1
-            local y = mapOriginY + row - half - 1
+    local boundsX, boundsY = Tile.getLevelBounds()
+    local result = zeroMatrix(REVEALED_MAP_SIZE, REVEALED_MAP_SIZE)
+    for row = 1, REVEALED_MAP_SIZE do
+        for column = 1, REVEALED_MAP_SIZE do
+            local x = boundsX + column - 1
+            local y = boundsY + row - 1
             if Vision.isRevealed(x, y) and Tile.exists(x, y) then
                 local tileInfo = Tile.getInfo(x, y) or {}
                 if tileInfo.name == "Stairs" or (tileInfo.descent or 0) > 0 then
@@ -214,7 +202,7 @@ local function buildRevealedMap(player)
             end
         end
     end
-    return result
+    return result, { x = boundsX, y = boundsY }
 end
 
 local function currentMapBounds()
@@ -351,6 +339,45 @@ local function actorKind(entity)
         return 9
     end
     return 15
+end
+
+local function currentBossType()
+    for entity in Entities.entitiesWithComponents({ "boss" }) do
+        return entity.boss and entity.boss.type or Boss.Type.NONE
+    end
+    return Boss.Type.NONE
+end
+
+local function combatEventData(entity)
+    return {
+        actor_kind = actorKind(entity),
+        actor_type = typeID(entity and entity.name or ""),
+        boss = hasComponent(entity, "boss"),
+        boss_add = hasComponent(entity, "bossAdd"),
+        boss_type = currentBossType(),
+        max_health = hasComponent(entity, "health") and (entity.health.maxHealth or 0) or 0,
+    }
+end
+
+local function applyCurriculumProfile(command)
+    local profile = command and command.curriculum_profile
+    if not profile or profile == "normal" then
+        return
+    end
+    local playerHealth = tonumber(string.match(profile, "^boss1hp%-player(%d+)$"))
+    assert(playerHealth, "Unsupported AutoDancer curriculum profile: " .. tostring(profile))
+    local player = Player.getPlayerEntity(1)
+    assert(player and player.health, "Curriculum profile requires a living player")
+    player.health.maxHealth = playerHealth
+    player.health.health = playerHealth
+    local objectives = 0
+    for entity in Entities.entitiesWithComponents({ "health" }) do
+        if hasComponent(entity, "boss") or hasComponent(entity, "bossAdd") then
+            entity.health.health = 1
+            objectives = objectives + 1
+        end
+    end
+    assert(objectives > 0, "Curriculum profile did not find a boss objective")
 end
 
 local function itemKind(entity)
@@ -524,7 +551,6 @@ local function buildObservation()
     mask[5] = 1
 
     if player and player.position then
-        ensureMapOrigin(player)
         local health = 0
         local maxHealth = 0
         if player.health then
@@ -576,6 +602,7 @@ local function buildObservation()
         playerValues[9] = sequence
         playerValues[12] = visibleEnemies
         playerValues[13] = grid[centre][centre][1] == 3 and 1 or 0
+        playerValues[14] = currentBossType()
 
         local slots = player.inventory and player.inventory.itemSlots or {}
         encodeInventoryItem(inventory, 1, slots.weapon and slots.weapon[1])
@@ -608,7 +635,7 @@ local function buildObservation()
         playerValues[20] = Music.isSongEndReached() and 1 or 0
         playerValues[21] = shopMusicVolumeBasisPoints()
         result.map_bounds = currentMapBounds()
-        result.revealed_map = buildRevealedMap(player)
+        result.revealed_map, result.revealed_map_origin = buildRevealedMap(player)
     end
 
     return result
@@ -755,6 +782,7 @@ local function emitTurn()
     if not newRun and not bridgeCommand then
         return
     end
+    applyCurriculumProfile(bridgeCommand)
     local observation = buildObservation()
     local context = currentContext()
     local kind = newRun and "reset" or "turn"
@@ -780,9 +808,9 @@ event.objectDealDamage.add("captureAutoDancerDamage", {
         return
     end
     if isLocalPlayer(ev.entity) and actorKind(ev.victim) ~= 0 then
-        queueEvent("enemy_damage", ev.damage, ev.victim)
+        queueEvent("enemy_damage", ev.damage, ev.victim, combatEventData(ev.victim))
     elseif isLocalPlayer(ev.victim) then
-        queueEvent("player_damage", ev.damage, ev.entity)
+        queueEvent("player_damage", ev.damage, ev.entity, combatEventData(ev.entity))
     end
 end)
 
@@ -791,7 +819,7 @@ event.objectKill.add("captureAutoDancerKill", {
     sequence = 100,
 }, function(ev)
     if isLocalPlayer(ev.entity) and actorKind(ev.victim) ~= 0 then
-        queueEvent("enemy_kill", 1, ev.victim)
+        queueEvent("enemy_kill", 1, ev.victim, combatEventData(ev.victim))
     elseif isLocalPlayer(ev.entity) then
         local name = string.lower(ev.victim and ev.victim.name or "")
         if string.find(name, "chest", 1, true) or string.find(name, "crate", 1, true) then

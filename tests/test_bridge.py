@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from autodancer.constants import Action
 from autodancer.live.bridge import (
     CoordinatorBridge,
@@ -39,6 +41,24 @@ def test_native_pipe_bridge_routes_commands_without_files() -> None:
         (b"RESET session-native 2 11001\n", 2.5),
         (b"GOTO session-native 3 4\n", 2.5),
     ]
+
+
+def test_native_pipe_bridge_routes_assisted_curriculum_profile() -> None:
+    transport = RecordingTransport()
+    command = NativePipeCommandBridge(
+        transport,
+        instance_id="worker-0001",
+        session_id="session-profile",
+    ).goto_level(4, "boss1hp-player20")
+    assert command.target_level == 4
+    assert command.curriculum_profile == "boss1hp-player20"
+    assert transport.messages == [(b"GOTO session-profile 1 4_boss1hp-player20\n", 10.0)]
+
+
+def test_bridge_rejects_unknown_curriculum_profile(tmp_path: Path) -> None:
+    bridge = FileCommandBridge(tmp_path / "bridge.txt", session_id="session-profile")
+    with pytest.raises(ValueError, match="curriculum_profile"):
+        bridge.goto_level(4, "make-boss-disappear")
 
 
 def test_file_bridge_publishes_monotonic_action_commands(tmp_path: Path) -> None:

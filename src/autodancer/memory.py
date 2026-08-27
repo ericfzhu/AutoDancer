@@ -10,6 +10,7 @@ from autodancer.constants import (
     GRID_SIZE,
     MAP_CHANNELS,
     MAP_SIZE,
+    REVEALED_MAP_SIZE,
     GridChannel,
     MapChannel,
     PlayerFeature,
@@ -69,10 +70,12 @@ class FloorMapMemory:
             return
         width = int(map_bounds["width"])
         height = int(map_bounds["height"])
-        if width > MAP_SIZE or height > MAP_SIZE:
+        required = 2 * max(width, height) - 1
+        if required > MAP_SIZE:
             raise MapCapacityError(
-                f"Level bounds are {width}x{height}; the policy's player-centred "
-                f"map viewport supports levels up to {MAP_SIZE}x{MAP_SIZE}"
+                f"Level bounds are {width}x{height}; retaining the whole level from "
+                f"every player position requires a {required}x{required} policy map, "
+                f"but the configured map is {MAP_SIZE}x{MAP_SIZE}"
             )
 
     def update(
@@ -80,6 +83,7 @@ class FloorMapMemory:
         observation: Mapping[str, np.ndarray],
         revealed_map: Sequence[Sequence[int]] | None = None,
         map_bounds: Mapping[str, int] | None = None,
+        revealed_map_origin: Mapping[str, int] | None = None,
     ) -> np.ndarray:
         player = observation["player"]
         x, y = int(player[PlayerFeature.X]), int(player[PlayerFeature.Y])
@@ -91,23 +95,35 @@ class FloorMapMemory:
 
         grid = observation["grid"]
         centre = GRID_SIZE // 2
-        for row, column in np.argwhere(grid[..., GridChannel.VISIBILITY] > 0):
+        visibility = grid[..., GridChannel.VISIBILITY]
+        for row, column in np.argwhere(visibility > 0):
             position = (x + int(column) - centre, y + int(row) - centre)
             self._terrain[position] = int(grid[row, column, GridChannel.TERRAIN_CLASS])
-            self._last_seen[position] = self._turn
+            if int(visibility[row, column]) == 2:
+                self._last_seen[position] = self._turn
+            else:
+                self._last_seen.setdefault(position, 0)
 
         if revealed_map is not None:
-            origin_x, origin_y = self._origin
-            half = MAP_SIZE // 2
             raw = np.asarray(revealed_map)
-            if raw.shape != (MAP_SIZE, MAP_SIZE):
+            if raw.shape != (REVEALED_MAP_SIZE, REVEALED_MAP_SIZE):
                 raise ValueError(
-                    f"revealed_map has shape {raw.shape}; expected {(MAP_SIZE, MAP_SIZE)}"
+                    "revealed_map has shape "
+                    f"{raw.shape}; expected {(REVEALED_MAP_SIZE, REVEALED_MAP_SIZE)}"
                 )
+            if revealed_map_origin is None:
+                origin_x, origin_y = self._origin
+                origin_x -= REVEALED_MAP_SIZE // 2
+                origin_y -= REVEALED_MAP_SIZE // 2
+            else:
+                origin_x = int(revealed_map_origin["x"])
+                origin_y = int(revealed_map_origin["y"])
             for row, column in np.argwhere(raw > 0):
-                position = (origin_x + int(column) - half, origin_y + int(row) - half)
+                position = (origin_x + int(column), origin_y + int(row))
                 self._terrain[position] = int(raw[row, column])
-                self._last_seen[position] = self._turn
+                # Minimap knowledge is not current line of sight. Only the
+                # local grid's VISIBILITY=2 may mark a tile currently visible.
+                self._last_seen.setdefault(position, 0)
 
         position = (x, y)
         self._visits[position] = self._visits.get(position, 0) + 1

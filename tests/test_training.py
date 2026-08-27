@@ -151,6 +151,42 @@ def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
         incompatible.load(path)
 
 
+def test_checkpoint_rejects_a_different_episode_horizon(tmp_path: Path) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    path = tmp_path / "checkpoint.pt"
+    RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={"max_turns": 1000},
+    ).save(path)
+    incompatible = RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={"max_turns": 5000},
+    )
+    with pytest.raises(ValueError, match="training metadata"):
+        incompatible.load(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("gamma", 0.0, "gamma"),
+        ("gamma", 1.01, "gamma"),
+        ("gae_lambda", -0.1, "gae_lambda"),
+        ("gae_lambda", 1.1, "gae_lambda"),
+    ),
+)
+def test_ppo_rejects_invalid_credit_horizon_parameters(
+    field: str, value: float, message: str
+) -> None:
+    arguments = {"rollout_length": 1, "sequence_length": 1, field: value}
+    with pytest.raises(ValueError, match=message):
+        PPOConfig(**arguments)
+
+
 def test_checkpoint_warm_start_transfers_policy_but_resets_critic(tmp_path: Path) -> None:
     config = PPOConfig(rollout_length=1, sequence_length=1)
     source = RecurrentPPO(small_model(), config, device=torch.device("cpu"))

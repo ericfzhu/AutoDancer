@@ -4,7 +4,12 @@ from enum import IntEnum
 
 GRID_SIZE = 21
 GRID_CHANNELS = 29
-MAP_SIZE = 65
+# Lua periodically sends a compact snapshot covering the game's maximum
+# 65x65 level bounds. The policy memory is player-centred, however, so it
+# needs twice that radius (minus the shared centre cell) to retain either
+# extreme while the player stands at the other extreme.
+REVEALED_MAP_SIZE = 65
+MAP_SIZE = REVEALED_MAP_SIZE * 2 - 1
 MAP_CHANNELS = 5
 PLAYER_FEATURES = 21
 INVENTORY_SLOTS = 13
@@ -110,6 +115,21 @@ class PlayerFeature(IntEnum):
     MUSIC_REMAINING_DS = 18
     SONG_END_REACHED = 19
     SHOP_MUSIC_VOLUME_BP = 20
+
+
+class BossType(IntEnum):
+    NONE = 0
+    KING_CONGA = 1
+    DEATH_METAL = 2
+    DEEP_BLUES = 3
+    CORAL_RIFF = 4
+    DEAD_RINGER = 5
+    NECRODANCER = 6
+    NECRODANCER_2 = 7
+    GOLDEN_LUTE = 8
+    FORTISSIMOLE = 9
+    FRANKENSTEINWAY = 10
+    CONDUCTOR = 11
 
 
 class InventoryFeature(IntEnum):

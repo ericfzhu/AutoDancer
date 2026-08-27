@@ -80,6 +80,27 @@ def test_curriculum_target_must_follow_start_level(tmp_path: Path) -> None:
         )
 
 
+def test_assisted_curriculum_profile_requires_a_later_start(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="later start level"):
+        SupervisorConfig(
+            tmp_path / "game",
+            tmp_path / "mod",
+            num_instances=1,
+            curriculum_profile="boss1hp-player20",
+        )
+
+
+def test_unknown_curriculum_profile_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="curriculum_profile"):
+        SupervisorConfig(
+            tmp_path / "game",
+            tmp_path / "mod",
+            num_instances=1,
+            curriculum_start_level=4,
+            curriculum_profile="unknown",
+        )
+
+
 def test_start_recovers_a_worker_that_fails_after_handle_creation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

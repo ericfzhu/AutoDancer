@@ -17,8 +17,8 @@ from autodancer.constants import (
     GRID_SIZE,
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
-    MAP_SIZE,
     PLAYER_FEATURES,
+    REVEALED_MAP_SIZE,
     ActorKind,
     GridChannel,
     ItemKind,
@@ -318,18 +318,30 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
 
 
 def decode_revealed_map(payload: Any) -> np.ndarray | None:
-    """Decode an optional spawn-anchored minimap snapshot from Lua."""
+    """Decode an optional level-bounds-anchored minimap snapshot from Lua."""
     if payload is None:
         return None
     result = _integer_array(
         payload,
         "revealed_map",
-        (MAP_SIZE, MAP_SIZE),
+        (REVEALED_MAP_SIZE, REVEALED_MAP_SIZE),
         np.dtype(np.int8),
     )
     if np.any(result < 0) or np.any(result > len(Terrain) - 1):
         raise ProtocolError("revealed_map contains an unknown terrain class")
     return result.copy()
+
+
+def decode_revealed_map_origin(payload: Any) -> dict[str, int] | None:
+    """Decode the absolute top-left coordinate of a revealed-map snapshot."""
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping):
+        raise ProtocolError("revealed_map_origin must be an object")
+    return {
+        name: _integer(payload.get(name), f"revealed_map_origin.{name}")
+        for name in ("x", "y")
+    }
 
 
 def decode_map_bounds(payload: Any) -> dict[str, int] | None:
@@ -436,6 +448,9 @@ def validate_record(record: Mapping[str, Any]) -> None:
     ):
         raise ProtocolError("Observation zone/floor does not match transition metadata")
     decode_revealed_map(record.get("observation", {}).get("revealed_map"))
+    decode_revealed_map_origin(
+        record.get("observation", {}).get("revealed_map_origin")
+    )
     decode_map_bounds(record.get("observation", {}).get("map_bounds"))
     if status == "running":
         mask = observation["action_mask"]

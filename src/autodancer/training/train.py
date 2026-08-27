@@ -18,6 +18,7 @@ import torch
 from torch import Tensor
 
 from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.rewards import load_reward_config
 from autodancer.training.action_contract import ACTION_CONTRACTS
@@ -266,7 +267,16 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             "episode_seeds": [],
         }
     events = [event for episode in episodes for event in episode.get("events", [])]
+    boss_events = [
+        event for event in events if bool((event.get("data") or {}).get("boss", False))
+    ]
+    boss_add_events = [
+        event
+        for event in events
+        if bool((event.get("data") or {}).get("boss_add", False))
+    ]
     statuses = [str(episode.get("status", "")) for episode in episodes]
+    boss_types = sorted({int(episode.get("boss_type", 0)) for episode in episodes})
     return {
         "episodes": float(len(episodes)),
         "mean_return": float(np.mean([episode["return"] for episode in episodes])),
@@ -285,7 +295,33 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         "episode_seeds": sorted(
             {int(episode["seed"]) for episode in episodes if "seed" in episode}
         ),
+        "boss_type_counts": {
+            str(boss_type): float(
+                sum(int(episode.get("boss_type", 0)) == boss_type for episode in episodes)
+            )
+            for boss_type in boss_types
+        },
         "enemy_kills": float(sum(event.get("kind") == "enemy_kill" for event in events)),
+        "boss_damage": float(
+            sum(
+                int(event.get("amount", 0) or 0)
+                for event in boss_events
+                if event.get("kind") == "enemy_damage"
+            )
+        ),
+        "boss_add_damage": float(
+            sum(
+                int(event.get("amount", 0) or 0)
+                for event in boss_add_events
+                if event.get("kind") == "enemy_damage"
+            )
+        ),
+        "boss_kills": float(
+            sum(event.get("kind") == "enemy_kill" for event in boss_events)
+        ),
+        "boss_add_kills": float(
+            sum(event.get("kind") == "enemy_kill" for event in boss_add_events)
+        ),
         "items_collected": float(sum(event.get("kind") == "item_collected" for event in events)),
         "furthest_zone": float(max(int(episode.get("zone") or 0) for episode in episodes)),
         "furthest_floor": float(max(int(episode.get("floor") or 0) for episode in episodes)),
@@ -329,6 +365,8 @@ def train(arguments: argparse.Namespace) -> None:
     ppo_config = PPOConfig(
         rollout_length=arguments.rollout_length,
         sequence_length=arguments.sequence_length,
+        gamma=arguments.gamma,
+        gae_lambda=arguments.gae_lambda,
     )
     reward_config = load_reward_config(arguments.reward_config)
     training_seed_pool = (
@@ -349,6 +387,7 @@ def train(arguments: argparse.Namespace) -> None:
             "curriculum": {
                 "start_level": arguments.curriculum_start_level,
                 "target_level": arguments.curriculum_target_level,
+                "profile": arguments.curriculum_profile,
                 "reset_semantics": "normal-reset-sequential-goto-reward-reset-v1",
             }
         }
@@ -373,6 +412,7 @@ def train(arguments: argparse.Namespace) -> None:
         diagnostic_root=arguments.run_dir / "controller-diagnostics",
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
+        curriculum_profile=arguments.curriculum_profile,
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -403,6 +443,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "seed": arguments.seed,
                 "total_steps": arguments.total_steps,
                 "num_instances": arguments.num_instances,
+                "max_turns": arguments.max_turns,
                 "architecture": arguments.architecture,
                 "ppo": asdict(ppo_config),
                 "reward": reward_config.specification(),
@@ -418,6 +459,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "training_seed_pool": list(training_seed_pool),
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
+                "curriculum_profile": arguments.curriculum_profile,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -505,6 +547,7 @@ def train(arguments: argparse.Namespace) -> None:
                     checkpoint_metadata={
                         "reward": reward_config.specification(),
                         "action_contract": arguments.action_contract,
+                        "max_turns": arguments.max_turns,
                         **seed_checkpoint_metadata,
                         **curriculum_metadata,
                         "freeze_base_updates": arguments.freeze_base_updates,
@@ -644,6 +687,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "reward": reward_config.specification(),
                             "initialized_from": algorithm.checkpoint_metadata.get("initialization"),
                             "action_contract": arguments.action_contract,
+                            "max_turns": arguments.max_turns,
                             "training_seed_schedule": (
                                 "uniform-pool-v1"
                                 if training_seed_pool
@@ -652,6 +696,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "training_seed_pool": list(training_seed_pool),
                             "curriculum_start_level": arguments.curriculum_start_level,
                             "curriculum_target_level": arguments.curriculum_target_level,
+                            "curriculum_profile": arguments.curriculum_profile,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
@@ -663,6 +708,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 "startup_timeout": arguments.startup_timeout,
                                 "turn_timeout": arguments.turn_timeout,
                                 "reset_timeout": arguments.reset_timeout,
+                                "max_turns": arguments.max_turns,
                                 "collector": "versioned-async",
                                 "inference_batch_delay_ms": arguments.inference_batch_delay_ms,
                             },
@@ -737,6 +783,13 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollout-length", type=int, default=128)
     parser.add_argument("--sequence-length", type=int, default=32)
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="discount factor; must match the reward profile's potential discount",
+    )
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--checkpoint-interval", type=int, default=10000)
     parser.add_argument("--evaluation-interval", type=int, default=50000)
     parser.add_argument("--evaluation-steps", type=int, default=512)
@@ -763,6 +816,12 @@ def main() -> int:
         "--curriculum-target-level",
         type=int,
         help="terminate the curriculum episode successfully on entering this level",
+    )
+    parser.add_argument(
+        "--curriculum-profile",
+        choices=CURRICULUM_PROFILES,
+        default="normal",
+        help="qualification-only assistance applied on the curriculum start level",
     )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
@@ -811,6 +870,8 @@ def main() -> int:
         parser.error("--freeze-base-updates is only valid for Architecture 8")
     if arguments.curriculum_start_level <= 0:
         parser.error("--curriculum-start-level must be positive")
+    if arguments.curriculum_profile != "normal" and arguments.curriculum_start_level <= 1:
+        parser.error("assisted --curriculum-profile requires --curriculum-start-level > 1")
     if (
         arguments.curriculum_target_level is not None
         and arguments.curriculum_target_level <= arguments.curriculum_start_level

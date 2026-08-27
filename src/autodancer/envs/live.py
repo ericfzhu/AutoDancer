@@ -20,7 +20,12 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
-from autodancer.live.bridge import ActionBridge, BridgeCommand, FileCommandBridge
+from autodancer.live.bridge import (
+    CURRICULUM_PROFILES,
+    ActionBridge,
+    BridgeCommand,
+    FileCommandBridge,
+)
 from autodancer.live.protocol import (
     JsonlTurnSource,
     ProtocolError,
@@ -57,6 +62,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         reward_config: RewardConfig | None = None,
         curriculum_start_level: int = 1,
         curriculum_target_level: int | None = None,
+        curriculum_profile: str = "normal",
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         if turn_source is None and log_path is None:
@@ -80,8 +86,15 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self.curriculum_target_level = (
             None if curriculum_target_level is None else int(curriculum_target_level)
         )
+        self.curriculum_profile = str(curriculum_profile)
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
+        if self.curriculum_profile not in CURRICULUM_PROFILES:
+            raise ValueError(
+                "curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES)
+            )
+        if self.curriculum_profile != "normal" and self.curriculum_start_level <= 1:
+            raise ValueError("assisted curriculum profiles require a later start level")
         if (
             self.curriculum_target_level is not None
             and self.curriculum_target_level <= self.curriculum_start_level
@@ -148,11 +161,18 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         observation, info = self._accept_record(record)
         if self.curriculum_start_level > 1:
             for target_level in range(2, self.curriculum_start_level + 1):
-                observation, info = self._goto_level(target_level)
+                profile = (
+                    self.curriculum_profile
+                    if target_level == self.curriculum_start_level
+                    and self.curriculum_profile != "normal"
+                    else None
+                )
+                observation, info = self._goto_level(target_level, profile)
         if not self.attach_existing:
             info["reset_latency_seconds"] = time.monotonic() - command_started
         info["curriculum_start_level"] = self.curriculum_start_level
         info["curriculum_target_level"] = self.curriculum_target_level
+        info["curriculum_profile"] = self.curriculum_profile
         self.reward_tracker.reset(observation, info)
         if self.progress_callback is not None:
             self.progress_callback(info)
@@ -309,13 +329,17 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         return self._goto_level(level)
 
     def _goto_level(
-        self, level: int
+        self, level: int, profile: str | None = None
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Load the next real run-sequence level without inventing a transition."""
         if self._episode_done or self._run_id is None or self._episode_seed is None:
             raise RuntimeError("goto_level() requires an active reset run")
         source, bridge = self._dependencies()
-        command = bridge.goto_level(level)
+        command = (
+            bridge.goto_level(level)
+            if profile is None
+            else bridge.goto_level(level, profile)
+        )
         record = source.read(self.reset_timeout)
         validate_record(record)
         self._verify_acknowledgement(record, command)
@@ -354,6 +378,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         elif command.kind == "GOTO":
             received.append(acknowledgement.get("target_level"))
             expected.append(command.target_level)
+            if command.curriculum_profile is not None:
+                received.append(acknowledgement.get("curriculum_profile"))
+                expected.append(command.curriculum_profile)
         if received != expected:
             raise ProtocolError(
                 f"Bridge acknowledgement mismatch: expected {expected}, received {received}"
@@ -373,7 +400,6 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         player[PlayerFeature.ON_STAIRS] = int(
             grid[centre, centre, GridChannel.TERRAIN_CLASS] == Terrain.STAIRS
         )
-        player[PlayerFeature.TASK] = 0
         status = str(record["episode_status"])
         player[PlayerFeature.WON] = int(status == "won")
         player[PlayerFeature.DEAD] = int(status == "dead")
@@ -381,6 +407,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             observation,
             record["observation"].get("revealed_map"),
             record["observation"].get("map_bounds"),
+            record["observation"].get("revealed_map_origin"),
         )
         return observation
 
@@ -410,6 +437,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             "game": record["game"],
             "zone": record.get("zone"),
             "floor": record.get("floor"),
+            "boss_type": int(observation["player"][PlayerFeature.TASK]),
             "episode_status": status,
             "bridge": record.get("bridge"),
             "completed": int(status == "won"),

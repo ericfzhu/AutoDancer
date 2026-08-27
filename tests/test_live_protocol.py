@@ -12,6 +12,7 @@ from autodancer.constants import (
     INVENTORY_SLOTS,
     PLAYER_FEATURES,
     Action,
+    BossType,
     GridChannel,
     InventoryFeature,
     PlayerFeature,
@@ -47,6 +48,7 @@ class FakeBridge:
         self.actions: list[Action] = []
         self.restarts = 0
         self.gotos: list[int] = []
+        self.goto_profiles: list[str | None] = []
 
     def send_action(self, action: Action) -> BridgeCommand:
         self.actions.append(action)
@@ -56,8 +58,9 @@ class FakeBridge:
         self.restarts += 1
         return BridgeCommand("test-session", self.restarts, None, "RESET", "worker-0000", seed)
 
-    def goto_level(self, level: int) -> BridgeCommand:
+    def goto_level(self, level: int, profile: str | None = None) -> BridgeCommand:
         self.gotos.append(level)
+        self.goto_profiles.append(profile)
         return BridgeCommand(
             "test-session",
             self.restarts + len(self.gotos),
@@ -65,6 +68,7 @@ class FakeBridge:
             "GOTO",
             "worker-0000",
             target_level=level,
+            curriculum_profile=profile,
         )
 
     def restart(self) -> BridgeCommand:
@@ -140,7 +144,13 @@ def record(
     }
 
 
-def goto_record(sequence: int, level: int, zone: int, floor: int) -> dict:
+def goto_record(
+    sequence: int,
+    level: int,
+    zone: int,
+    floor: int,
+    profile: str | None = None,
+) -> dict:
     payload = record(sequence, "turn")
     payload["zone"] = zone
     payload["floor"] = floor
@@ -152,6 +162,8 @@ def goto_record(sequence: int, level: int, zone: int, floor: int) -> dict:
         "command_id": level,
         "target_level": level,
     }
+    if profile is not None:
+        payload["bridge"]["curriculum_profile"] = profile
     return payload
 
 
@@ -200,6 +212,7 @@ def test_live_victory_terminates_and_reports_completion() -> None:
 
 def test_live_adapter_rederives_deployment_features() -> None:
     payload = record(0, "reset")
+    payload["observation"]["player"][PlayerFeature.TASK] = BossType.CORAL_RIFF
     grid = np.asarray(payload["observation"]["grid"], dtype=int)
     grid[10, 10, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
     grid[10, 11, GridChannel.ACTOR_CLASS] = 2
@@ -210,10 +223,11 @@ def test_live_adapter_rederives_deployment_features() -> None:
         bridge=FakeBridge(),
         attach_existing=True,
     )
-    observation, _ = environment.reset()
+    observation, info = environment.reset()
     assert observation["player"][PlayerFeature.VISIBLE_ENEMIES] == 1
     assert observation["player"][PlayerFeature.ON_STAIRS] == 1
-    assert observation["player"][PlayerFeature.TASK] == 0
+    assert observation["player"][PlayerFeature.TASK] == BossType.CORAL_RIFF
+    assert info["boss_type"] == BossType.CORAL_RIFF
 
 
 def test_live_environment_applies_client_turn_limit() -> None:
@@ -257,6 +271,7 @@ def test_curriculum_reset_jumps_sequentially_without_reward_and_terminates_at_ta
 
     observation, reset_info = environment.reset(seed=7)
     assert sender.gotos == [2, 3, 4]
+    assert sender.goto_profiles == [None, None, None]
     assert tuple(observation["player"][[PlayerFeature.ZONE, PlayerFeature.FLOOR]]) == (1, 4)
     assert reset_info["curriculum_start_level"] == 4
     assert reset_info["curriculum_target_level"] == 5
@@ -268,6 +283,28 @@ def test_curriculum_reset_jumps_sequentially_without_reward_and_terminates_at_ta
     assert info["completed"] == 0
     assert info["deaths"] == 0
     assert "zone_complete" in info["reward_components"]
+
+
+def test_curriculum_profile_is_routed_only_to_the_start_floor() -> None:
+    sender = FakeBridge()
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                goto_record(1, 2, 1, 2),
+                goto_record(2, 3, 1, 3),
+                goto_record(3, 4, 1, 4, "boss1hp-player20"),
+            ]
+        ),
+        bridge=sender,
+        curriculum_start_level=4,
+        curriculum_target_level=5,
+        curriculum_profile="boss1hp-player20",
+    )
+    _, info = environment.reset(seed=7)
+    assert sender.gotos == [2, 3, 4]
+    assert sender.goto_profiles == [None, None, "boss1hp-player20"]
+    assert info["curriculum_profile"] == "boss1hp-player20"
 
 
 def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> None:
@@ -393,8 +430,17 @@ def test_protocol_rejects_invalid_observation_and_event() -> None:
 def test_full_revealed_map_fits_pipe_frame_and_validates() -> None:
     payload = record(0, "reset")
     payload["observation"]["revealed_map"] = np.full((65, 65), 2, dtype=int).tolist()
+    payload["observation"]["revealed_map_origin"] = {"x": -32, "y": -32}
     validate_record(payload)
     assert len(json.dumps(payload).encode("utf-8")) < 65_536
+
+
+def test_revealed_map_origin_requires_integer_coordinates() -> None:
+    payload = record(0, "reset")
+    payload["observation"]["revealed_map"] = np.zeros((65, 65), dtype=int).tolist()
+    payload["observation"]["revealed_map_origin"] = {"x": "bad", "y": 0}
+    with pytest.raises(ProtocolError, match="revealed_map_origin.x"):
+        validate_record(payload)
 
 
 def test_log_source_establishes_boundary_before_fast_restart(tmp_path: Path) -> None:

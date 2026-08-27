@@ -1,0 +1,14 @@
+{
+  "decided_at": "2026-08-27T05:10:00+00:00",
+  "evidence": [
+    "runs/boss-curriculum-tactical/comparison.json",
+    "runs/boss-curriculum-tactical/pipeline-status.json",
+    "runs/boss-curriculum-tactical/training/a2-boss-curriculum/metrics.jsonl",
+    "runs/boss-curriculum-tactical/training/a8-boss-curriculum/metrics.jsonl"
+  ],
+  "experiment_id": "EXP-0014",
+  "mlflow_run_ids": [],
+  "outcome": "rejected",
+  "selected_arm": null,
+  "summary": "Both 122,880-transition arms and all 144 held-out episodes produced zero boss completions and zero Zone 2 entries with valid controllers. A2 training ended 84 deaths/99 time limits; A8 ended 46 deaths/103 time limits. Held-out deterministic policies timed out on every seed, while stochastic sampling produced deaths and sparse ordinary kills but no completion. A8 changed local activity, kills, and item pickups without learning the task. The mixed four-boss, full-difficulty start distribution supplied no successful trajectories and therefore violated the good-start premise of reverse curriculum learning. Reject both arms and establish a single-boss assisted start with measurable boss-objective telemetry before expanding difficulty."
+}

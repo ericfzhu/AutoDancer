@@ -11,6 +11,7 @@ from autodancer.constants import (
     INVENTORY_SLOTS,
     MAP_SIZE,
     PLAYER_FEATURES,
+    REVEALED_MAP_SIZE,
     GridChannel,
     MapChannel,
     PlayerFeature,
@@ -58,12 +59,28 @@ def test_floor_memory_accumulates_revealed_terrain_and_visits() -> None:
 def test_floor_memory_accepts_full_game_reveal_without_marking_it_visited() -> None:
     memory = FloorMapMemory()
     value = observation()
-    revealed = np.zeros((MAP_SIZE, MAP_SIZE), dtype=np.int8)
+    revealed = np.zeros((REVEALED_MAP_SIZE, REVEALED_MAP_SIZE), dtype=np.int8)
     revealed[4, 5] = Terrain.WALL
     result = memory.update(value, revealed)
-    assert result[4, 5, MapChannel.TERRAIN_CLASS] == Terrain.WALL
-    assert result[4, 5, MapChannel.REVEAL_STATE] == 2
-    assert result[4, 5, MapChannel.VISIT_COUNT] == 0
+    offset = (MAP_SIZE - REVEALED_MAP_SIZE) // 2
+    assert result[offset + 4, offset + 5, MapChannel.TERRAIN_CLASS] == Terrain.WALL
+    assert result[offset + 4, offset + 5, MapChannel.REVEAL_STATE] == 1
+    assert result[offset + 4, offset + 5, MapChannel.VISIT_COUNT] == 0
+
+
+def test_only_current_visibility_marks_a_tile_currently_visible() -> None:
+    memory = FloorMapMemory()
+    value = observation()
+    centre = GRID_SIZE // 2
+    value["grid"][centre, centre + 1, GridChannel.TERRAIN_CLASS] = Terrain.WALL
+    value["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 1
+    result = memory.update(value)
+    map_centre = MAP_SIZE // 2
+    assert result[map_centre, map_centre + 1, MapChannel.REVEAL_STATE] == 1
+
+    value["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
+    result = memory.update(value)
+    assert result[map_centre, map_centre + 1, MapChannel.REVEAL_STATE] == 2
 
 
 def test_floor_transition_clears_previous_map() -> None:
@@ -92,7 +109,7 @@ def test_floor_memory_retains_history_beyond_the_original_spawn_viewport() -> No
     bounds = {"x": 10, "y": 20, "width": 65, "height": 65}
     memory.update(observation(), map_bounds=bounds)
 
-    distant = observation(x=43)
+    distant = observation(x=74)
     centre = GRID_SIZE // 2
     distant["grid"][centre, centre, GridChannel.TERRAIN_CLASS] = Terrain.FLOOR
     distant["grid"][centre, centre, GridChannel.VISIBILITY] = 2
@@ -105,3 +122,19 @@ def test_floor_memory_retains_history_beyond_the_original_spawn_viewport() -> No
     returned = memory.update(distant, map_bounds=bounds)
     assert returned[map_centre, map_centre, MapChannel.TERRAIN_CLASS] == Terrain.FLOOR
     assert returned[map_centre, map_centre, MapChannel.VISIT_COUNT] == 2
+
+
+def test_bounds_anchored_reveal_covers_the_opposite_floor_extreme() -> None:
+    memory = FloorMapMemory()
+    bounds = {"x": 10, "y": 20, "width": 65, "height": 65}
+    revealed = np.zeros((REVEALED_MAP_SIZE, REVEALED_MAP_SIZE), dtype=np.int8)
+    revealed[64, 64] = Terrain.STAIRS
+    result = memory.update(
+        observation(x=10, y=20),
+        revealed,
+        bounds,
+        {"x": 10, "y": 20},
+    )
+    centre = MAP_SIZE // 2
+    assert result[centre + 64, centre + 64, MapChannel.TERRAIN_CLASS] == Terrain.STAIRS
+    assert result[centre + 64, centre + 64, MapChannel.REVEAL_STATE] == 1

@@ -37,12 +37,14 @@ class ActorState:
     episode_events: list[dict[str, Any]] = field(default_factory=list)
     furthest_zone: int = 0
     furthest_floor: int = 0
+    boss_type: int = 0
 
     def __post_init__(self) -> None:
         self.furthest_zone, self.furthest_floor = deeper_level(
             (self.furthest_zone, self.furthest_floor),
             (int(self.info.get("zone") or 0), int(self.info.get("floor") or 0)),
         )
+        self.boss_type = max(self.boss_type, int(self.info.get("boss_type") or 0))
 
 
 @dataclass(slots=True)
@@ -532,6 +534,7 @@ class VersionedAsyncRolloutCollector:
                 (state.furthest_zone, state.furthest_floor),
                 (int(info.get("zone") or 0), int(info.get("floor") or 0)),
             )
+            state.boss_type = max(state.boss_type, int(info.get("boss_type") or 0))
             for name, component in info.get("reward_components", {}).items():
                 components[name] = components.get(name, 0.0) + float(component)
             actions.append(torch.tensor(action, dtype=torch.long))
@@ -552,6 +555,7 @@ class VersionedAsyncRolloutCollector:
                         "status": info.get("episode_status"),
                         "zone": state.furthest_zone,
                         "floor": state.furthest_floor,
+                        "boss_type": state.boss_type,
                         "turns": info.get("turns"),
                         "events": state.episode_events,
                     }

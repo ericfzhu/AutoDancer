@@ -17,7 +17,7 @@ from typing import Any
 import psutil
 
 from autodancer.envs.live import AutoDancerLiveEnv
-from autodancer.live.bridge import NativePipeCommandBridge
+from autodancer.live.bridge import CURRICULUM_PROFILES, NativePipeCommandBridge
 from autodancer.live.native_pipe import NativePipeServer, pipe_name
 from autodancer.live.protocol import NativePipeTurnSource, decode_pipe_message, validate_hello
 from autodancer.rewards import RewardConfig
@@ -88,6 +88,7 @@ class SupervisorConfig:
     qualification_mode: bool = False
     curriculum_start_level: int = 1
     curriculum_target_level: int | None = None
+    curriculum_profile: str = "normal"
     qualification_startup_fault_slot: int | None = None
 
     def __post_init__(self) -> None:
@@ -107,6 +108,12 @@ class SupervisorConfig:
             raise ValueError("affinity_policy must be auto, none, or spread")
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
+        if self.curriculum_profile not in CURRICULUM_PROFILES:
+            raise ValueError(
+                "curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES)
+            )
+        if self.curriculum_profile != "normal" and self.curriculum_start_level <= 1:
+            raise ValueError("assisted curriculum profiles require a later start level")
         if (
             self.curriculum_target_level is not None
             and self.curriculum_target_level <= self.curriculum_start_level
@@ -440,6 +447,7 @@ class AutoDancerSupervisor:
             launch_id=handle.launch_id,
             curriculum_start_level=self.config.curriculum_start_level,
             curriculum_target_level=self.config.curriculum_target_level,
+            curriculum_profile=self.config.curriculum_profile,
             progress_callback=record_progress,
         )
 

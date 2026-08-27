@@ -11,6 +11,13 @@ from typing import Protocol
 
 from autodancer.constants import Action
 
+CURRICULUM_PROFILES = (
+    "normal",
+    "boss1hp-player20",
+    "boss1hp-player10",
+    "boss1hp-player6",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class BridgeCommand:
@@ -21,6 +28,7 @@ class BridgeCommand:
     instance_id: str
     seed: int | None = None
     target_level: int | None = None
+    curriculum_profile: str | None = None
 
 
 class ActionBridge(Protocol):
@@ -28,7 +36,7 @@ class ActionBridge(Protocol):
 
     def reset(self, seed: int) -> BridgeCommand: ...
 
-    def goto_level(self, level: int) -> BridgeCommand: ...
+    def goto_level(self, level: int, profile: str | None = None) -> BridgeCommand: ...
 
     def restart(self) -> BridgeCommand: ...
 
@@ -59,9 +67,10 @@ class NativePipeCommandBridge:
         kind: str,
         action: Action | None,
         *,
-        argument: int,
+        argument: int | str,
         seed: int | None = None,
         target_level: int | None = None,
+        curriculum_profile: str | None = None,
     ) -> BridgeCommand:
         command = BridgeCommand(
             session_id=self.session_id,
@@ -71,6 +80,7 @@ class NativePipeCommandBridge:
             instance_id=self.instance_id,
             seed=seed,
             target_level=target_level,
+            curriculum_profile=curriculum_profile,
         )
         self._next_command_id += 1
         payload = f"{kind} {command.session_id} {command.command_id} {argument}\n".encode("ascii")
@@ -87,11 +97,19 @@ class NativePipeCommandBridge:
             raise ValueError("seed must be in 0..2147483647")
         return self._publish("RESET", None, argument=seed, seed=seed)
 
-    def goto_level(self, level: int) -> BridgeCommand:
+    def goto_level(self, level: int, profile: str | None = None) -> BridgeCommand:
         level = int(level)
         if level < 1:
             raise ValueError("level must be positive")
-        return self._publish("GOTO", None, argument=level, target_level=level)
+        selected_profile = _curriculum_profile(profile)
+        argument = level if selected_profile is None else f"{level}_{selected_profile}"
+        return self._publish(
+            "GOTO",
+            None,
+            argument=argument,
+            target_level=level,
+            curriculum_profile=selected_profile,
+        )
 
     def restart(self) -> BridgeCommand:
         return self.reset(secrets.randbelow(2**31))
@@ -121,9 +139,10 @@ class FileCommandBridge:
         kind: str,
         action: Action | None,
         *,
-        argument: int,
+        argument: int | str,
         seed: int | None = None,
         target_level: int | None = None,
+        curriculum_profile: str | None = None,
     ) -> BridgeCommand:
         command = BridgeCommand(
             session_id=self.session_id,
@@ -133,6 +152,7 @@ class FileCommandBridge:
             instance_id=self.instance_id,
             seed=seed,
             target_level=target_level,
+            curriculum_profile=curriculum_profile,
         )
         self._next_command_id += 1
         payload = f"{kind} {command.session_id} {command.command_id} {argument}\n"
@@ -149,11 +169,19 @@ class FileCommandBridge:
             raise ValueError("seed must be in 0..2147483647")
         return self._publish("RESET", None, argument=seed, seed=seed)
 
-    def goto_level(self, level: int) -> BridgeCommand:
+    def goto_level(self, level: int, profile: str | None = None) -> BridgeCommand:
         level = int(level)
         if level < 1:
             raise ValueError("level must be positive")
-        return self._publish("GOTO", None, argument=level, target_level=level)
+        selected_profile = _curriculum_profile(profile)
+        argument = level if selected_profile is None else f"{level}_{selected_profile}"
+        return self._publish(
+            "GOTO",
+            None,
+            argument=argument,
+            target_level=level,
+            curriculum_profile=selected_profile,
+        )
 
     def restart(self) -> BridgeCommand:
         return self.reset(secrets.randbelow(2**31))
@@ -197,6 +225,17 @@ def _safe_identifier(value: str, label: str) -> str:
     if not value or not all(character.isalnum() or character in "-_" for character in value):
         raise ValueError(f"{label} may contain only letters, digits, '-' and '_'")
     return value
+
+
+def _curriculum_profile(value: str | None) -> str | None:
+    if value is None:
+        return None
+    selected = _safe_identifier(str(value), "curriculum_profile")
+    if selected not in CURRICULUM_PROFILES:
+        raise ValueError(
+            "curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES)
+        )
+    return selected
 
 
 def _write_mounted_file(path: Path, payload: str) -> None:

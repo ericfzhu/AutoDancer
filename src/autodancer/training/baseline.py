@@ -24,6 +24,7 @@ from autodancer.constants import (
     Terrain,
 )
 from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
@@ -48,12 +49,17 @@ class EpisodeAccumulator:
     turns: int = 0
     furthest_zone: int = 0
     furthest_floor: int = 0
+    boss_type: int = 0
     max_gold: int = 0
     enemy_kills: int = 0
     item_pickups: int = 0
     currency_pickups: int = 0
     currency_value: int = 0
     enemy_damage: int = 0
+    boss_damage: int = 0
+    boss_add_damage: int = 0
+    boss_kills: int = 0
+    boss_add_kills: int = 0
     player_damage: int = 0
     extrinsic_return: float = 0.0
     shaping_return: float = 0.0
@@ -132,6 +138,9 @@ class EpisodeAccumulator:
     def initialize(self, observation: dict[str, np.ndarray], info: dict[str, Any]) -> None:
         position = self._position(observation, info)
         self.furthest_zone, self.furthest_floor = position[:2]
+        self.boss_type = int(
+            info.get("boss_type") or observation["player"][PlayerFeature.TASK]
+        )
         self._last_position = position
         self._floor = position[:2]
         self._visited_positions.add(position)
@@ -156,6 +165,10 @@ class EpisodeAccumulator:
         self.furthest_zone, self.furthest_floor = deeper_level(
             (self.furthest_zone, self.furthest_floor),
             (int(info.get("zone") or 0), int(info.get("floor") or 0)),
+        )
+        self.boss_type = max(
+            self.boss_type,
+            int(info.get("boss_type") or observation["player"][PlayerFeature.TASK]),
         )
         self.max_gold = max(
             self.max_gold,
@@ -272,13 +285,22 @@ class EpisodeAccumulator:
         for event in events:
             kind = str(event.get("kind", ""))
             amount = int(event.get("amount", 0) or 0)
+            data = dict(event.get("data") or {})
+            is_boss = bool(data.get("boss", False))
+            is_boss_add = bool(data.get("boss_add", False))
             if kind == "enemy_kill":
                 self.enemy_kills += max(amount, 1)
+                self.boss_kills += int(is_boss)
+                self.boss_add_kills += int(is_boss_add)
             elif kind == "currency_collected":
                 self.currency_pickups += 1
                 self.currency_value += amount
             elif kind == "enemy_damage":
                 self.enemy_damage += amount
+                if is_boss:
+                    self.boss_damage += amount
+                if is_boss_add:
+                    self.boss_add_damage += amount
             elif kind == "player_damage":
                 self.player_damage += amount
 
@@ -293,6 +315,7 @@ class EpisodeAccumulator:
             "turns": self.turns,
             "furthest_zone": self.furthest_zone,
             "furthest_floor": self.furthest_floor,
+            "boss_type": self.boss_type,
             "max_gold": self.max_gold,
             "enemy_kills": self.enemy_kills,
             "item_pickups": self.item_pickups,
@@ -300,6 +323,10 @@ class EpisodeAccumulator:
             "currency_pickups": self.currency_pickups,
             "currency_value": self.currency_value,
             "enemy_damage": self.enemy_damage,
+            "boss_damage": self.boss_damage,
+            "boss_add_damage": self.boss_add_damage,
+            "boss_kills": self.boss_kills,
+            "boss_add_kills": self.boss_add_kills,
             "player_damage": self.player_damage,
             "action_counts": self.action_counts,
             "wait_actions": self.action_counts[int(Action.WAIT)],
@@ -385,6 +412,12 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         )
         for name in outcome_names
     }
+    boss_type_counts = {
+        str(boss_type): sum(
+            int(episode.get("boss_type", 0)) == boss_type for episode in episodes
+        )
+        for boss_type in sorted({int(episode.get("boss_type", 0)) for episode in episodes})
+    }
     return {
         "policy": policy,
         "episodes": count,
@@ -407,6 +440,7 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
         "mean_progress": float(np.mean(progress)),
         "furthest_zone": max(int(episode["furthest_zone"]) for episode in episodes),
         "furthest_floor": max(progress),
+        "boss_type_counts": boss_type_counts,
         "mean_max_gold": float(np.mean([episode["max_gold"] for episode in episodes])),
         "enemy_kills": sum(int(episode["enemy_kills"]) for episode in episodes),
         "item_pickups": sum(int(episode["item_pickups"]) for episode in episodes),
@@ -428,6 +462,14 @@ def summarize_episodes(episodes: list[dict[str, Any]], policy: str) -> dict[str,
             int(episode.get("currency_value", 0)) for episode in episodes
         ),
         "enemy_damage": sum(int(episode["enemy_damage"]) for episode in episodes),
+        "boss_damage": sum(int(episode.get("boss_damage", 0)) for episode in episodes),
+        "boss_add_damage": sum(
+            int(episode.get("boss_add_damage", 0)) for episode in episodes
+        ),
+        "boss_kills": sum(int(episode.get("boss_kills", 0)) for episode in episodes),
+        "boss_add_kills": sum(
+            int(episode.get("boss_add_kills", 0)) for episode in episodes
+        ),
         "player_damage": sum(int(episode["player_damage"]) for episode in episodes),
         "action_counts": action_counts,
         "wait_rate": sum(int(episode.get("wait_actions", 0)) for episode in episodes)
@@ -525,6 +567,10 @@ def compare_summaries(reference: dict[str, Any], trained: dict[str, Any]) -> dic
         "enemy_kills",
         "item_pickups",
         "enemy_damage",
+        "boss_damage",
+        "boss_add_damage",
+        "boss_kills",
+        "boss_add_kills",
         "player_damage",
     )
     return {f"{field}_delta": float(trained[field]) - float(reference[field]) for field in fields}
@@ -912,6 +958,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         diagnostic_root=arguments.output.parent / "controller-diagnostics",
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
+        curriculum_profile=arguments.curriculum_profile,
     )
     dashboard_state = DashboardState() if arguments.dashboard is not None else None
     dashboard_server = (
@@ -999,6 +1046,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "action_contract": arguments.action_contract,
         "curriculum_start_level": arguments.curriculum_start_level,
         "curriculum_target_level": arguments.curriculum_target_level,
+        "curriculum_profile": arguments.curriculum_profile,
         "worker_restarts": restarts,
         "controller_valid": restarts == 0 and not infrastructure_events,
         "infrastructure_events": infrastructure_events,
@@ -1046,6 +1094,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "action_contract": arguments.action_contract,
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
+                "curriculum_profile": arguments.curriculum_profile,
                 "trained_only": arguments.trained_only,
                 "reward_lineage_version": arguments.reward_lineage_version,
                 "reward_config": (
@@ -1160,6 +1209,12 @@ def main() -> int:
         type=int,
         help="terminate successfully after entering this sequential level",
     )
+    parser.add_argument(
+        "--curriculum-profile",
+        choices=CURRICULUM_PROFILES,
+        default="normal",
+        help="qualification-only assistance applied on the curriculum start level",
+    )
     parser.add_argument("--experiment-id", help="registered immutable experiment id")
     parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
     parser.add_argument("--trial-id", help="stable evaluation trial label")
@@ -1177,6 +1232,8 @@ def main() -> int:
         parser.error("--num-instances and --max-steps must be positive")
     if arguments.curriculum_start_level <= 0:
         parser.error("--curriculum-start-level must be positive")
+    if arguments.curriculum_profile != "normal" and arguments.curriculum_start_level <= 1:
+        parser.error("assisted --curriculum-profile requires --curriculum-start-level > 1")
     if (
         arguments.curriculum_target_level is not None
         and arguments.curriculum_target_level <= arguments.curriculum_start_level

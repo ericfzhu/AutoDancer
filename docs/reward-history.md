@@ -746,6 +746,37 @@ therefore rejected without introducing Reward V5. The next experiment changes
 navigation information/action selection while keeping Reward V2 fixed; reward
 shaping resumes only if that isolated navigation intervention fails.
 
+### EXP-0014 result: activity is not boss competence
+
+The A2/A8 boss-start curriculum completed both 122,880-transition training
+arms and 144 held-out episodes with valid controllers, but produced zero boss
+clears and zero Zone 2 entries. A8 reduced training deaths and increased local
+kills/items, yet deterministic A2 and A8 timed out on all 48 held-out episodes;
+the four stochastic trials added deaths and a few ordinary kills without a
+single success. More activity and richer observations therefore did not solve
+the sparse task.
+
+The experiment also exposed four confounds that invalidate simply extending
+either arm:
+
+- four mechanically different bosses were mixed despite zero success on any
+  of them, so the start distribution was not a reverse-curriculum “good start”
+  distribution where success is possible but nontrivial;
+- Python erased the boss identity from A2's existing task feature, making the
+  same observation contract represent qualitatively different objectives;
+- telemetry aggregated objective bosses, boss adds, and ordinary enemies, so
+  generic combat activity could masquerade as task-directed learning;
+- Reward V2's renewable turn/revisit penalties accumulate to roughly `-14`
+  over a 1,000-turn boss episode, larger than the `+10` Zone 1 completion
+  milestone and capable of distorting the local objective.
+
+EXP-0014 is rejected rather than extended. The next curriculum must select one
+boss type, begin with training-only low boss health and high player health,
+use nonrenewable Reward V4A shaping, and record boss/boss-add damage and kills.
+Assistance is then reduced only after success lies in an intermediate band;
+normal-start evaluation remains unassisted and is the only evidence that can
+promote a Zone 2 policy.
+
 ## Rules for future entries
 
 Every new reward version must record:

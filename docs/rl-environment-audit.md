@@ -371,6 +371,53 @@ is a later fallback because procedural worlds weaken global state-count methods;
 episode-level exploration methods are more plausible than lifetime novelty when
 every seed generates a new dungeon.
 
+## EXP-0014 postmortem: environment defects found before the next curriculum
+
+The completed boss experiment proved that the controller can collect stable
+boss-local trajectories, but not that the learning environment presents a
+sound Markov approximation or a learnable start distribution. Inspection
+found the following concrete defects:
+
+1. **False current visibility.** The memory adapter treated both historical
+   `VISIBILITY=1` cells and periodic full minimap snapshots as currently
+   visible. Every 32 turns this injected a floor-wide “visible now” pulse,
+   creating a hidden clock feature unrelated to game state. Only local
+   `VISIBILITY=2` cells may now update current sight; minimap snapshots add
+   historical knowledge only.
+2. **Clipped spatial memory.** A 65x65 player-centred tensor cannot retain a
+   65x65 floor when Bard moves between opposite edges. The minimum lossless
+   player-centred span is `2*65-1 = 129`; the policy memory now uses that span,
+   while Lua's compact 65x65 snapshot is anchored to the real level bounds.
+3. **Aliased boss objectives.** Lua now exposes the official `Boss.Type`, but
+   Python previously overwrote A2's existing task feature with zero. A2 can now
+   distinguish King Conga, Death Metal, Deep Blues, and Coral Riff without an
+   architecture change. The Synchrony API defines these stable enum values and
+   distinguishes objective `boss` entities from `bossAdd` entities
+   ([Boss API](https://vortexbuffer.com/synchrony/docs/modules/necro.game.level.Boss/),
+   [boss components](https://vortexbuffer.com/synchrony/docs/components/necro.game.data.component.character.BossComponents/)).
+4. **Objective-blind diagnostics.** Damage and kills are now partitioned into
+   boss, boss-add, and generic-enemy totals. A curriculum cannot pass because
+   it fights renewable adds while never interacting with the objective.
+5. **Untracked task horizon.** `max_turns`, PPO `gamma`, and GAE lambda are now
+   explicit checkpoint/lineage parameters. A resume cannot silently change the
+   episode horizon, and future discount experiments are declarable rather than
+   hard-coded.
+6. **No successful start states.** EXP-0014 mixed four full-strength bosses and
+   observed zero successes. Reverse Curriculum Generation specifically expands
+   from starts with an intermediate success probability and retains older
+   starts to avoid forgetting
+   ([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+   The next stage therefore uses a tagged, training-only health profile on one
+   boss, then reduces assistance after competence is measured. This is not
+   eligible as normal-start evaluation evidence.
+
+The discount configuration remains a later isolated variable. At `gamma=.99`,
+direct credit is about `.0066` after 500 turns and `.000043` after 1,000 turns;
+with GAE lambda `.95`, the one-rollout trace decays faster. Reverse starts first
+move successes inside the useful credit horizon. Gamma changes, hierarchical
+options/reward machines, demonstrations, and prioritized level replay remain
+separate follow-ups if the calibrated local task still fails.
+
 ## Mechanisms checked and currently sound
 
 - **Mid-chunk recurrent resets:** `episode_starts` is stored for every

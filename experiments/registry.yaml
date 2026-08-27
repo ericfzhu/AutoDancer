@@ -87,6 +87,7 @@ experiments:
   EXP-0014:
     spec: experiments/EXP-0014/experiment.yaml
     spec_sha256: af2531c2d2ccd01273b02e2d9a5066d1c5ca3c415740978f4be1c7b944182d05
-    status: planned
+    status: rejected
     historical: false
     registered_at: '2026-08-27T01:02:00+00:00'
+    updated_at: '2026-08-27T05:10:00+00:00'

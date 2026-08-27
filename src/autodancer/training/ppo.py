@@ -34,6 +34,10 @@ class PPOConfig:
             raise ValueError("rollout and sequence lengths must be positive")
         if self.rollout_length % self.sequence_length:
             raise ValueError("rollout_length must be divisible by sequence_length")
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError("gamma must be in (0, 1]")
+        if not 0.0 <= self.gae_lambda <= 1.0:
+            raise ValueError("gae_lambda must be in [0, 1]")
 
 
 @dataclass(slots=True)

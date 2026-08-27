@@ -226,6 +226,42 @@ def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns()
     assert result["max_repeated_direction_streak"] == 2
 
 
+def test_episode_diagnostics_separate_boss_and_add_combat() -> None:
+    grid = np.zeros((21, 21, 29), dtype=np.int16)
+    player = np.zeros(21, dtype=np.int32)
+    player[PlayerFeature.ZONE] = 1
+    player[PlayerFeature.FLOOR] = 4
+    value = {"grid": grid, "player": player}
+    accumulator = EpisodeAccumulator(13, "worker-0000", "run-13")
+    accumulator.initialize(value, {"zone": 1, "floor": 4})
+    accumulator.observe(
+        value,
+        0.0,
+        {
+            "zone": 1,
+            "floor": 4,
+            "raw_events": [
+                {"kind": "enemy_damage", "amount": 2, "data": {"boss": True}},
+                {"kind": "enemy_damage", "amount": 1, "data": {"boss_add": True}},
+                {"kind": "enemy_kill", "amount": 1, "data": {"boss_add": True}},
+            ],
+        },
+        int(Action.RIGHT),
+    )
+    result = accumulator.finish("running")
+    assert result["enemy_damage"] == 3
+    assert result["boss_damage"] == 2
+    assert result["boss_add_damage"] == 1
+    assert result["boss_kills"] == 0
+    assert result["boss_add_kills"] == 1
+
+    summary = summarize_episodes([result], "checkpoint")
+    assert summary["boss_damage"] == 2
+    assert summary["boss_add_damage"] == 1
+    assert summary["boss_kills"] == 0
+    assert summary["boss_add_kills"] == 1
+
+
 def test_episode_summary_records_action_contract_and_wall_outcomes() -> None:
     grid = np.zeros((21, 21, 29), dtype=np.int16)
     player = np.zeros(21, dtype=np.int32)

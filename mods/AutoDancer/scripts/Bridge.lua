@@ -26,6 +26,12 @@ local STARTUP_STABLE_TICKS = 360
 local HEARTBEAT_TICKS = 60
 local ACTION_WATCHDOG_TICKS = 600
 local RESET_WATCHDOG_TICKS = 2700
+local CURRICULUM_PROFILES = {
+    ["normal"] = true,
+    ["boss1hp-player20"] = true,
+    ["boss1hp-player10"] = true,
+    ["boss1hp-player6"] = true,
+}
 
 local instanceID = tostring(Native.getInstanceID() or "worker-unknown")
 instanceID = string.gsub(instanceID, "[^%w%-_]", "_")
@@ -132,6 +138,7 @@ local function sendCommandStatus(command, phase, reason)
         .. ",\"phase\":" .. jsonEscape(phase)
         .. ",\"reason\":" .. jsonEscape(reason or "")
         .. ",\"requested_action\":" .. tostring(command.requested_action or -1)
+        .. ",\"curriculum_profile\":" .. jsonEscape(command.curriculum_profile or "")
         .. ",\"engine_state\":" .. engineState() .. "}"
     assert(sendFrame(payload), "AutoDancer command-status pipe write failed")
 end
@@ -273,9 +280,15 @@ local function acceptCommand(command)
         startAllZonesBard(seed)
         return true
     elseif command.kind == "GOTO" then
-        local targetLevel = tonumber(command.argument)
+        local targetText, curriculumProfile = string.match(
+            command.argument,
+            "^(%d+)_([%w%-]+)$"
+        )
+        local targetLevel = tonumber(targetText or command.argument)
         local reason = not qualificationMode and "qualification_disabled"
             or (not targetLevel or targetLevel < 1) and "invalid_level"
+            or (curriculumProfile and not CURRICULUM_PROFILES[curriculumProfile])
+                and "invalid_curriculum_profile"
             or targetLevel ~= CurrentLevel.getSequentialNumber() + 1
                 and "nonsequential_qualification_level"
             or playableReason()
@@ -287,6 +300,7 @@ local function acceptCommand(command)
             session_id = command.session_id,
             command_id = command.command_id,
             target_level = targetLevel,
+            curriculum_profile = curriculumProfile,
         }
         sendCommandStatus(command, "accepted")
         sendCommandStatus(command, "reset_started")
