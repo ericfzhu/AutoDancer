@@ -30,6 +30,7 @@ local CURRICULUM_PROFILES = {
     ["normal"] = true,
     ["boss1hp-player20"] = true,
     ["boss1hp-player10"] = true,
+    ["boss1hp-player8"] = true,
     ["boss1hp-player6"] = true,
 }
 

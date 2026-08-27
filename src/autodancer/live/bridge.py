@@ -15,6 +15,7 @@ CURRICULUM_PROFILES = (
     "normal",
     "boss1hp-player20",
     "boss1hp-player10",
+    "boss1hp-player8",
     "boss1hp-player6",
 )
 

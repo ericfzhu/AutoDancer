@@ -43,16 +43,27 @@ def test_native_pipe_bridge_routes_commands_without_files() -> None:
     ]
 
 
-def test_native_pipe_bridge_routes_assisted_curriculum_profile() -> None:
+@pytest.mark.parametrize(
+    "profile",
+    (
+        "boss1hp-player20",
+        "boss1hp-player10",
+        "boss1hp-player8",
+        "boss1hp-player6",
+    ),
+)
+def test_native_pipe_bridge_routes_assisted_curriculum_profile(profile: str) -> None:
     transport = RecordingTransport()
     command = NativePipeCommandBridge(
         transport,
         instance_id="worker-0001",
         session_id="session-profile",
-    ).goto_level(4, "boss1hp-player20")
+    ).goto_level(4, profile)
     assert command.target_level == 4
-    assert command.curriculum_profile == "boss1hp-player20"
-    assert transport.messages == [(b"GOTO session-profile 1 4_boss1hp-player20\n", 10.0)]
+    assert command.curriculum_profile == profile
+    assert transport.messages == [
+        (f"GOTO session-profile 1 4_{profile}\n".encode("ascii"), 10.0)
+    ]
 
 
 def test_bridge_rejects_unknown_curriculum_profile(tmp_path: Path) -> None:
