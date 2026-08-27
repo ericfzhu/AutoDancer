@@ -1040,3 +1040,82 @@ analogue would be a separately versioned behavior-cloning auxiliary phase over
 qualified observation/action/mask traces, followed by PPO fine-tuning and held-out
 evaluation. A reported successful episode without its action sequence is not a
 demonstration dataset and must not be treated as one.
+
+## Qualification findings: controller state is part of the environment
+
+The player-health-only qualification found two more environment defects before
+EXP-0020 could start.
+
+First, Python and the gameplay-side profile application used `player20`,
+`player10`, `player8`, and `player6`, but the Lua pipe parser still whitelisted
+the retired `boss1hp-player*` identifiers. Static tests had checked each side in
+isolation and therefore missed the disagreement. The parser correctly rejected
+the new command at runtime. The test suite now extracts the Lua whitelist and
+requires exact equality with Python's set. Protocol enums shared across language
+boundaries need this set-equality test; checking that each implementation has
+some expected strings is insufficient.
+
+Second, a player entity can exist after `GameSession.start()` before the tile map
+and visibility state have materialized. The bridge emitted a reset observation
+and accepted an action in that interval. Two fresh workers then produced the
+same empty initial observation for the same seed, but the same first action moved
+in one process and hit a wall in the other because generation completed at
+different instants. This violates the controlled process assumed by RL: an
+apparently identical observation/action pair did not identify the same reachable
+game state. Reset telemetry and action acceptance now additionally require the
+player's current tile to exist and be visible, and heartbeat state exposes this
+as `world_ready`. A 512-transition cross-worker replay passed after the change;
+the full million-transition qualification was restarted from zero.
+
+This is not learner noise and must never be addressed with more seeds or reward
+tuning. The observation returned by `reset()` must be a decision state, and an
+accepted action must operate on that state. Training-only time limits similarly
+must bootstrap rather than invent a terminal MDP state, following
+[Pardo et al.](https://arxiv.org/abs/1712.00378). Infrastructure faults remain
+outside the gameplay process and invalidate their fragment instead of becoming
+death, abort, or reward.
+
+Action masking has the same semantic requirement. Invalid-action masking is a
+valid policy-gradient operation when the mask is truly state-dependent legality
+([Huang and Ontanon, 2020](https://arxiv.org/abs/2006.14171)), but a false-positive
+mask changes the task and can remove an optimal action. AutoDancer therefore
+masks inventory/spell actions from authoritative availability and only adds a
+directional wall mask after the live game reports an exact no-op under a matching
+structural signature. A direction that digs, attacks, opens, descends, or becomes
+valid after state change must remain available. The map navigation prior is an
+explicit hybrid controller intervention, not mislabeled game legality, and its
+results stay separately versioned.
+
+## Remaining environment risks for the Zone 2 curriculum
+
+The legal Death Metal guide removes the unreachable boss-state defect, but it
+does not remove four scientific risks:
+
+1. **Start-distribution mismatch.** Player20 boss starts train a different state
+   distribution from normal Floor 1. Reverse curricula are useful precisely when
+   starts expand toward the target distribution
+   ([Florensa et al.](https://proceedings.mlr.press/v78/florensa17a.html)); a boss
+   checkpoint cannot be promoted until handoffs contract phase 4 to phase 3,
+   phase 2, full boss, earlier floors, and finally normal starts.
+2. **Assistance-dependent risk tolerance.** Extra health may teach trades that
+   fail at Bard's ordinary health even though boss dynamics are legal. Every
+   assistance-reduction stage must retain matched easier-profile evaluation and
+   select by gameplay success/death, not shaped return. If narrow fine-tuning
+   erases the inherited local policy, an explicitly declared teacher-KL arm is
+   more diagnostic than another reward search.
+3. **Conditional-seed bias.** Selecting seeds because telemetry identifies Death
+   Metal is legitimate task stratification; selecting because the guide reaches
+   a phase is not. All acquisition failures remain in the denominator. Training,
+   development, and final seed banks stay disjoint, and normal acceptance must
+   macro-average all four Zone 1 boss types rather than report only the easiest.
+4. **Partial observability and credit horizon.** Structured map memory and the
+   recurrent state reduce informational disadvantage, but 32-step recurrent PPO
+   chunks may still be too short to train dependencies spanning a floor or boss
+   phase. Phase depth, recurrent ablations, hidden-state resets, and intermediate
+   checkpoint curves should diagnose this before increasing model size. If the
+   primitive-action critic cannot bridge the full hierarchy, event-defined
+   options are a causal next architecture rather than denser renewable shaping.
+
+The consequence is a two-level evidence standard. Curriculum phase acquisition
+answers whether the downstream skill is learnable. Only repeated Zone 2 entry
+from untouched, unseen normal All Zones seeds answers the project question.
