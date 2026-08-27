@@ -10,6 +10,7 @@ from autodancer.training.player10_transfer_compare import (
 
 
 def write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
@@ -31,7 +32,7 @@ def test_player10_transfer_gate_uses_sampled_gameplay_and_deterministic_floor(tm
             for index, seed in enumerate(seeds)
         ]
         write_json(
-            tmp_path / f"{name}.json",
+            tmp_path / name / "report.json",
             {
                 "controller_valid": True,
                 "infrastructure_events": [],
@@ -65,7 +66,7 @@ def test_player10_transfer_gate_fails_when_argmax_has_no_success(tmp_path) -> No
             for index, seed in enumerate(seeds)
         ]
         write_json(
-            tmp_path / f"{name}.json",
+            tmp_path / name / "report.json",
             {
                 "controller_valid": True,
                 "infrastructure_events": [],

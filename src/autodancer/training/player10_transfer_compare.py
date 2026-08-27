@@ -36,7 +36,9 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
     deterministic_rate = 0.0
     warnings: list[dict[str, Any]] = []
     for name, expected_mode, expected_policy_seed in MODES:
-        report = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+        report = json.loads(
+            (root / name / "report.json").read_text(encoding="utf-8")
+        )
         results = list(report["trained"]["results"])
         result_seeds = [int(result["seed"]) for result in results]
         valid = bool(report.get("controller_valid"))
