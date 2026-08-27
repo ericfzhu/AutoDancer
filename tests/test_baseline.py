@@ -18,6 +18,7 @@ from autodancer.training.baseline import (
     compare_summaries,
     evaluate_live_policy,
     masked_random_actions,
+    recurrent_state_for_action,
     stochastic_policy_sample,
     summarize_episodes,
     zero_hidden_rows,
@@ -108,6 +109,46 @@ def test_hidden_reset_does_not_mutate_inference_tensor() -> None:
     reset = zero_hidden_rows(hidden, [1])
     assert torch.equal(reset, torch.tensor([[1.0, 1.0], [0.0, 0.0], [1.0, 1.0]]))
     assert torch.equal(hidden, torch.ones(3, 2))
+
+
+def test_recurrent_state_ablation_uses_a_fresh_state_for_every_action() -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.initial_state_calls = 0
+
+        def initial_state(self, batch_size: int, *, device: torch.device) -> torch.Tensor:
+            self.initial_state_calls += 1
+            return torch.zeros(batch_size, 3, device=device)
+
+    model = FakeModel()
+    carried = torch.ones(1, 3)
+    assert recurrent_state_for_action(  # type: ignore[arg-type]
+        model, carried, "carry", device=torch.device("cpu")
+    ) is carried
+    first = recurrent_state_for_action(  # type: ignore[arg-type]
+        model, carried, "reset-every-step", device=torch.device("cpu")
+    )
+    second = recurrent_state_for_action(  # type: ignore[arg-type]
+        model, carried * 7, "reset-every-step", device=torch.device("cpu")
+    )
+    assert torch.equal(first, torch.zeros(1, 3))
+    assert torch.equal(second, torch.zeros(1, 3))
+    assert first.data_ptr() != second.data_ptr()
+    assert model.initial_state_calls == 2
+
+
+def test_recurrent_state_ablation_rejects_unknown_mode() -> None:
+    class FakeModel:
+        def initial_state(self, batch_size: int, *, device: torch.device) -> torch.Tensor:
+            return torch.zeros(batch_size, 3, device=device)
+
+    with pytest.raises(ValueError, match="recurrent-state mode"):
+        recurrent_state_for_action(  # type: ignore[arg-type]
+            FakeModel(),
+            torch.ones(1, 3),
+            "forget-sometimes",
+            device=torch.device("cpu"),
+        )
 
 
 def test_live_evaluation_uses_partial_final_wave_without_counting_padding() -> None:

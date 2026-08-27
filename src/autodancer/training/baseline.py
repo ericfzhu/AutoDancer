@@ -608,6 +608,21 @@ def zero_hidden_rows(hidden: Tensor, indices: list[int]) -> Tensor:
     return hidden * keep.reshape(hidden.shape[0], *([1] * (hidden.ndim - 1)))
 
 
+def recurrent_state_for_action(
+    model: PolicyModel,
+    hidden: Tensor,
+    mode: str,
+    *,
+    device: torch.device,
+) -> Tensor:
+    """Select carried memory or a fresh state for a single policy decision."""
+    if mode == "carry":
+        return hidden
+    if mode == "reset-every-step":
+        return model.initial_state(1, device=device)
+    raise ValueError(f"Unknown recurrent-state mode: {mode}")
+
+
 def evaluate_live_policy(
     environment: AutoDancerVectorEnv,
     *,
@@ -619,6 +634,7 @@ def evaluate_live_policy(
     dashboard_state: DashboardState | None = None,
     action_contract: str = "current",
     policy_mode: str = "deterministic",
+    recurrent_state_mode: str = "carry",
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -637,6 +653,7 @@ def evaluate_live_policy(
             dashboard_state=dashboard_state,
             action_contract=action_contract,
             deterministic=policy_mode == "deterministic",
+            recurrent_state_mode=recurrent_state_mode,
         )
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
@@ -775,8 +792,11 @@ def _evaluate_model_async(
     dashboard_state: DashboardState | None,
     action_contract: str,
     deterministic: bool,
+    recurrent_state_mode: str = "carry",
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
+    if recurrent_state_mode not in {"carry", "reset-every-step"}:
+        raise ValueError(f"Unknown recurrent-state mode: {recurrent_state_mode}")
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -825,11 +845,17 @@ def _evaluate_model_async(
                 accumulator.initialize(observation, info)
                 try:
                     while accumulator.turns < max_steps:
+                        inference_hidden = recurrent_state_for_action(
+                            model,
+                            hidden,
+                            recurrent_state_mode,
+                            device=device,
+                        )
                         action, _, _, next_hidden = scheduler.infer(
                             observation,
                             previous_action,
                             previous_reward,
-                            hidden,
+                            inference_hidden,
                             (
                                 stochastic_policy_sample(
                                     policy_seed,
@@ -1014,6 +1040,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     dashboard_state=dashboard_state,
                     action_contract=arguments.action_contract,
                     policy_mode=arguments.policy_mode,
+                    recurrent_state_mode=arguments.recurrent_state_mode,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -1053,6 +1080,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "policy_seed": arguments.policy_seed,
         "policy_mode": arguments.policy_mode,
         "action_contract": arguments.action_contract,
+        "recurrent_state_mode": arguments.recurrent_state_mode,
         "curriculum_start_level": arguments.curriculum_start_level,
         "curriculum_target_level": arguments.curriculum_target_level,
         "curriculum_profile": arguments.curriculum_profile,
@@ -1101,6 +1129,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "policy_seed": arguments.policy_seed,
                 "policy_mode": arguments.policy_mode,
                 "action_contract": arguments.action_contract,
+                "recurrent_state_mode": arguments.recurrent_state_mode,
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
@@ -1207,6 +1236,12 @@ def main() -> int:
     parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
+    parser.add_argument(
+        "--recurrent-state-mode",
+        choices=("carry", "reset-every-step"),
+        default="carry",
+        help="carry recurrent state normally or ablate it before every policy action",
+    )
     parser.add_argument(
         "--curriculum-start-level",
         type=int,

@@ -147,6 +147,18 @@ behavior or held-out progression at acceptable learner cost. Research on POMDPs
 also cautions that recurrence itself does not make long histories easy to learn
 ([Memory Traces](https://proceedings.mlr.press/v267/eberhard25a.html)).
 
+The live evaluator now exposes a controlled recurrent-state ablation. Its normal
+`carry` mode is unchanged; `reset-every-step` supplies a fresh zero LSTM state to
+every decision while retaining the same observation, previous action, previous
+reward, policy sampling stream, seed, and action contract. Reports and lineage
+record the selected mode so the two conditions cannot be silently pooled. A
+matched-seed comparison therefore answers the narrow causal question "does this
+checkpoint's behavior depend on accumulated recurrent state?" It does not by
+itself identify whether a difference comes from useful memory, stale memory, or
+shorter-gradient optimization, so any positive dependence must be followed by a
+delayed-information probe or hidden-state drift measurement before changing the
+architecture.
+
 There is a second recurrent approximation in the current collector. Actor hidden
 states persist across learner updates, so policy version `v+1` initially acts
 from an LSTM state produced by version `v`. During the four PPO epochs, each
@@ -653,7 +665,7 @@ with `GameSession.nextLevel(0)`. This preserves the game's run state and produce
 a legal later floor with Bard's default carried inventory. It is therefore a
 useful good-start distribution, but it is only a narrow subset of the states in
 which a normal policy will actually arrive. A played-through arrival may have
-lost health, acquired or consumed items, and accumulated a nonzero GRU state.
+lost health, acquired or consumed items, and accumulated a nonzero LSTM state.
 Direct curriculum episodes instead begin with restored/default run resources and
 a fresh recurrent state. A policy can consequently pass a direct Floor 3 or boss
 start while depending on conditions that are uncommon after Floors 1 and 2.
@@ -680,7 +692,7 @@ authorizes the preceding-floor stage. Curriculum reports must record the arrival
 health, inventory signature, and whether recurrent state was fresh or carried,
 then compare those distributions with natural boundary crossings. Before the
 first floor-stage experiment, deterministic evaluation must also compare carried
-GRU state against an explicit floor-boundary reset. If resetting does not reduce
+LSTM state against an explicit floor-boundary reset. If resetting does not reduce
 gameplay success, resetting at every floor boundary is preferable because it
 removes stale-history mismatch while current health, inventory, level identity,
 and floor memory remain explicitly observed. If carried state helps, training
@@ -798,7 +810,7 @@ If direct mutation fails, replace health caps with a **natural-prefix handoff**.
 A qualified guide executes legal actions from the ordinary boss start until the
 declared health boundary, then the PPO actor takes control of that exact running
 game. Record the complete guide prefix but exclude it from PPO reward and return.
-Compare a fresh learner GRU state against a state warmed by feeding the prefix's
+Compare a fresh learner LSTM state against a state warmed by feeding the prefix's
 observations through the learner without selecting its actions. Only downstream
 learner transitions enter the rollout. This preserves the game's transition
 dynamics and progressively shortens the guide prefix as competence improves.
@@ -819,7 +831,7 @@ training environments essential for generalization, while the directly relevant
 random NecroDancer levels were much harder for RL than a fixed seed. Its useful
 behavior came from pretraining on 100 human Floor 1 sessions; frame history also
 reduced loops, and the authors explicitly proposed recurrent memory for longer
-planning. AutoDancer already has structured observations and a GRU, but its
+planning. AutoDancer already has structured observations and an LSTM, but its
 24-seed boss pools are calibration-sized rather than a plausible final training
 distribution. Once a stage has nonzero success, expand its training seed pool and
 sample by measured learning progress, retaining mastered seeds and fully disjoint
