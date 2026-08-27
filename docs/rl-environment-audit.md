@@ -747,6 +747,65 @@ fails despite adequate successful examples at the easier cap, that is the trigge
 for the tactical-only representation test described above—not for changing the
 reward at the same time.
 
+### Reachable boss states, natural prefixes, and boss coverage
+
+The phase-aligned health sequence above is a hypothesis, not yet a valid reset
+distribution. `boss1hp-*` assigns the health component directly after level load.
+That operation does not prove that the rest of the entity state matches a fight
+which reached the same health through legal damage. In particular, an event-driven
+phase flag, summon counter, shield state, position, surrounding enemies, and the
+player's recurrent history can all differ. The learner also sees the conspicuous
+pair `current_health=1, max_health=9`. A policy trained on that pair can specialize
+to finishing the fight without learning how to create it.
+
+This is a stronger form of the arrival-state mismatch: the curriculum may place
+the agent in a state outside the transition distribution of the target task.
+[Reverse Curriculum Generation](https://proceedings.mlr.press/v78/florensa17a.html)
+expands from feasible nearby states, and
+[Jump-Start RL](https://proceedings.mlr.press/v202/uchendu23a.html) uses a guide
+policy to produce the state from which the learning policy takes over. The next
+boss-health experiment must therefore precede training with a live equivalence
+probe:
+
+1. on matched seeds, record a directly mutated health-cap state;
+2. separately reach the same health by legal actions and boss damage;
+3. compare boss/player positions, health, status and timing fields, boss adds,
+   action masks, and several subsequent no-op-independent transition responses;
+4. reject direct mutation if any policy-relevant field or response differs.
+
+If direct mutation fails, replace health caps with a **natural-prefix handoff**.
+A qualified guide executes legal actions from the ordinary boss start until the
+declared health boundary, then the PPO actor takes control of that exact running
+game. Record the complete guide prefix but exclude it from PPO reward and return.
+Compare a fresh learner GRU state against a state warmed by feeding the prefix's
+observations through the learner without selecting its actions. Only downstream
+learner transitions enter the rollout. This preserves the game's transition
+dynamics and progressively shortens the guide prefix as competence improves.
+
+Death Metal is also only one quarter of the ordinary Zone 1 boss task. Mastering
+it can validate the curriculum mechanism, but it cannot establish robust normal
+All Zones competence. Before normal-start promotion, repeat isolated acquisition
+and assistance removal for King Conga, Deep Blues, Coral Riff, and Death Metal,
+then evaluate a boss-stratified set with at least three unseen seeds per type.
+Report both macro-average success across boss types and the worst type; do not
+select only Death Metal seeds for the final Zone 2 claim. Boss adds must remain
+unmodified unless a separately declared arm tests add assistance.
+
+Procedural diversity is a second generalization boundary. The
+[Procgen study](https://proceedings.mlr.press/v119/cobbe20a.html) found diverse
+training environments essential for generalization, while the directly relevant
+[CoNBot report](https://bbukaty.github.io/CoNBot/report.pdf) found that fresh
+random NecroDancer levels were much harder for RL than a fixed seed. Its useful
+behavior came from pretraining on 100 human Floor 1 sessions; frame history also
+reduced loops, and the authors explicitly proposed recurrent memory for longer
+planning. AutoDancer already has structured observations and a GRU, but its
+24-seed boss pools are calibration-sized rather than a plausible final training
+distribution. Once a stage has nonzero success, expand its training seed pool and
+sample by measured learning progress, retaining mastered seeds and fully disjoint
+boss-stratified evaluation seeds. If reverse-curriculum transfer remains unstable,
+the next evidence-backed fallback is a qualified live demonstration recorder and
+a separately versioned behavior-cloning warm start—not another reward change.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
