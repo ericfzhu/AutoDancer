@@ -37,12 +37,32 @@ def _git(*arguments: str) -> str | None:
     return result.stdout.strip()
 
 
+def _git_clean(*arguments: str) -> bool | None:
+    """Return Git's quiet cleanliness result without invoking status."""
+    try:
+        result = subprocess.run(
+            ["git", *arguments], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode not in (0, 1):
+        return None
+    return result.returncode == 0
+
+
 def git_identity() -> dict[str, Any]:
-    status = _git("status", "--porcelain")
+    worktree_clean = _git_clean("diff", "--quiet")
+    index_clean = _git_clean("diff", "--cached", "--quiet")
+    untracked = _git("ls-files", "--others", "--exclude-standard")
+    dirty = (
+        None
+        if worktree_clean is None or index_clean is None or untracked is None
+        else not worktree_clean or not index_clean or bool(untracked)
+    )
     return {
         "commit": _git("rev-parse", "HEAD"),
         "branch": _git("branch", "--show-current"),
-        "dirty": None if status is None else bool(status),
+        "dirty": dirty,
     }
 
 

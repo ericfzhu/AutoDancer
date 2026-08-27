@@ -545,6 +545,7 @@ class VersionedAsyncRolloutCollector:
                 episodes.append(
                     {
                         "worker_id": worker_id,
+                        "seed": int(info.get("seed", state.info.get("seed", 0))),
                         "return": state.episode_return,
                         "extrinsic_return": state.episode_extrinsic_return,
                         "shaping_return": state.episode_shaping_return,

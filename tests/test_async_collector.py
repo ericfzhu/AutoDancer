@@ -324,6 +324,7 @@ def test_async_collector_bootstraps_truncation_from_terminal_observation() -> No
     collector = VersionedAsyncRolloutCollector(
         environment, model, device=torch.device("cpu"), seed=5, batch_delay=0.001
     )
+    initial_seed = int(collector.states[0].info["seed"])
     try:
         rollout = collector.collect(1)
     finally:
@@ -333,6 +334,41 @@ def test_async_collector_bootstraps_truncation_from_terminal_observation() -> No
     assert rollout.truncation_values[0, 0] == 2.0
     assert rollout.truncation_values[0, 1] == 0.0
     assert collector.states[0].episode_start
+    assert collector.completed_episodes[0]["seed"] == initial_seed
+
+
+def test_episode_metrics_distinguish_curriculum_success_and_time_limits() -> None:
+    from autodancer.training.train import episode_metrics
+
+    metrics = episode_metrics(
+        [
+            {
+                "seed": 41,
+                "return": 10.0,
+                "extrinsic_return": 10.0,
+                "shaping_return": 0.0,
+                "status": "curriculum_complete",
+                "zone": 2,
+                "floor": 1,
+                "events": [],
+            },
+            {
+                "seed": 42,
+                "return": -1.0,
+                "extrinsic_return": 0.0,
+                "shaping_return": -1.0,
+                "status": "time_limit",
+                "zone": 1,
+                "floor": 4,
+                "events": [],
+            },
+        ]
+    )
+
+    assert metrics["completions"] == 0
+    assert metrics["curriculum_completions"] == 1
+    assert metrics["time_limits"] == 1
+    assert metrics["episode_seeds"] == [41, 42]
 
 
 def test_async_collector_discards_only_failed_slot_fragment() -> None:

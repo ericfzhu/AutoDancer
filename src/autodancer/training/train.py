@@ -257,10 +257,16 @@ class RolloutCollector:
         )
 
 
-def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, float]:
+def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     if not episodes:
-        return {"episodes": 0.0}
+        return {
+            "episodes": 0.0,
+            "curriculum_completions": 0.0,
+            "time_limits": 0.0,
+            "episode_seeds": [],
+        }
     events = [event for episode in episodes for event in episode.get("events", [])]
+    statuses = [str(episode.get("status", "")) for episode in episodes]
     return {
         "episodes": float(len(episodes)),
         "mean_return": float(np.mean([episode["return"] for episode in episodes])),
@@ -270,8 +276,15 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, float]:
         "mean_shaping_return": float(
             np.mean([episode.get("shaping_return", 0.0) for episode in episodes])
         ),
-        "deaths": float(sum(episode["status"] == "dead" for episode in episodes)),
-        "completions": float(sum(episode["status"] == "won" for episode in episodes)),
+        "deaths": float(sum(status == "dead" for status in statuses)),
+        "completions": float(sum(status == "won" for status in statuses)),
+        "curriculum_completions": float(
+            sum(status == "curriculum_complete" for status in statuses)
+        ),
+        "time_limits": float(sum(status == "time_limit" for status in statuses)),
+        "episode_seeds": sorted(
+            {int(episode["seed"]) for episode in episodes if "seed" in episode}
+        ),
         "enemy_kills": float(sum(event.get("kind") == "enemy_kill" for event in events)),
         "items_collected": float(sum(event.get("kind") == "item_collected" for event in events)),
         "furthest_zone": float(max(int(episode.get("zone") or 0) for episode in episodes)),
