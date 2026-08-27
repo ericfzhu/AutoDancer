@@ -20,6 +20,7 @@ from autodancer.constants import (
     MapChannel,
     Terrain,
 )
+from autodancer.curriculum import EpisodeResetSpec, WeightedResetSpec
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
 from autodancer.training.seed_schedule import TrainingSeedSchedule
@@ -59,9 +60,15 @@ class DelayedWorker:
         self.timeline = timeline
         self.lock = lock
         self.turn = 0
+        self.reset_calls: list[tuple[int, object]] = []
 
-    def reset(self, *, seed: int):
-        return observation(self.slot), {"seed": seed, "episode_status": "running"}
+    def reset(self, *, seed: int, options=None):
+        self.reset_calls.append((seed, options))
+        return observation(self.slot), {
+            "seed": seed,
+            "episode_status": "running",
+            "curriculum_reset": None if options is None else options.get("curriculum"),
+        }
 
     def step(self, action: int):
         turn = self.turn
@@ -93,10 +100,13 @@ class AsyncEnvironment:
         }
         self.infrastructure_events: list[dict] = []
 
-    def reset(self, seeds: list[int]):
+    def reset(self, seeds: list[int], options=None):
+        reset_options = [None] * len(seeds) if options is None else options
         results = [
-            self.environments[worker_id].reset(seed=seed)
-            for worker_id, seed in zip(self.worker_ids, seeds, strict=True)
+            self.environments[worker_id].reset(seed=seed, options=worker_options)
+            for worker_id, seed, worker_options in zip(
+                self.worker_ids, seeds, reset_options, strict=True
+            )
         ]
         return (
             {key: np.stack([result[0][key] for result in results]) for key in results[0][0]},
@@ -108,9 +118,11 @@ class AsyncEnvironment:
         self.infrastructure_events.append(value)
         return value
 
-    def recover(self, index: int, seed: int, *, failure=None):
+    def recover(self, index: int, seed: int, *, options=None, failure=None):
         del failure
-        return self.environments[self.worker_ids[index]].reset(seed=seed)
+        return self.environments[self.worker_ids[index]].reset(
+            seed=seed, options=options
+        )
 
 
 def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
@@ -153,6 +165,65 @@ def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
         assert [int(state.info["seed"]) for state in resumed.states] == expected
     finally:
         resumed.close()
+
+
+def test_async_collector_routes_weighted_episode_resets_and_records_outcomes() -> None:
+    environment = AsyncEnvironment()
+    entries = (
+        WeightedResetSpec(
+            EpisodeResetSpec("reduced", 4, 5, "boss1hp-player10"), 0.75
+        ),
+        WeightedResetSpec(
+            EpisodeResetSpec("replay", 4, 5, "boss1hp-player20"), 0.25
+        ),
+    )
+    for slot, worker_id in enumerate(environment.worker_ids):
+        environment.environments[worker_id].step = (  # type: ignore[method-assign]
+            lambda _action, slot=slot: (
+                observation(slot),
+                1.0,
+                True,
+                False,
+                {
+                    "episode_status": "curriculum_complete",
+                    "zone": 2,
+                    "floor": 1,
+                },
+            )
+        )
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=81,
+        curriculum_entries=entries,
+    )
+    try:
+        collector.collect(10)
+        state = collector.curriculum_schedule_state()
+    finally:
+        collector.close()
+    assert sum(state["selected"].values()) == 22  # two initial plus twenty replacements
+    assert sum(sum(values.values()) for values in state["outcomes"].values()) == 20
+    assert {episode["curriculum_reset_id"] for episode in collector.completed_episodes} <= {
+        "reduced",
+        "replay",
+    }
+    for worker in environment.environments.values():
+        assert all(
+            call_options is not None and "curriculum" in call_options
+            for _, call_options in worker.reset_calls
+        )
 
 
 def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:
@@ -235,7 +306,7 @@ def test_async_collector_applies_episode_local_known_wall_memory() -> None:
     for slot, worker_id in enumerate(environment.worker_ids):
         worker = environment.environments[worker_id]
         worker.reset = (  # type: ignore[method-assign]
-            lambda *, seed, slot=slot: (
+            lambda *, seed, options=None, slot=slot: (
                 wall_observation(slot),
                 {"seed": seed, "episode_status": "running"},
             )
@@ -311,7 +382,7 @@ def test_navigation_prior_mask_and_log_probability_are_collected_on_policy() -> 
     for slot, worker_id in enumerate(environment.worker_ids):
         worker = environment.environments[worker_id]
         worker.reset = (  # type: ignore[method-assign]
-            lambda *, seed, slot=slot: (
+            lambda *, seed, options=None, slot=slot: (
                 guided_observation(slot),
                 {"seed": seed, "episode_status": "running"},
             )
@@ -452,7 +523,7 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     original = environment.environments["worker-0001"]
     original_step = original.step
     failed = False
-    recoveries: list[int] = []
+    recoveries: list[tuple[int, int, object]] = []
 
     def fail_once(action: int):
         nonlocal failed
@@ -464,10 +535,10 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     original.step = fail_once  # type: ignore[method-assign]
     original_recover = environment.recover
 
-    def recover(index: int, seed: int, *, failure=None):
+    def recover(index: int, seed: int, *, options=None, failure=None):
         del failure
-        recoveries.append(index)
-        return original_recover(index, seed)
+        recoveries.append((index, seed, options))
+        return original_recover(index, seed, options=options)
 
     environment.recover = recover  # type: ignore[method-assign]
     model = RecurrentActorCritic(
@@ -483,12 +554,14 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
     collector = VersionedAsyncRolloutCollector(
         environment, model, device=torch.device("cpu"), seed=4, batch_delay=0.001
     )
+    failed_seed = int(collector.states[1].info["seed"])
+    failed_spec = collector.states[1].reset_spec.as_dict()
     try:
         rollout = collector.collect(2)
     finally:
         collector.close()
     assert rollout.actions.shape == (2, 2)
-    assert recoveries == [1]
+    assert recoveries == [(1, failed_seed, {"curriculum": failed_spec})]
     assert collector.states[1].previous_action != -1
     assert collector.last_runtime_metrics["collector_recoveries"] == 1
     assert collector.last_runtime_metrics["collector_recovery_timeouterror"] == 1

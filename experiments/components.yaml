@@ -67,6 +67,7 @@ blocks:
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
       uniform-finite-pool-v1: Each worker samples from one declared finite seed pool; independent streams and exact next-draw state are checkpointed.
       reverse-curriculum-sequential-goto-v1: Finite-pool training starts at a declared later real-game sequential level, then expands starts backward while final evaluation remains normal-start.
+      mixed-curriculum-replay-v1: Each worker draws a checkpointed weighted per-episode reset specification, allowing a harder start distribution to retain a declared fraction of mastered starts without actor-timing bias; infrastructure recovery replays the same task and seed.
       prioritized-level-replay-v1: Planned finite-pool replay weighted by measured learning potential; not yet implemented or authorized for an experiment.
   runtime:
     versions:

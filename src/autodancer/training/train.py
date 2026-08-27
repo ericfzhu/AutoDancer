@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from autodancer.curriculum import fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
@@ -374,6 +375,20 @@ def train(arguments: argparse.Namespace) -> None:
         if arguments.training_seed_pool is None
         else parse_training_seed_pool(arguments.training_seed_pool)
     )
+    curriculum_entries = (
+        load_curriculum_mixture(arguments.curriculum_mixture)
+        if arguments.curriculum_mixture is not None
+        else fixed_reset_spec(
+            arguments.curriculum_start_level,
+            arguments.curriculum_target_level,
+            arguments.curriculum_profile,
+        )
+    )
+    curriculum_distribution = {
+        "schema_version": 1,
+        "mode": "weighted-per-episode-v1",
+        "entries": [entry.as_dict() for entry in curriculum_entries],
+    }
     seed_checkpoint_metadata = (
         {
             "training_seed_schedule": "uniform-pool-v1",
@@ -383,6 +398,9 @@ def train(arguments: argparse.Namespace) -> None:
         else {}
     )
     curriculum_metadata = (
+        {"curriculum_distribution": curriculum_distribution}
+        if arguments.curriculum_mixture is not None
+        else
         {
             "curriculum": {
                 "start_level": arguments.curriculum_start_level,
@@ -413,6 +431,9 @@ def train(arguments: argparse.Namespace) -> None:
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
         curriculum_profile=arguments.curriculum_profile,
+        curriculum_commands_enabled=any(
+            entry.spec.start_level > 1 for entry in curriculum_entries
+        ),
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
@@ -460,6 +481,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
+                "curriculum_mixture": curriculum_distribution,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -483,7 +505,9 @@ def train(arguments: argparse.Namespace) -> None:
                 tracker.validate_component_versions(
                     {
                         "training-level-distribution": (
-                            "reverse-curriculum-sequential-goto-v1"
+                            "mixed-curriculum-replay-v1"
+                            if arguments.curriculum_mixture is not None
+                            else "reverse-curriculum-sequential-goto-v1"
                             if arguments.curriculum_start_level != 1
                             else "uniform-finite-pool-v1"
                         )
@@ -560,6 +584,15 @@ def train(arguments: argparse.Namespace) -> None:
                     algorithm.initialize_from(arguments.initialize_from)
                 elif arguments.fine_tune_from:
                     algorithm.initialize_for_finetune(arguments.fine_tune_from)
+                if (
+                    arguments.resume is not None
+                    and arguments.curriculum_mixture is not None
+                    and algorithm.global_step > 0
+                    and "curriculum_schedule_state" not in resume_metrics
+                ):
+                    raise ValueError(
+                        "The resume checkpoint has no exact curriculum schedule state"
+                    )
                 if tracker is not None:
                     tracker.set_resolved(
                         {
@@ -582,6 +615,10 @@ def train(arguments: argparse.Namespace) -> None:
                     initial_policy_version=algorithm.updates,
                     training_seed_pool=training_seed_pool,
                     seed_schedule_state=resume_metrics.get("training_seed_schedule_state"),
+                    curriculum_entries=curriculum_entries,
+                    curriculum_schedule_state=resume_metrics.get(
+                        "curriculum_schedule_state"
+                    ),
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -610,6 +647,7 @@ def train(arguments: argparse.Namespace) -> None:
                         **update_metrics,
                         **collector.last_runtime_metrics,
                         "training_seed_schedule_state": collector.seed_schedule_state(),
+                        "curriculum_schedule_state": collector.curriculum_schedule_state(),
                         **episode_metrics(collector.completed_episodes),
                         **{
                             f"reward_{name}": value
@@ -640,6 +678,7 @@ def train(arguments: argparse.Namespace) -> None:
                         if dashboard_state is not None:
                             dashboard_state.set_status("training")
                         schedule_state = collector.seed_schedule_state()
+                        curriculum_schedule_state = collector.curriculum_schedule_state()
                         collector.close()
                         collector = VersionedAsyncRolloutCollector(
                             environment,
@@ -652,9 +691,14 @@ def train(arguments: argparse.Namespace) -> None:
                             initial_policy_version=algorithm.updates,
                             training_seed_pool=training_seed_pool,
                             seed_schedule_state=schedule_state,
+                            curriculum_entries=curriculum_entries,
+                            curriculum_schedule_state=curriculum_schedule_state,
                         )
                         metrics["training_seed_schedule_state"] = (
                             collector.seed_schedule_state()
+                        )
+                        metrics["curriculum_schedule_state"] = (
+                            collector.curriculum_schedule_state()
                         )
                         next_evaluation += arguments.evaluation_interval
                     collector.completed_episodes.clear()
@@ -697,6 +741,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "curriculum_start_level": arguments.curriculum_start_level,
                             "curriculum_target_level": arguments.curriculum_target_level,
                             "curriculum_profile": arguments.curriculum_profile,
+                            "curriculum_mixture": curriculum_distribution,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
@@ -823,6 +868,14 @@ def main() -> int:
         default="normal",
         help="qualification-only assistance applied on the curriculum start level",
     )
+    parser.add_argument(
+        "--curriculum-mixture",
+        type=Path,
+        help=(
+            "schema-1 JSON weighted per-episode reset distribution; mutually exclusive "
+            "with non-default fixed curriculum arguments"
+        ),
+    )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--reward-config",
@@ -877,6 +930,14 @@ def main() -> int:
         and arguments.curriculum_target_level <= arguments.curriculum_start_level
     ):
         parser.error("--curriculum-target-level must be after --curriculum-start-level")
+    if arguments.curriculum_mixture is not None and (
+        arguments.curriculum_start_level != 1
+        or arguments.curriculum_target_level is not None
+        or arguments.curriculum_profile != "normal"
+    ):
+        parser.error(
+            "--curriculum-mixture is mutually exclusive with fixed curriculum arguments"
+        )
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)

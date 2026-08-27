@@ -86,6 +86,7 @@ class SupervisorConfig:
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
     qualification_mode: bool = False
+    curriculum_commands_enabled: bool = False
     curriculum_start_level: int = 1
     curriculum_target_level: int | None = None
     curriculum_profile: str = "normal"
@@ -250,7 +251,9 @@ class AutoDancerSupervisor:
         environment["AUTODANCER_PIPE"] = transport.name
         environment["AUTODANCER_QUALIFICATION"] = (
             "1"
-            if self.config.qualification_mode or self.config.curriculum_start_level > 1
+            if self.config.qualification_mode
+            or self.config.curriculum_commands_enabled
+            or self.config.curriculum_start_level > 1
             else "0"
         )
         return subprocess.Popen(

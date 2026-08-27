@@ -23,8 +23,12 @@ class FakeEnvironment:
         self.slot = slot
         self.fail_once = fail_once
 
-    def reset(self, *, seed: int):
-        return observation(self.slot), {"seed": seed, "episode_status": "running"}
+    def reset(self, *, seed: int, options=None):
+        return observation(self.slot), {
+            "seed": seed,
+            "episode_status": "running",
+            "options": options,
+        }
 
     def step(self, action: int):
         if self.fail_once:
@@ -74,9 +78,14 @@ class FakeSupervisor:
 def test_vector_env_preserves_slot_order_and_replaces_failed_worker() -> None:
     supervisor = FakeSupervisor()
     environment = AutoDancerVectorEnv(supervisor)  # type: ignore[arg-type]
-    reset_observation, infos = environment.reset([11, 22])
+    reset_options = [
+        {"curriculum": {"id": "left"}},
+        {"curriculum": {"id": "right"}},
+    ]
+    reset_observation, infos = environment.reset([11, 22], options=reset_options)
     assert reset_observation["player"][:, 0].tolist() == [0, 1]
     assert [info["seed"] for info in infos] == [11, 22]
+    assert [info["options"] for info in infos] == reset_options
 
     with pytest.raises(VectorInfrastructureError, match="worker-0001"):
         environment.step([3, 4])

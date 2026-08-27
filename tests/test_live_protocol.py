@@ -311,6 +311,52 @@ def test_curriculum_profile_is_routed_only_to_the_start_floor() -> None:
     assert info["curriculum_profile"] == "boss1hp-player20"
 
 
+def test_per_episode_reset_options_override_fixed_defaults_and_are_reported() -> None:
+    sender = FakeBridge()
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                goto_record(1, 2, 1, 2),
+                goto_record(2, 3, 1, 3),
+                goto_record(3, 4, 1, 4, "boss1hp-player10"),
+            ]
+        ),
+        bridge=sender,
+    )
+    _, info = environment.reset(
+        seed=7,
+        options={
+            "curriculum": {
+                "id": "reduced",
+                "start_level": 4,
+                "target_level": 5,
+                "profile": "boss1hp-player10",
+            }
+        },
+    )
+    assert sender.gotos == [2, 3, 4]
+    assert sender.goto_profiles == [None, None, "boss1hp-player10"]
+    assert info["curriculum_reset_id"] == "reduced"
+    assert info["curriculum_reset"] == {
+        "id": "reduced",
+        "start_level": 4,
+        "target_level": 5,
+        "profile": "boss1hp-player10",
+    }
+
+
+def test_live_reset_rejects_unknown_options_before_sending_a_command() -> None:
+    sender = FakeBridge()
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource([]),
+        bridge=sender,
+    )
+    with pytest.raises(ValueError, match="unknown live reset options"):
+        environment.reset(seed=7, options={"surprise": True})
+    assert sender.restarts == 0
+
+
 def test_live_environment_scores_actual_health_loss_not_raw_attack_damage() -> None:
     reset_record = record(0, "reset")
     turn_record = record(

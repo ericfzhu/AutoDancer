@@ -624,22 +624,28 @@ replaying mastered starts; demonstrate unassisted boss completion on multiple
 unseen boss seeds; then move the start backward to Floor 3, Floor 2, and normal
 Floor 1. A stage may advance only on gameplay success, never shaped return.
 
-The current Python reset API cannot yet execute that replay mixture. The live
-environment discards Gymnasium reset `options`, the supervisor constructs every
-worker with one fixed start level/profile, and the asynchronous actor supplies
-only the next seed. Before the first mixed-stage experiment, add a validated
-per-episode reset specification containing game seed, start level, target level,
-and assistance profile. The actor—not Lua—should draw this specification from a
-versioned curriculum sampler using a deterministic stream keyed by training
-seed, worker slot, policy version, and episode index. Checkpoints must preserve
-the sampler state and accumulated per-start outcomes exactly. Reset telemetry
-must acknowledge the complete specification, and rollout metadata must retain it
-for every transition so a worker restart cannot silently change the training
-distribution. Evaluation must bypass the sampler and supply an explicit fixed
-unassisted specification. This is a prerequisite for old-start replay and
-competence-based selection; running separate fixed-profile jobs and warm-starting
-between them is not equivalent because it provides no within-update protection
-against forgetting.
+This reset-distribution prerequisite is now implemented as
+`mixed-curriculum-replay-v1`. The live environment validates Gymnasium reset
+`options`; every episode carries an identified start level, target level, and
+assistance profile; and each actor slot draws from an independent deterministic
+weighted stream. Checkpoints preserve the exact sampler RNG, draw counts,
+selection counts, and outcome counts. Rollout episode metadata retains the full
+reset specification. An infrastructure replacement replays the failed episode's
+same game seed and reset specification without counting the fault as an outcome
+or silently changing the training distribution. Fixed-profile evaluation bypasses
+the sampler. The distribution stream is keyed by training seed and worker slot;
+it deliberately does not depend on actor timing or policy-update boundaries.
+Running separate fixed-profile jobs and warm-starting between them remains
+non-equivalent because it provides no within-update protection against forgetting.
+
+EXP-0016 supplied the missing acquisition evidence: three independent assisted
+Death Metal trials produced 65 Zone 2 entries in 108 held-out episodes (60.2
+percent), and every one of 12 unseen boss seeds succeeded in at least one policy
+trial with exact controller validity and zero restarts. Seed 68002 was selected
+by the predeclared ordering (25/36, 69.4 percent). This proves only the
+`boss1hp-player20` subskill. It authorizes a separately declared player-health
+reduction stage with mastered-start replay; it does not promote the policy as a
+normal-start Zone 2 agent.
 
 Assistance application also needs stronger evidence and narrower targeting. The
 current Lua profile runs immediately before the first assisted observation, so a

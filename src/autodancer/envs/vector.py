@@ -45,13 +45,26 @@ class AutoDancerVectorEnv:
         }
 
     def reset(
-        self, seeds: list[int] | np.ndarray
+        self,
+        seeds: list[int] | np.ndarray,
+        options: list[dict[str, Any] | None] | None = None,
     ) -> tuple[dict[str, np.ndarray], list[dict[str, Any]]]:
         if len(seeds) != self.num_envs:
             raise ValueError(f"Expected {self.num_envs} seeds, received {len(seeds)}")
+        reset_options = [None] * self.num_envs if options is None else options
+        if len(reset_options) != self.num_envs:
+            raise ValueError(
+                f"Expected {self.num_envs} reset options, received {len(reset_options)}"
+            )
         futures = [
-            self._executor.submit(self.environments[worker_id].reset, seed=int(seed))
-            for worker_id, seed in zip(self.worker_ids, seeds, strict=True)
+            self._executor.submit(
+                self.environments[worker_id].reset,
+                seed=int(seed),
+                options=worker_options,
+            )
+            for worker_id, seed, worker_options in zip(
+                self.worker_ids, seeds, reset_options, strict=True
+            )
         ]
         results = []
         for index, future in enumerate(futures):
@@ -63,7 +76,8 @@ class AutoDancerVectorEnv:
                 results.append(
                     self.recover(
                         index,
-                        secrets.randbelow(2**31),
+                        int(seeds[index]),
+                        options=reset_options[index],
                         failure=self._failure(index, error, operation="reset"),
                     )
                 )
@@ -119,19 +133,30 @@ class AutoDancerVectorEnv:
         )
 
     def reset_at(
-        self, indices: list[int], seeds: list[int]
+        self,
+        indices: list[int],
+        seeds: list[int],
+        options: list[dict[str, Any] | None] | None = None,
     ) -> list[tuple[dict[str, np.ndarray], dict[str, Any]]]:
         if len(indices) != len(seeds):
             raise ValueError("indices and seeds must have the same length")
+        reset_options = [None] * len(indices) if options is None else options
+        if len(reset_options) != len(indices):
+            raise ValueError("indices and reset options must have the same length")
         futures = [
             self._executor.submit(
                 self.environments[self.worker_ids[index]].reset,
                 seed=int(seed),
+                options=worker_options,
             )
-            for index, seed in zip(indices, seeds, strict=True)
+            for index, seed, worker_options in zip(
+                indices, seeds, reset_options, strict=True
+            )
         ]
         results = []
-        for index, seed, future in zip(indices, seeds, futures, strict=True):
+        for index, seed, worker_options, future in zip(
+            indices, seeds, reset_options, futures, strict=True
+        ):
             try:
                 results.append(future.result())
             except MapCapacityError:
@@ -141,6 +166,7 @@ class AutoDancerVectorEnv:
                     self.recover(
                         index,
                         int(seed),
+                        options=worker_options,
                         failure=self._failure(index, error, operation="reset_at"),
                     )
                 )
@@ -172,6 +198,7 @@ class AutoDancerVectorEnv:
         worker_index: int,
         seed: int,
         *,
+        options: dict[str, Any] | None = None,
         failure: dict[str, Any] | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         worker_id = self.worker_ids[worker_index]
@@ -179,7 +206,7 @@ class AutoDancerVectorEnv:
         self.environments[worker_id].close()
         environment = self.supervisor.environment(worker_id)
         self.environments[worker_id] = environment
-        return environment.reset(seed=seed)
+        return environment.reset(seed=seed, options=options)
 
     def close(self) -> None:
         self._executor.shutdown(wait=True, cancel_futures=True)

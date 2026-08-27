@@ -20,6 +20,7 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
+from autodancer.curriculum import EpisodeResetSpec
 from autodancer.live.bridge import (
     CURRICULUM_PROFILES,
     ActionBridge,
@@ -102,6 +103,13 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             raise ValueError("curriculum_target_level must be after curriculum_start_level")
         if self.attach_existing and self.curriculum_start_level != 1:
             raise ValueError("attach_existing cannot perform a curriculum level start")
+        self._default_reset_spec = EpisodeResetSpec(
+            "fixed",
+            self.curriculum_start_level,
+            self.curriculum_target_level,
+            self.curriculum_profile,
+        )
+        self._active_reset_spec = self._default_reset_spec
         self.action_space = gym.spaces.Discrete(ACTION_COUNT)
         self.observation_space = observation_space()
         self._last_observation: dict[str, np.ndarray] | None = None
@@ -126,7 +134,10 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         options: dict[str, Any] | None = None,
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         super().reset(seed=seed)
-        del options
+        reset_spec = self._resolve_reset_spec(options)
+        if self.attach_existing and reset_spec.start_level != 1:
+            raise ValueError("attach_existing cannot perform a curriculum level start")
+        self._active_reset_spec = reset_spec
         source, bridge = self._dependencies()
         self.map_memory.reset()
         source.reset_sequence()
@@ -159,24 +170,39 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._episode_seed = int(record.get("seed", 0))
         self._run_id = str(record["run_id"])
         observation, info = self._accept_record(record)
-        if self.curriculum_start_level > 1:
-            for target_level in range(2, self.curriculum_start_level + 1):
+        if reset_spec.start_level > 1:
+            for target_level in range(2, reset_spec.start_level + 1):
                 profile = (
-                    self.curriculum_profile
-                    if target_level == self.curriculum_start_level
-                    and self.curriculum_profile != "normal"
+                    reset_spec.profile
+                    if target_level == reset_spec.start_level
+                    and reset_spec.profile != "normal"
                     else None
                 )
                 observation, info = self._goto_level(target_level, profile)
         if not self.attach_existing:
             info["reset_latency_seconds"] = time.monotonic() - command_started
-        info["curriculum_start_level"] = self.curriculum_start_level
-        info["curriculum_target_level"] = self.curriculum_target_level
-        info["curriculum_profile"] = self.curriculum_profile
+        info["curriculum_reset"] = reset_spec.as_dict()
+        info["curriculum_reset_id"] = reset_spec.id
+        info["curriculum_start_level"] = reset_spec.start_level
+        info["curriculum_target_level"] = reset_spec.target_level
+        info["curriculum_profile"] = reset_spec.profile
         self.reward_tracker.reset(observation, info)
         if self.progress_callback is not None:
             self.progress_callback(info)
         return observation, info
+
+    def _resolve_reset_spec(self, options: dict[str, Any] | None) -> EpisodeResetSpec:
+        if options is None:
+            return self._default_reset_spec
+        unknown = set(options) - {"curriculum"}
+        if unknown:
+            raise ValueError(f"unknown live reset options: {sorted(unknown)}")
+        value = options.get("curriculum")
+        if value is None:
+            return self._default_reset_spec
+        if not isinstance(value, dict):
+            raise ValueError("reset option 'curriculum' must be an object")
+        return EpisodeResetSpec.from_mapping(value)
 
     def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         if self._episode_done:
@@ -209,6 +235,11 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             raise ProtocolError("Run ID changed while awaiting an action acknowledgement")
 
         observation, info = self._accept_record(record)
+        info["curriculum_reset"] = self._active_reset_spec.as_dict()
+        info["curriculum_reset_id"] = self._active_reset_spec.id
+        info["curriculum_start_level"] = self._active_reset_spec.start_level
+        info["curriculum_target_level"] = self._active_reset_spec.target_level
+        info["curriculum_profile"] = self._active_reset_spec.profile
         self._episode_steps += 1
         events = [dict(event) for event in record.get("events", [])]
         if previous_observation is not None:
@@ -223,15 +254,17 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             int(info.get("zone") or 0), int(info.get("floor") or 0)
         )
         curriculum_complete = bool(
-            self.curriculum_target_level is not None
-            and current_level >= self.curriculum_target_level
+            self._active_reset_spec.target_level is not None
+            and current_level >= self._active_reset_spec.target_level
         )
         if curriculum_complete and not terminated and not truncated:
             terminated = True
             status = "curriculum_complete"
             info["episode_status"] = status
             info["curriculum_completed"] = True
-            info["curriculum_target_level"] = self.curriculum_target_level
+            info["curriculum_reset"] = self._active_reset_spec.as_dict()
+            info["curriculum_reset_id"] = self._active_reset_spec.id
+            info["curriculum_target_level"] = self._active_reset_spec.target_level
         if not terminated and not truncated and self._episode_steps >= self.max_turns:
             truncated = True
             status = "time_limit"

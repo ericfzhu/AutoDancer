@@ -14,6 +14,12 @@ import torch
 from torch import Tensor
 from torch.distributions import Categorical
 
+from autodancer.curriculum import (
+    EpisodeCurriculumSchedule,
+    EpisodeResetSpec,
+    WeightedResetSpec,
+    fixed_reset_spec,
+)
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
 from autodancer.progress import deeper_level
@@ -28,6 +34,9 @@ class ActorState:
     observation: dict[str, np.ndarray]
     info: dict[str, Any]
     hidden: Tensor
+    reset_spec: EpisodeResetSpec = field(
+        default_factory=lambda: EpisodeResetSpec("fixed", 1, None, "normal")
+    )
     previous_action: int = START_ACTION
     previous_reward: float = 0.0
     episode_start: bool = True
@@ -204,6 +213,8 @@ class VersionedAsyncRolloutCollector:
         initial_policy_version: int = 0,
         training_seed_pool: tuple[int, ...] = (),
         seed_schedule_state: dict[str, Any] | None = None,
+        curriculum_entries: tuple[WeightedResetSpec, ...] = (),
+        curriculum_schedule_state: dict[str, Any] | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -220,8 +231,16 @@ class VersionedAsyncRolloutCollector:
         )
         if seed_schedule_state is not None:
             self.seed_schedule.load_state_dict(seed_schedule_state)
+        selected_entries = curriculum_entries or fixed_reset_spec(1, None, "normal")
+        self.curriculum_schedule = EpisodeCurriculumSchedule(
+            int(seed), environment.num_envs, tuple(selected_entries)
+        )
+        if curriculum_schedule_state is not None:
+            self.curriculum_schedule.load_state_dict(curriculum_schedule_state)
+        initial_resets = [self._next_reset(i) for i in range(environment.num_envs)]
         observations, infos = environment.reset(
-            [self._seed(i) for i in range(environment.num_envs)]
+            [item[0] for item in initial_resets],
+            options=[item[1].reset_options() for item in initial_resets],
         )
         observations = self.contract_memory.reset_batch(observations)
         initial_hidden = model.initial_state(environment.num_envs, device=device)
@@ -230,6 +249,7 @@ class VersionedAsyncRolloutCollector:
                 {key: value[index].copy() for key, value in observations.items()},
                 infos[index],
                 initial_hidden[index : index + 1],
+                initial_resets[index][1],
             )
             for index in range(environment.num_envs)
         ]
@@ -259,8 +279,14 @@ class VersionedAsyncRolloutCollector:
     def _seed(self, index: int) -> int:
         return self.seed_schedule.next(index)
 
+    def _next_reset(self, index: int) -> tuple[int, EpisodeResetSpec]:
+        return self._seed(index), self.curriculum_schedule.next(index)
+
     def seed_schedule_state(self) -> dict[str, Any]:
         return self.seed_schedule.state_dict()
+
+    def curriculum_schedule_state(self) -> dict[str, Any]:
+        return self.curriculum_schedule.state_dict()
 
     def collect(self, length: int) -> RolloutBatch:
         with self._recovery_lock:
@@ -407,13 +433,17 @@ class VersionedAsyncRolloutCollector:
                     },
                 )
                 observation, info = self.environment.recover(
-                    index, self._seed(index), failure=failure
+                    index,
+                    int(state.info.get("seed", 0)),
+                    options=state.reset_spec.reset_options(),
+                    failure=failure,
                 )
                 observation = self.contract_memory.reset_slot(index, observation)
                 self.states[index] = ActorState(
                     observation,
                     info,
                     self.model.initial_state(1, device=self.device),
+                    state.reset_spec,
                 )
                 self._publish_telemetry(index, observation, info, None, None)
 
@@ -558,9 +588,18 @@ class VersionedAsyncRolloutCollector:
                         "boss_type": state.boss_type,
                         "turns": info.get("turns"),
                         "events": state.episode_events,
+                        "curriculum_reset": state.reset_spec.as_dict(),
+                        "curriculum_reset_id": state.reset_spec.id,
                     }
                 )
-                next_observation, next_info = worker.reset(seed=self._seed(index))
+                self.curriculum_schedule.record_outcome(
+                    state.reset_spec, str(info.get("episode_status", "unknown"))
+                )
+                next_seed, next_spec = self._next_reset(index)
+                next_observation, next_info = worker.reset(
+                    seed=next_seed,
+                    options=next_spec.reset_options(),
+                )
                 next_observation = self.contract_memory.reset_slot(
                     index, next_observation
                 )
@@ -568,6 +607,7 @@ class VersionedAsyncRolloutCollector:
                     next_observation,
                     next_info,
                     self.model.initial_state(1, device=self.device),
+                    next_spec,
                 )
             else:
                 state.observation = next_observation
