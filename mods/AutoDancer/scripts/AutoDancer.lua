@@ -165,6 +165,14 @@ local function currentLevelIdentity()
         .. ":" .. tostring(CurrentLevel.getSequentialNumber())
 end
 
+local function observationReady()
+    local player = Player.getPlayerEntity(1)
+    return player ~= nil
+        and player.position ~= nil
+        and Tile.exists(player.position.x, player.position.y)
+        and Vision.isVisible(player.position.x, player.position.y)
+end
+
 local function playerHasMap(player)
     local slots = player.inventory and player.inventory.itemSlots or {}
     for _, slot in pairs(slots) do
@@ -835,7 +843,7 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
 end
 
 local function emitTurn()
-    if CurrentLevel.isLoading() or CurrentLevel.isLobby() then
+    if CurrentLevel.isLoading() or CurrentLevel.isLobby() or not observationReady() then
         return
     end
     -- Establish the new run before consuming RESET. GameSession can emit a
@@ -967,8 +975,7 @@ event.tick.add("emitAutoDancerInitialObservation", {
     order = "input",
     sequence = -100,
 }, function()
-    local player = Player.getPlayerEntity(1)
-    if player and not CurrentLevel.isLoading() and not CurrentLevel.isLobby() then
+    if observationReady() and not CurrentLevel.isLoading() and not CurrentLevel.isLobby() then
         local levelIdentity = tostring(CurrentLevel.getSeed())
             .. ":" .. tostring(CurrentLevel.getUniqueID())
             .. ":" .. tostring(CurrentLevel.getSequentialNumber())

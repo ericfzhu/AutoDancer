@@ -14,6 +14,8 @@ local Player = require "necro.game.character.Player"
 local PlayerList = require "necro.client.PlayerList"
 local Resources = require "necro.client.Resources"
 local SinglePlayer = require "necro.client.SinglePlayer"
+local Tile = require "necro.game.tile.Tile"
+local Vision = require "necro.game.vision.Vision"
 local Native = require "system.game.AutoDancerNative"
 
 local Bridge = {}
@@ -88,12 +90,21 @@ local function levelIdentity()
         .. ":" .. tostring(CurrentLevel.getSequentialNumber())
 end
 
+local function worldReady()
+    local player = Player.getPlayerEntity(1)
+    return player ~= nil
+        and player.position ~= nil
+        and Tile.exists(player.position.x, player.position.y)
+        and Vision.isVisible(player.position.x, player.position.y)
+end
+
 local function engineState()
     return "{\"tick\":" .. tostring(tickCount)
         .. ",\"loading\":" .. boolean(CurrentLevel.isLoading())
         .. ",\"lobby\":" .. boolean(CurrentLevel.isLobby())
         .. ",\"cutscene\":" .. boolean(Cutscene.isActive())
         .. ",\"player_available\":" .. boolean(Player.getPlayerEntity(1) ~= nil)
+        .. ",\"world_ready\":" .. boolean(worldReady())
         .. ",\"single_player\":" .. boolean(SinglePlayer.isActive())
         .. ",\"logged_in\":" .. boolean(GameClient.isLoggedIn())
         .. ",\"resources_ready\":" .. boolean(Resources.isResourceListReady())
@@ -188,6 +199,8 @@ local function playableReason()
         return "lobby"
     elseif Player.getPlayerEntity(1) == nil then
         return "missing_player"
+    elseif not worldReady() then
+        return "world_not_ready"
     elseif pending then
         return "command_pending"
     end

@@ -871,3 +871,18 @@ def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
     consume = telemetry.index("Bridge.consumeCompletedCommand(newRun)", begin)
     assert begin < consume
     assert 'completed.kind == "RESET" and not allowReset' in bridge
+
+
+def test_lua_waits_for_a_materialized_visible_world_before_reset_or_action() -> None:
+    root = Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts"
+    telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")
+    bridge = (root / "Bridge.lua").read_text(encoding="utf-8")
+
+    emit_turn = telemetry.index("local function emitTurn")
+    begin_run = telemetry.index("local newRun = beginRunIfNeeded()", emit_turn)
+    readiness_gate = telemetry.index("not observationReady()", emit_turn)
+    assert readiness_gate < begin_run
+    assert "Tile.exists(player.position.x, player.position.y)" in telemetry
+    assert "Vision.isVisible(player.position.x, player.position.y)" in telemetry
+    assert 'return "world_not_ready"' in bridge
+    assert r'\"world_ready\"' in bridge
