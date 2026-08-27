@@ -164,6 +164,9 @@ def goto_record(
     }
     if profile is not None:
         payload["bridge"]["curriculum_profile"] = profile
+        expected_health = int(profile.rsplit("player", 1)[1])
+        payload["observation"]["player"][PlayerFeature.HEALTH] = expected_health
+        payload["observation"]["player"][PlayerFeature.MAX_HEALTH] = expected_health
     return payload
 
 
@@ -309,6 +312,32 @@ def test_curriculum_profile_is_routed_only_to_the_start_floor() -> None:
     assert sender.gotos == [2, 3, 4]
     assert sender.goto_profiles == [None, None, "boss1hp-player20"]
     assert info["curriculum_profile"] == "boss1hp-player20"
+    assert info["curriculum_observed_player_health"] == 20
+    assert info["curriculum_observed_player_max_health"] == 20
+
+
+def test_curriculum_profile_rejects_unapplied_player_health() -> None:
+    sender = FakeBridge()
+    assisted = goto_record(3, 4, 1, 4, "boss1hp-player8")
+    assisted["observation"]["player"][PlayerFeature.HEALTH] = 6
+    assisted["observation"]["player"][PlayerFeature.MAX_HEALTH] = 6
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                goto_record(1, 2, 1, 2),
+                goto_record(2, 3, 1, 3),
+                assisted,
+            ]
+        ),
+        bridge=sender,
+        curriculum_start_level=4,
+        curriculum_target_level=5,
+        curriculum_profile="boss1hp-player8",
+    )
+
+    with pytest.raises(ProtocolError, match="application mismatch"):
+        environment.reset(seed=7)
 
 
 def test_per_episode_reset_options_override_fixed_defaults_and_are_reported() -> None:

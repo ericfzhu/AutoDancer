@@ -179,6 +179,24 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                     else None
                 )
                 observation, info = self._goto_level(target_level, profile)
+        if reset_spec.profile != "normal":
+            expected_health = int(reset_spec.profile.rsplit("player", 1)[1])
+            observed_health = int(observation["player"][PlayerFeature.HEALTH])
+            observed_max_health = int(
+                observation["player"][PlayerFeature.MAX_HEALTH]
+            )
+            if (observed_health, observed_max_health) != (
+                expected_health,
+                expected_health,
+            ):
+                raise ProtocolError(
+                    "Curriculum profile application mismatch: "
+                    f"{reset_spec.profile} requires player health "
+                    f"{expected_health}/{expected_health}, received "
+                    f"{observed_health}/{observed_max_health}"
+                )
+            info["curriculum_observed_player_health"] = observed_health
+            info["curriculum_observed_player_max_health"] = observed_max_health
         if not self.attach_existing:
             info["reset_latency_seconds"] = time.monotonic() - command_started
         info["curriculum_reset"] = reset_spec.as_dict()
