@@ -599,6 +599,25 @@ dimensions, defaulting to unmodified adds unless an experiment explicitly
 declares otherwise. The learner must use the observed applied values—not merely
 the requested profile label—for curriculum identity and lineage validation.
 
+The observation audit introduces a stage-specific architecture requirement.
+A2 sees local actor identity, current/max health, items, traps, and the boss type,
+so the one-hit acquisition task is observable. It does not encode the already
+available facing, beat delay/interval, frozen/confused timers, charge and shield
+directions, tell animation, or explosive state. Those signals become important
+when a boss survives long enough to expose its timing phases. A8 can read them,
+but it also introduced persistent map, extended player, and expanded inventory
+paths; its broad-task rejection does not isolate the value of combat timing.
+
+If EXP-0016 acquires the finishing subskill but the first boss-health increase
+does not transfer, the next architecture experiment should compare A2 against a
+function-identical, zero-projected **tactical-only** residual on the same boss,
+seed pool, assistance mixture, reward, and budget. Keep the A2 base frozen during
+the declared adapter warm-up and require representation influence plus held-out
+multi-hit completion—not activity or shaped return. Do not include persistent
+map inputs in that boss-local test. Map-aware navigation should remain a separate
+floor-stage or option-policy question so combat information and strategic memory
+are not confounded again.
+
 ## When to replace flat PPO with temporal abstraction
 
 The normal-start Zone 2 objective has a natural event hierarchy that the live
