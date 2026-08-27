@@ -17,6 +17,7 @@ from autodancer.constants import (
     PLAYER_FEATURES,
     Action,
     GridChannel,
+    MapChannel,
     Terrain,
 )
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
@@ -291,6 +292,81 @@ def test_async_collector_applies_episode_local_known_wall_memory() -> None:
     assert collector.last_runtime_metrics["mean_masked_directions"] == 1
     assert collector.last_runtime_metrics["mean_effective_masked_directions"] == 1
     assert collector.last_runtime_metrics["navigation_prior_rate"] == 0
+
+
+def test_navigation_prior_mask_and_log_probability_are_collected_on_policy() -> None:
+    environment = AsyncEnvironment()
+
+    def guided_observation(slot: int) -> dict[str, np.ndarray]:
+        result = observation(slot)
+        centre = MAP_SIZE // 2
+        # UP is the only least-visited direction, so the contract must constrain
+        # sampling before inference rather than replace the sampled action later.
+        result["map_memory"][centre - 1, centre, MapChannel.VISIT_COUNT] = 0
+        result["map_memory"][centre, centre + 1, MapChannel.VISIT_COUNT] = 3
+        result["map_memory"][centre + 1, centre, MapChannel.VISIT_COUNT] = 3
+        result["map_memory"][centre, centre - 1, MapChannel.VISIT_COUNT] = 3
+        return result
+
+    for slot, worker_id in enumerate(environment.worker_ids):
+        worker = environment.environments[worker_id]
+        worker.reset = (  # type: ignore[method-assign]
+            lambda *, seed, slot=slot: (
+                guided_observation(slot),
+                {"seed": seed, "episode_status": "running"},
+            )
+        )
+
+        def step(_action: int, *, slot: int = slot):
+            return (
+                guided_observation(slot),
+                0.0,
+                False,
+                False,
+                {
+                    "episode_status": "running",
+                    "zone": 1,
+                    "floor": 1,
+                    "action_outcome": {"category": "move"},
+                },
+            )
+
+        worker.step = step  # type: ignore[method-assign]
+
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+        # The unconstrained policy overwhelmingly prefers RIGHT. If the prior
+        # were a post-sampling override, the stored likelihood would expose it.
+        model.actor[-1].bias[int(Action.RIGHT)] = 20.0
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=9,
+        batch_delay=0.001,
+        action_contract="map-navigation-prior-v1",
+    )
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+
+    assert torch.all(rollout.actions == int(Action.UP))
+    assert torch.all(rollout.observations["action_mask"][..., int(Action.UP)] == 1)
+    assert torch.all(rollout.observations["action_mask"][..., int(Action.RIGHT)] == 0)
+    # Exactly one action is legal, hence its categorical probability is one.
+    assert torch.allclose(rollout.old_log_probs, torch.zeros_like(rollout.old_log_probs))
 
 
 def test_async_collector_bootstraps_truncation_from_terminal_observation() -> None:
