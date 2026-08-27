@@ -22,7 +22,16 @@ def _success(result: dict[str, Any]) -> bool:
     )
 
 
-def compare_player10_transfer(root: Path) -> dict[str, Any]:
+def compare_assistance_transfer(
+    root: Path,
+    *,
+    experiment_id: str,
+    profile: str,
+    modes: tuple[tuple[str, str, int], ...],
+    pass_decision: str,
+    fail_decision: str,
+    selected_checkpoint: str,
+) -> dict[str, Any]:
     selection = json.loads((root / "heldout-selection.json").read_text(encoding="utf-8-sig"))
     expected_seeds = [int(seed) for seed in selection["seeds"]]
     if len(expected_seeds) != 24 or len(set(expected_seeds)) != 24:
@@ -35,7 +44,7 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
     controller_valid = True
     deterministic_rate = 0.0
     warnings: list[dict[str, Any]] = []
-    for name, expected_mode, expected_policy_seed in MODES:
+    for name, expected_mode, expected_policy_seed in modes:
         report = json.loads(
             (root / name / "report.json").read_text(encoding="utf-8")
         )
@@ -48,7 +57,7 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
         valid = valid and int(report.get("policy_seed", -1)) == expected_policy_seed
         valid = valid and int(report.get("curriculum_start_level", 0)) == 4
         valid = valid and int(report.get("curriculum_target_level", 0)) == 5
-        valid = valid and report.get("curriculum_profile") == "boss1hp-player10"
+        valid = valid and report.get("curriculum_profile") == profile
         valid = valid and result_seeds == expected_seeds
         successes = [result for result in results if _success(result)]
         deaths = sum(str(result.get("status")) == "dead" for result in results)
@@ -92,7 +101,7 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
     )
     result = {
         "schema_version": 1,
-        "experiment_id": "EXP-0017",
+        "experiment_id": experiment_id,
         "created_at": datetime.now(UTC).isoformat(),
         "reports": reports,
         "sampled_aggregate": {
@@ -107,10 +116,10 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
         "controller_valid": controller_valid,
         "passed": passed,
         "decision": (
-            "retain_parent_and_advance_to_player6" if passed else "run_mixed_player10_replay"
+            pass_decision if passed else fail_decision
         ),
         "selected_checkpoint": (
-            "runs/assisted-death-metal/training/seed-68002/final.pt" if passed else None
+            selected_checkpoint if passed else None
         ),
         "normal_start_promotable": False,
         "diagnostic_warnings": warnings,
@@ -119,6 +128,18 @@ def compare_player10_transfer(root: Path) -> dict[str, Any]:
     temporary.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     temporary.replace(root / "comparison.json")
     return result
+
+
+def compare_player10_transfer(root: Path) -> dict[str, Any]:
+    return compare_assistance_transfer(
+        root,
+        experiment_id="EXP-0017",
+        profile="boss1hp-player10",
+        modes=MODES,
+        pass_decision="retain_parent_and_advance_to_player6",
+        fail_decision="run_mixed_player10_replay",
+        selected_checkpoint="runs/assisted-death-metal/training/seed-68002/final.pt",
+    )
 
 
 def main() -> int:
