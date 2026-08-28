@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 from dataclasses import asdict, dataclass
@@ -13,6 +14,14 @@ import torch
 from torch import Tensor
 
 from autodancer.training.model import PolicyModel, current_representation_gradient_norms
+
+
+def _checkpoint_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +337,7 @@ class RecurrentPPO:
                 )
             provenance = {
                 "path": str(path.resolve()),
+                "sha256": _checkpoint_sha256(path),
                 "global_step": int(payload.get("global_step", 0)),
                 "updates": int(payload.get("updates", 0)),
                 "reward": payload.get("checkpoint_metadata", {}).get("reward"),
@@ -366,6 +376,7 @@ class RecurrentPPO:
                 raise ValueError("Architecture-2 checkpoint did not exactly populate A7 base")
             provenance = {
                 "path": str(path.resolve()),
+                "sha256": _checkpoint_sha256(path),
                 "global_step": int(payload.get("global_step", 0)),
                 "updates": int(payload.get("updates", 0)),
                 "reward": payload.get("checkpoint_metadata", {}).get("reward"),
@@ -453,6 +464,7 @@ class RecurrentPPO:
             raise ValueError("Initialization checkpoint did not match policy parameters")
         provenance = {
             "path": str(path.resolve()),
+            "sha256": _checkpoint_sha256(path),
             "global_step": int(payload.get("global_step", 0)),
             "updates": int(payload.get("updates", 0)),
             "reward": payload.get("checkpoint_metadata", {}).get("reward"),
@@ -512,6 +524,7 @@ class RecurrentPPO:
             raise ValueError("Fine-tune checkpoint architecture is incompatible with target")
         provenance = {
             "path": str(path.resolve()),
+            "sha256": _checkpoint_sha256(path),
             "global_step": int(payload.get("global_step", 0)),
             "updates": int(payload.get("updates", 0)),
             "reward": payload.get("checkpoint_metadata", {}).get("reward"),

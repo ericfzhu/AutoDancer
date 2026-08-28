@@ -991,6 +991,9 @@ coverage auditable: aggregate transition counts alone cannot prove that every
 procedural level was seen, especially when episode lengths differ. Checkpoints
 resumed from older schedule metadata explicitly retain their unassignable prior
 draws as `unattributed_draws` rather than fabricating per-seed history.
+Warm-start and fine-tune provenance likewise binds the initializer by SHA-256,
+not only by a mutable filesystem path, so a descendant checkpoint remains
+independently attributable after either artifact is moved.
 
 The fixed `80/20` new-stage/mastered-stage mixture in EXP-0019 is consequently a
 controlled first arm, not an assumed optimum. Prioritized Level Replay finds that

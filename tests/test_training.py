@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import random
 from pathlib import Path
 
@@ -203,6 +204,7 @@ def test_checkpoint_warm_start_transfers_policy_but_resets_critic(tmp_path: Path
         if name.startswith("critic.")
     }
     provenance = target.initialize_from(path)
+    assert provenance["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     for name, value in target.model.state_dict().items():
         if name.startswith("critic."):
             assert torch.equal(value, critic_before[name])
@@ -405,6 +407,7 @@ def test_architecture_eight_finetune_preserves_a2_then_opens_adapter(tmp_path: P
         device=torch.device("cpu"),
     )
     provenance = algorithm.initialize_for_finetune(path)
+    assert provenance["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     value = {key: tensor[0] for key, tensor in observations(1, 2).items()}
     value["grid"][..., int(GridChannel.FACING) :] = 2
     value["map_memory"].fill_(1)
