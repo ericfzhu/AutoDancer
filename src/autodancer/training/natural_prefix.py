@@ -52,6 +52,7 @@ class NaturalPrefixConfig:
     target_phase: int = 4
     max_guide_turns: int = 512
     max_attempts: int = 8
+    max_failed_seeds_per_fragment: int = 16
     deterministic_guide: bool = False
     guide_policy_seed: int = 0
     recurrent_state_mode: str = "fresh"
@@ -61,7 +62,11 @@ class NaturalPrefixConfig:
             raise ValueError("The first natural-prefix contract supports Death Metal only")
         if self.target_phase not in {2, 3, 4}:
             raise ValueError("target_phase must be 2, 3, or 4")
-        if self.max_guide_turns <= 0 or self.max_attempts <= 0:
+        if (
+            self.max_guide_turns <= 0
+            or self.max_attempts <= 0
+            or self.max_failed_seeds_per_fragment <= 0
+        ):
             raise ValueError("natural-prefix turn and attempt limits must be positive")
         if self.recurrent_state_mode not in NATURAL_PREFIX_RECURRENT_MODES:
             raise ValueError(

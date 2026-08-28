@@ -1316,6 +1316,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             target_phase=arguments.natural_prefix_target_phase,
             max_guide_turns=arguments.natural_prefix_max_turns,
             max_attempts=arguments.natural_prefix_max_attempts,
+            max_failed_seeds_per_fragment=arguments.natural_prefix_max_failed_seeds,
             deterministic_guide=arguments.natural_prefix_guide_mode == "deterministic",
             guide_policy_seed=arguments.natural_prefix_policy_seed,
             recurrent_state_mode=arguments.natural_prefix_recurrent_state,
@@ -1631,6 +1632,7 @@ def main() -> int:
     parser.add_argument("--natural-prefix-target-phase", type=int, choices=(2, 3, 4), default=4)
     parser.add_argument("--natural-prefix-max-turns", type=int, default=512)
     parser.add_argument("--natural-prefix-max-attempts", type=int, default=8)
+    parser.add_argument("--natural-prefix-max-failed-seeds", type=int, default=16)
     parser.add_argument(
         "--natural-prefix-guide-mode",
         choices=("deterministic", "stochastic"),

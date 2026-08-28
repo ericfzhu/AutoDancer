@@ -857,6 +857,19 @@ metrics, or curriculum outcomes. Training and deterministic evaluation share
 the same boundary and replay the original seed after infrastructure failure.
 Fresh and prefix-warmed recurrent modes are explicit checkpoint metadata.
 
+The training-side failure path is now symmetric with evaluation. Previously,
+the evaluator retained a `prefix_failed` result, but the asynchronous PPO
+collector raised `NaturalPrefixError` on the first seed the frozen guide could
+not acquire. That made any partially competent guide unusable even though the
+declared acquisition gate intentionally allows failures. The collector now
+records the failed seed and boundary evidence with zero learner turns, zero
+reward, and no PPO tensors; advances the deterministic seed schedule; and keeps
+collecting until it has the requested number of genuine learner transitions.
+A versioned consecutive-failure budget stops clearly if the guide cannot supply
+a usable start distribution. Failure skips and their guide-action cost are
+therefore observable without fabricating experience or silently conditioning
+the evaluation denominator on successful acquisition.
+
 This is the live-game analogue of
 [Jump-Start RL](https://arxiv.org/abs/2204.02372): a guide policy induces a
 reachable start-state distribution for an exploration/learning policy. It also

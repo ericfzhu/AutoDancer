@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from autodancer.constants import (
     ACTION_COUNT,
@@ -98,3 +99,8 @@ def test_non_death_metal_observation_does_not_advance_tracker() -> None:
     tracker.observe(observation, damage(9))
     assert not tracker.reached
     assert tracker.snapshot()["observations_with_boss"] == 0
+
+
+def test_natural_prefix_failure_budget_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="turn and attempt limits"):
+        NaturalPrefixConfig(max_failed_seeds_per_fragment=0)

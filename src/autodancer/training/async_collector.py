@@ -391,6 +391,9 @@ class VersionedAsyncRolloutCollector:
             "max_remembered_hazards": float(
                 max(fragment.metrics["max_remembered_hazards"] for fragment in fragments)
             ),
+            "natural_prefix_failures": float(
+                sum(fragment.metrics["natural_prefix_failures"] for fragment in fragments)
+            ),
             **{
                 f"collector_recovery_{name}": float(count - counts_before.get(name, 0))
                 for name, count in recovery_counts.items()
@@ -501,10 +504,70 @@ class VersionedAsyncRolloutCollector:
         effective_masked_direction_observations = 0
         navigation_prior_turns = 0
         max_remembered_hazards = 0
+        natural_prefix_failures = 0
         started = time.monotonic()
         for fragment_step in range(length):
-            if state.prefix_pending:
-                state = self._run_natural_prefix(index, state, scheduler)
+            while state.prefix_pending:
+                try:
+                    state = self._run_natural_prefix(index, state, scheduler)
+                except NaturalPrefixError as error:
+                    natural_prefix_failures += 1
+                    metadata = {
+                        **error.config.specification(),
+                        "acquired": False,
+                        "attempts": len(error.failures),
+                        "guide_turns": error.guide_turns,
+                        "failures": error.failures,
+                        "boundary": error.failures[-1].get("boundary", {}),
+                    }
+                    episodes.append(
+                        {
+                            "worker_id": worker_id,
+                            "seed": int(state.info.get("seed", 0)),
+                            "return": 0.0,
+                            "extrinsic_return": 0.0,
+                            "shaping_return": 0.0,
+                            "status": "prefix_failed",
+                            "zone": state.furthest_zone,
+                            "floor": state.furthest_floor,
+                            "boss_type": state.boss_type,
+                            "turns": 0,
+                            "events": [],
+                            "curriculum_reset": state.reset_spec.as_dict(),
+                            "curriculum_reset_id": state.reset_spec.id,
+                            "natural_prefix": metadata,
+                        }
+                    )
+                    self.curriculum_schedule.record_outcome(state.reset_spec, "prefix_failed")
+                    if (
+                        natural_prefix_failures
+                        >= error.config.max_failed_seeds_per_fragment
+                    ):
+                        raise NaturalPrefixError(
+                            worker_id,
+                            error.config,
+                            failures=error.failures,
+                            guide_turns=error.guide_turns,
+                            observation=error.observation,
+                            info={
+                                **error.info,
+                                "failure_reason": "prefix_failure_budget_exhausted",
+                                "failed_seeds": natural_prefix_failures,
+                            },
+                        ) from error
+                    next_seed, next_spec = self._next_reset(index)
+                    next_observation, next_info = worker.reset(
+                        seed=next_seed,
+                        options=next_spec.reset_options(),
+                    )
+                    state = ActorState(
+                        next_observation,
+                        next_info,
+                        self.model.initial_state(1, device=self.device),
+                        next_spec,
+                        prefix_pending=True,
+                    )
+                    self._publish_telemetry(index, next_observation, next_info, None, None)
             for key, value in state.observation.items():
                 observations[key].append(torch.from_numpy(value.copy()))
             observations["previous_action"].append(torch.tensor(state.previous_action))
@@ -668,6 +731,7 @@ class VersionedAsyncRolloutCollector:
                 ),
                 "navigation_prior_turns": float(navigation_prior_turns),
                 "max_remembered_hazards": float(max_remembered_hazards),
+                "natural_prefix_failures": float(natural_prefix_failures),
             },
         )
 

@@ -216,6 +216,29 @@ class PrefixEnvironment(AsyncEnvironment):
         self.infrastructure_events = []
 
 
+class RecoveringPrefixWorker(PrefixWorker):
+    """Expose one unreachable seed, followed by ordinary legal boss phases."""
+
+    def __init__(self, slot: int) -> None:
+        super().__init__(slot)
+        self.reset_count = 0
+
+    def reset(self, *, seed: int, options=None):
+        self.direct_mutation = self.reset_count == 0
+        self.reset_count += 1
+        return super().reset(seed=seed, options=options)
+
+
+class RecoveringPrefixEnvironment(PrefixEnvironment):
+    def __init__(self) -> None:
+        self.timeline = []
+        self.environments = {
+            worker_id: RecoveringPrefixWorker(slot)
+            for slot, worker_id in enumerate(self.worker_ids)
+        }
+        self.infrastructure_events = []
+
+
 def test_async_collector_uses_and_resumes_finite_seed_pool() -> None:
     model = RecurrentActorCritic(
         ModelConfig(
@@ -799,13 +822,65 @@ def test_natural_prefix_rejects_direct_boss_health_mutation() -> None:
         device=torch.device("cpu"),
         seed=102,
         guide_model=guide,
-        natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=3,
+            max_attempts=1,
+            max_failed_seeds_per_fragment=1,
+        ),
     )
     try:
         with pytest.raises(NaturalPrefixError, match="failed to reach Death Metal phase 4"):
             collector.collect(1)
     finally:
         collector.close()
+
+
+def test_natural_prefix_training_records_failed_seed_without_fabricating_transition() -> None:
+    environment = RecoveringPrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=103,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=3,
+            max_attempts=1,
+            max_failed_seeds_per_fragment=2,
+        ),
+    )
+    initial_seeds = [int(state.info["seed"]) for state in collector.states]
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+
+    assert rollout.actions.shape == (1, 2)
+    assert torch.allclose(rollout.rewards, torch.full((1, 2), 0.25))
+    failures = [
+        episode
+        for episode in collector.completed_episodes
+        if episode["status"] == "prefix_failed"
+    ]
+    assert [episode["seed"] for episode in failures] == initial_seeds
+    assert all(episode["turns"] == 0 for episode in failures)
+    assert all(episode["return"] == 0.0 for episode in failures)
+    assert all(not episode["natural_prefix"]["acquired"] for episode in failures)
+    assert collector.last_runtime_metrics["natural_prefix_failures"] == 2
+    for worker in environment.environments.values():
+        assert worker.step_calls == 7  # failed guide, legal guide, one learner turn
+        assert len(worker.handoffs) == 1
 
 
 def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
