@@ -985,6 +985,13 @@ boss-stratified evaluation seeds. If reverse-curriculum transfer remains unstabl
 the next evidence-backed fallback is a qualified live demonstration recorder and
 a separately versioned behavior-cloning warm start—not another reward change.
 
+Every finite-pool run now checkpoints exact reset exposure counts per game seed.
+This does not change the existing IID uniform sampler, but makes effective level
+coverage auditable: aggregate transition counts alone cannot prove that every
+procedural level was seen, especially when episode lengths differ. Checkpoints
+resumed from older schedule metadata explicitly retain their unassignable prior
+draws as `unattributed_draws` rather than fabricating per-seed history.
+
 The fixed `80/20` new-stage/mastered-stage mixture in EXP-0019 is consequently a
 controlled first arm, not an assumed optimum. Prioritized Level Replay finds that
 the learning value of a procedural level changes with the current policy and uses

@@ -18,6 +18,8 @@ class TrainingSeedSchedule:
     pool: tuple[int, ...] = ()
     _rngs: list[np.random.Generator] = field(init=False, repr=False)
     _draws: list[int] = field(init=False, repr=False)
+    _pool_counts: dict[int, int] = field(init=False, repr=False)
+    _unattributed_draws: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.slots <= 0:
@@ -31,6 +33,8 @@ class TrainingSeedSchedule:
             np.random.default_rng(child) for child in sequence.spawn(self.slots)
         ]
         self._draws = [0] * self.slots
+        self._pool_counts = {int(seed): 0 for seed in self.pool}
+        self._unattributed_draws = 0
 
     @property
     def mode(self) -> str:
@@ -42,6 +46,7 @@ class TrainingSeedSchedule:
         rng = self._rngs[slot]
         if self.pool:
             seed = self.pool[int(rng.integers(0, len(self.pool)))]
+            self._pool_counts[int(seed)] += 1
         else:
             seed = int(rng.integers(0, 2**31))
         self._draws[slot] += 1
@@ -55,6 +60,10 @@ class TrainingSeedSchedule:
             "slots": int(self.slots),
             "pool": list(self.pool),
             "draws": list(self._draws),
+            "pool_counts": {
+                str(seed): int(self._pool_counts[seed]) for seed in sorted(self._pool_counts)
+            },
+            "unattributed_draws": int(self._unattributed_draws),
             "rng_states": [deepcopy(rng.bit_generator.state) for rng in self._rngs],
         }
 
@@ -77,6 +86,32 @@ class TrainingSeedSchedule:
         for rng, rng_state in zip(self._rngs, rng_states, strict=True):
             rng.bit_generator.state = deepcopy(rng_state)
         self._draws = draws
+        raw_counts = state.get("pool_counts")
+        if raw_counts is None:
+            # Old checkpoints remain behaviorally resumable, but their historical
+            # per-seed draws cannot be reconstructed from RNG state alone.
+            self._pool_counts = {int(seed): 0 for seed in self.pool}
+            self._unattributed_draws = sum(draws) if self.pool else 0
+            return
+        if not isinstance(raw_counts, dict):
+            raise ValueError("Training seed pool counts must be an object")
+        try:
+            counts = {int(seed): int(count) for seed, count in raw_counts.items()}
+        except (TypeError, ValueError) as error:
+            raise ValueError("Training seed pool counts must contain integers") from error
+        if set(counts) != set(self.pool) or any(count < 0 for count in counts.values()):
+            raise ValueError("Training seed pool counts do not match this run")
+        unattributed = int(state.get("unattributed_draws", 0))
+        if not self.pool:
+            if counts or unattributed != 0:
+                raise ValueError("Unbounded training schedules cannot contain pool counts")
+            self._pool_counts = {}
+            self._unattributed_draws = 0
+            return
+        if unattributed < 0 or sum(counts.values()) + unattributed != sum(draws):
+            raise ValueError("Training seed pool counts do not match total draws")
+        self._pool_counts = counts
+        self._unattributed_draws = unattributed
 
 
 def parse_training_seed_pool(value: str) -> tuple[int, ...]:
