@@ -10,9 +10,9 @@ $guideMod = Join-Path $guideRepo "mods\AutoDancer"
 $guideQualification = Join-Path $guideRepo "runs\controller-qualification-player-health-only-world-ready\qualification.json"
 $guideSource = Join-Path $guideRepo "runs\assisted-death-metal\training\seed-68002\final.pt"
 $guideSourceHash = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
-$guideReward = Join-Path $guideRepo "configs\reward-death-metal-guide-v1.json"
-$guideRewardHash = "650b2d3e8bfdb378bcdf2b63045f9ee2f71a4d229eb49af3474eb767a07732e4"
-$guideRoot = Join-Path $guideRepo "runs\legal-death-metal-guide"
+$guideReward = Join-Path $guideRepo "configs\reward-death-metal-guide-v2.json"
+$guideRewardHash = "e2d35ec226b90b64477f49e1aa07ac7752929d38de5cf238a300294cd3c838d4"
+$guideRoot = Join-Path $guideRepo "runs\legal-death-metal-guide-v2"
 $guideTraining = Join-Path $guideRoot "training"
 $guideEvaluation = Join-Path $guideRoot "evaluation"
 $guideCalibration = Join-Path $guideRoot "calibration"
@@ -33,7 +33,7 @@ function Write-GuideStatus {
     param([string]$Status, [string]$Trial = "", [string]$Mode = "", [string]$Error = "")
     [ordered]@{
         schema_version = 1
-        experiment_id = "EXP-0020"
+        experiment_id = "EXP-0021"
         status = $Status
         trial = $Trial
         mode = $Mode
@@ -110,7 +110,7 @@ function Select-DeathMetalSeeds {
         [int]$report.curriculum_reset.target_level -ne 5 -or
         $report.curriculum_reset.profile -ne "player20"
     ) {
-        throw "Seed calibration report identity does not match EXP-0020"
+        throw "Seed calibration report identity does not match EXP-0021"
     }
     if (
         $report.controller_valid -ne $true -or
@@ -181,13 +181,13 @@ Invoke-GuideChecked -Stage "experiment registry validation" -Arguments @(
     "-m", "autodancer.experiments.cli", "validate"
 ) -Log ""
 if ((Get-FileHash $guideSource -Algorithm SHA256).Hash.ToLowerInvariant() -ne $guideSourceHash) {
-    throw "EXP-0020 source checkpoint hash mismatch"
+    throw "EXP-0021 source checkpoint hash mismatch"
 }
 if ((Get-FileHash $guideReward -Algorithm SHA256).Hash.ToLowerInvariant() -ne $guideRewardHash) {
-    throw "EXP-0020 reward configuration hash mismatch"
+    throw "EXP-0021 reward configuration hash mismatch"
 }
 $cuda = & $guidePython -c "import torch; print(torch.cuda.is_available())"
-if ($LASTEXITCODE -ne 0 -or $cuda.Trim() -ne "True") { throw "EXP-0020 requires CUDA" }
+if ($LASTEXITCODE -ne 0 -or $cuda.Trim() -ne "True") { throw "EXP-0021 requires CUDA" }
 
 $trainingCalibration = Join-Path $guideCalibration "training-candidates.json"
 if (-not (Test-Path $trainingCalibration)) {
@@ -258,9 +258,9 @@ foreach ($trainingSeed in $guideTrainingSeeds) {
             "--max-turns", "500", "--action-contract", "map-navigation-prior-v1",
             "--training-seed-pool", $trainingPoolArgument, "--curriculum-start-level", "4",
             "--curriculum-target-level", "5", "--curriculum-profile", "player20",
-            "--reward-config", $guideReward, "--reward-lineage-version", "DeathMetalGuideV1",
-            "--freeze-base-updates", "10", "--affinity", "none", "--experiment-id", "EXP-0020",
-            "--experiment-arm", "a8-player20-legal-guide", "--trial-id", $trial,
+            "--reward-config", $guideReward, "--reward-lineage-version", "DeathMetalGuideV2",
+            "--freeze-base-updates", "10", "--affinity", "none", "--experiment-id", "EXP-0021",
+            "--experiment-arm", "a8-player20-boss-scoped-guide", "--trial-id", $trial,
             "--mlflow-tracking-uri", $guideTrackingUri, "--controller-qualification", $guideQualification,
             "--dashboard", "8765"
         )
@@ -287,10 +287,10 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
             "--num-instances", "8", "--seeds", $heldoutSeedArgument, "--max-steps", "500",
             "--policy-mode", $mode.Mode, "--policy-seed", "$($mode.PolicySeed)", "--trained-only",
             "--device", "cuda", "--reward-config", $guideReward,
-            "--reward-lineage-version", "DeathMetalGuideV1", "--action-contract", "map-navigation-prior-v1",
+            "--reward-lineage-version", "DeathMetalGuideV2", "--action-contract", "map-navigation-prior-v1",
             "--curriculum-start-level", "4", "--curriculum-target-level", "5",
             "--curriculum-profile", "player20", "--affinity", "none",
-            "--experiment-id", "EXP-0020", "--experiment-arm", "a8-player20-legal-guide",
+            "--experiment-id", "EXP-0021", "--experiment-arm", "a8-player20-boss-scoped-guide",
             "--trial-id", "$($checkpointEntry.Key)-$($mode.Name)", "--mlflow-tracking-uri", $guideTrackingUri,
             "--controller-qualification", $guideQualification, "--dashboard", "8765"
         )
@@ -303,7 +303,7 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
 }
 
 Write-GuideStatus "comparing"
-Invoke-GuideChecked -Stage "EXP-0020 comparison" -Log "" -Arguments @(
+Invoke-GuideChecked -Stage "EXP-0021 comparison" -Log "" -Arguments @(
     "-m", "autodancer.training.death_metal_guide_compare", "--root", $guideRoot
 )
 Write-GuideStatus "complete"

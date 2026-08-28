@@ -90,6 +90,7 @@ class EpisodeAccumulator:
     player_damage: int = 0
     extrinsic_return: float = 0.0
     shaping_return: float = 0.0
+    reward_components: dict[str, float] = field(default_factory=dict)
     natural_prefix: dict[str, Any] = field(default_factory=dict)
     boss_actor_types: set[int] = field(default_factory=set)
     initial_boss_health: int | None = None
@@ -218,6 +219,10 @@ class EpisodeAccumulator:
         self.episode_return += float(reward)
         self.extrinsic_return += float(info.get("extrinsic_reward", 0.0))
         self.shaping_return += float(info.get("shaping_reward", 0.0))
+        for name, value in dict(info.get("reward_components") or {}).items():
+            self.reward_components[str(name)] = self.reward_components.get(str(name), 0.0) + float(
+                value
+            )
         self.turns += 1
         self.furthest_zone, self.furthest_floor = deeper_level(
             (self.furthest_zone, self.furthest_floor),
@@ -379,6 +384,7 @@ class EpisodeAccumulator:
             "episode_return": self.episode_return,
             "extrinsic_return": self.extrinsic_return,
             "shaping_return": self.shaping_return,
+            "reward_components": self.reward_components,
             "natural_prefix": self.natural_prefix,
             "turns": self.turns,
             "furthest_zone": self.furthest_zone,

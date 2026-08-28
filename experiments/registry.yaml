@@ -129,6 +129,13 @@ experiments:
   EXP-0020:
     spec: experiments/EXP-0020/experiment.yaml
     spec_sha256: cabe277e20bdd8fe706b92174a8ca119447d8d14d3c01313dbd433fe7ea79810
-    status: planned
+    status: rejected
     historical: false
     registered_at: '2026-08-27T23:39:11.7388592+00:00'
+    updated_at: '2026-08-28T01:27:20.457170+00:00'
+  EXP-0021:
+    spec: experiments/EXP-0021/experiment.yaml
+    spec_sha256: 6c94a2f704fece930a0aa19eb906c946cca8ccf15bb4a24054d5667846839e04
+    status: planned
+    historical: false
+    registered_at: '2026-08-28T01:28:19.112285+00:00'

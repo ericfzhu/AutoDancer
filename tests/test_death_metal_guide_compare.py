@@ -146,6 +146,12 @@ def _report(
                     if seed in phase4
                     else [101, 102],
                     "boss_damage": max(damage, 7) if seed in phase4 else damage,
+                    "boss_kills": int(seed in phase4),
+                    "reward_components": {
+                        "boss_damage": (max(damage, 7) if seed in phase4 else damage)
+                        * 0.2,
+                        **({"boss_kill": 0.25} if seed in phase4 else {}),
+                    },
                     "turns": 100,
                     "boss_type": 2,
                     "furthest_zone": 2 if seed in phase4 else 1,
@@ -270,7 +276,7 @@ def test_guide_gate_rejects_unbound_or_wrong_initializer(tmp_path: Path) -> None
         raise AssertionError("wrong initializer provenance was accepted")
 
 
-def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
+def test_exp0021_launcher_uses_only_legal_player_health_assistance() -> None:
     source = Path("tools/run-exp0020-legal-death-metal-guide.ps1").read_text(
         encoding="utf-8"
     )
@@ -292,3 +298,7 @@ def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
     assert "Select-DeathMetalSeeds $trainingCalibration 48 $guideTrainingCandidates" in source
     assert '$checkpointEntry.Key -eq "parent"' in source
     assert '"--source-reference"' in source
+    assert "reward-death-metal-guide-v2.json" in source
+    assert '"DeathMetalGuideV2"' in source
+    assert '"EXP-0021"' in source
+    assert '"a8-player20-boss-scoped-guide"' in source

@@ -1,4 +1,4 @@
-"""Compare the predeclared EXP-0020 legal Death Metal guide trials."""
+"""Compare the predeclared EXP-0021 boss-scoped legal Death Metal guide trials."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ MODE_CONTRACTS = {
 SOURCE_SHA256 = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
 RESET_SPEC = EpisodeResetSpec("boss-identity", 4, 5, "player20")
 GUIDE_REWARD_SPEC = load_reward_config(
-    Path(__file__).resolve().parents[3] / "configs" / "reward-death-metal-guide-v1.json"
+    Path(__file__).resolve().parents[3] / "configs" / "reward-death-metal-guide-v2.json"
 ).specification()
 
 
@@ -50,7 +50,7 @@ def _validated_seed_selection(
         )[:count]
     )
     if len(expected) != count:
-        raise ValueError(f"EXP-0020 {bank} calibration lacks {count} Death Metal seeds")
+        raise ValueError(f"EXP-0021 {bank} calibration lacks {count} Death Metal seeds")
     selection_path = (
         root / "training" / "seed-selection.json"
         if bank == "training"
@@ -59,13 +59,13 @@ def _validated_seed_selection(
     selection = json.loads(selection_path.read_text(encoding="utf-8-sig"))
     selected = tuple(int(seed) for seed in selection.get("seeds", ()))
     if selected != expected:
-        raise ValueError(f"EXP-0020 {bank} selection does not follow identity-only rule")
+        raise ValueError(f"EXP-0021 {bank} selection does not follow identity-only rule")
     if int(selection.get("boss_type", -1)) != int(BossType.DEATH_METAL):
-        raise ValueError(f"EXP-0020 {bank} selection boss mismatch")
+        raise ValueError(f"EXP-0021 {bank} selection boss mismatch")
     if selection.get("disclosure") != "boss identity only":
-        raise ValueError(f"EXP-0020 {bank} selection disclosure mismatch")
+        raise ValueError(f"EXP-0021 {bank} selection disclosure mismatch")
     if selection.get("source_report_sha256") != sha256_file(calibration_path):
-        raise ValueError(f"EXP-0020 {bank} selection calibration hash mismatch")
+        raise ValueError(f"EXP-0021 {bank} selection calibration hash mismatch")
     return selected
 
 
@@ -165,6 +165,20 @@ def _load_report(
             episode.get("furthest_zone", 0)
         ) < 2:
             raise ValueError(f"seed {seed} has a false completion status: {path}")
+        components = episode.get("reward_components")
+        if not isinstance(components, dict):
+            raise ValueError(f"seed {seed} lacks reward-component evidence: {path}")
+        if "enemy_damage" in components or "enemy_kill" in components:
+            raise ValueError(f"seed {seed} received non-boss combat shaping: {path}")
+        maximum_boss_credit = (
+            int(episode.get("boss_damage", 0)) * 0.2
+            + int(episode.get("boss_kills", 0)) * 0.25
+        )
+        observed_boss_credit = float(components.get("boss_damage", 0.0)) + float(
+            components.get("boss_kill", 0.0)
+        )
+        if observed_boss_credit > maximum_boss_credit + 1e-9:
+            raise ValueError(f"seed {seed} has unsupported boss shaping credit: {path}")
     return report
 
 
@@ -208,7 +222,7 @@ def compare(root: Path) -> dict[str, Any]:
         count=24,
     )
     if set(training_seeds) & set(seeds):
-        raise ValueError("EXP-0020 training and held-out seed banks overlap")
+        raise ValueError("EXP-0021 training and held-out seed banks overlap")
 
     parent_reports = [
         _load_report(
@@ -266,7 +280,7 @@ def compare(root: Path) -> dict[str, Any]:
     )
     return {
         "schema_version": 1,
-        "experiment_id": "EXP-0020",
+        "experiment_id": "EXP-0021",
         "controller_valid": True,
         "heldout_seeds": list(seeds),
         "parent": parent,

@@ -17,9 +17,13 @@ blocks:
         config: configs/reward-v4b.json
         config_sha256: b733e501afcd177d8f90fc2fdeac9d00c7c2b317527ee0d066fe0ad59248457c
       DeathMetalGuideV1:
-        description: Non-renewable Death Metal guide reward focused on authoritative boss damage, kills, survival, and real level transitions.
+        description: Rejected pre-execution because its nominal boss guide credited all enemy damage and kills, allowing incidental enemies to consume the shaping budget.
         config: configs/reward-death-metal-guide-v1.json
         config_sha256: 650b2d3e8bfdb378bcdf2b63045f9ee2f71a4d229eb49af3474eb767a07732e4
+      DeathMetalGuideV2:
+        description: Non-renewable Death Metal guide restricted to authoritative boss-tagged damage and kills, plus survival and real level transitions.
+        config: configs/reward-death-metal-guide-v2.json
+        config_sha256: e2d35ec226b90b64477f49e1aa07ac7752929d38de5cf238a300294cd3c838d4
   architecture:
     versions:
       A2: Entity-attention recurrent actor-critic baseline.

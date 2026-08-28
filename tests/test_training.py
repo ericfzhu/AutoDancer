@@ -154,6 +154,7 @@ def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
 
 def test_reward_lineage_accepts_catalog_ids_without_numeric_prefixes() -> None:
     assert require_reward_lineage_version("DeathMetalGuideV1") == "DeathMetalGuideV1"
+    assert require_reward_lineage_version("DeathMetalGuideV2") == "DeathMetalGuideV2"
     with pytest.raises(ValueError, match="reward-lineage-version"):
         require_reward_lineage_version("")
 

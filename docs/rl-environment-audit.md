@@ -1142,7 +1142,7 @@ must bootstrap rather than invent a terminal MDP state, following
 outside the gameplay process and invalidate their fragment instead of becoming
 death, abort, or reward.
 
-The EXP-0020 phase detector was also made conservative without depending on the
+The legal-guide phase detector was also made conservative without depending on the
 boss remaining inside the 21x21 visible grid after a conversion. Visible boss
 cells still establish the initial objective health and directly observed entity
 types. Effective boss-damage events now additionally retain their authoritative
@@ -1192,13 +1192,13 @@ does not remove four scientific risks:
    checkpoint curves should diagnose this before increasing model size. If the
    primitive-action critic cannot bridge the full hierarchy, event-defined
    options are a causal next architecture rather than denser renewable shaping.
-5. **Initializer provenance is not a clean causal control.** EXP-0020 starts from
+5. **Initializer provenance is not a clean causal control.** EXP-0021 starts from
    `runs/assisted-death-metal/training/seed-68002/final.pt`. That A2 policy was
    initialized from the corrected 61,440-transition A2 checkpoint, but was then
    optimized for another 51,200 transitions under the retired direct-health
    mutation. Its historical achievements are already excluded, yet excluding
    them does not erase their influence on its actor and recurrent weights. A
-   controller-valid held-out EXP-0020 success would prove that the resulting
+   controller-valid held-out EXP-0021 success would prove that the resulting
    policy can perform the legal player-health-only task; it would not isolate
    whether useful behavior came from the legal curriculum or transferred from
    the invalid one. Keep this arm because it is a legitimate transfer attempt
@@ -1213,3 +1213,40 @@ does not remove four scientific risks:
 The consequence is a two-level evidence standard. Curriculum phase acquisition
 answers whether the downstream skill is learnable. Only repeated Zone 2 entry
 from untouched, unseen normal All Zones seeds answers the project question.
+
+## Boss-guide proxy audit and EXP-0021 correction
+
+The predeclared EXP-0020 reward was rejected before execution. Its prose said
+“boss guide,” but its implementation credited every `enemy_damage` and
+`enemy_kill` event. The mismatch is large in recorded data: the selected parent’s
+12-episode stochastic wave reports 50 enemy-damage points and 50 enemy kills,
+but only 10 boss-damage points and 10 boss kills. At V1’s weights, generic combat
+could therefore consume the entire `+5` guide budget without advancing Death
+Metal’s phase objective.
+
+This is the local form of proxy-reward failure: optimizing an imperfect measured
+objective need not improve the intended task objective
+([Skalse et al., 2022](https://papers.nips.cc/paper_files/paper/2022/hash/3d719fee332caa23d5038b8a90e81796-Abstract-Conference.html)).
+It is especially avoidable here because the live event already contains the
+authoritative `boss` and `boss_add` roles. DeathMetalGuideV2 consequently credits
+damage and kills only when `data.boss == true`; it labels those components as
+`boss_damage` and `boss_kill`, records per-episode component totals, and makes
+the comparator reject any generic combat shaping.
+
+Generic enemies and boss adds are not masked or removed. The policy may still
+fight them when survival requires it, and real floor/zone completion still pays
+the dominant task reward. They simply cease to be a competing proxy. Boss credit
+remains entity-deduplicated and capped. This is intentionally narrower than
+claiming the guide is policy invariant: arbitrary event bonuses can change the
+optimal policy, whereas the classic invariance guarantee applies to shaping of
+the form `gamma * Phi(s') - Phi(s)`
+([Ng, Harada, and Russell, 1999](https://ai.stanford.edu/~ang/papers/shaping-icml99.pdf)).
+The boss guide is accepted only by held-out phase depth and live Zone 2 entry,
+never by shaped return.
+
+The curriculum itself follows the evidence-backed structure of reverse
+curriculum learning: acquire a goal-adjacent skill, then expand the start-state
+distribution backward as competence becomes reliable
+([Florensa et al., 2017](https://arxiv.org/abs/1707.05300)). EXP-0021 is only the
+goal-adjacent acquisition stage. A pass authorizes, but does not substitute for,
+phase-3, phase-2, full-boss, earlier-floor, and finally unseen normal-start tests.

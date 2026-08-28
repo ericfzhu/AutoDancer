@@ -32,6 +32,7 @@ class RewardConfig:
     max_rewarded_damage_per_enemy: int = 16
     enemy_kill: float = 0.15
     max_combat_reward_per_floor: float = 0.75
+    combat_reward_scope: str = "all"
     player_damage: float = -0.15
     new_item_type: float = 0.10
     max_item_reward_per_floor: float = 0.50
@@ -74,6 +75,10 @@ class RewardConfig:
             raise ValueError("profile_version must be 2 or 4")
         if self.profile_version == 2 and self.stair_potential_max:
             raise ValueError("Reward V2 cannot enable stair potential shaping")
+        if self.combat_reward_scope not in ("all", "boss_and_adds", "boss_only"):
+            raise ValueError(
+                "combat_reward_scope must be one of: all, boss_and_adds, boss_only"
+            )
 
     def specification(self) -> dict[str, Any]:
         weights = asdict(self)
@@ -91,6 +96,10 @@ class RewardConfig:
         else:
             for name in ("stairs_discovered", "stair_progress", "max_stair_distance_delta"):
                 weights.pop(name)
+        # Preserve byte-for-byte-compatible metadata for every historical reward
+        # profile.  Only scoped profiles need to declare this newer field.
+        if self.combat_reward_scope == "all":
+            weights.pop("combat_reward_scope")
         return {"version": self.profile_version, "weights": weights}
 
 
@@ -339,6 +348,19 @@ class RewardTracker:
         kind = str(event.get("kind", ""))
         amount = max(int(event.get("amount", 0) or 0), 0)
         entity_id = max(int(event.get("entity_id", 0) or 0), 0)
+        combat_event = kind in ("enemy_damage", "enemy_kill")
+        event_data = event.get("data")
+        data = event_data if isinstance(event_data, Mapping) else {}
+        scope_matches = (
+            config.combat_reward_scope == "all"
+            or (
+                config.combat_reward_scope == "boss_and_adds"
+                and (data.get("boss") is True or data.get("boss_add") is True)
+            )
+            or (config.combat_reward_scope == "boss_only" and data.get("boss") is True)
+        )
+        if combat_event and not scope_matches:
+            return
         if kind == "enemy_damage" and config.enemy_damage:
             previously = self.rewarded_damage.get(entity_id, 0) if entity_id else 0
             credited = min(amount, max(config.max_rewarded_damage_per_enemy - previously, 0))
@@ -351,7 +373,12 @@ class RewardTracker:
                         config.max_combat_reward_per_floor,
                     )
                 if credit:
-                    components["enemy_damage"] = components.get("enemy_damage", 0.0) + credit
+                    component = (
+                        "boss_damage"
+                        if config.combat_reward_scope == "boss_only"
+                        else "enemy_damage"
+                    )
+                    components[component] = components.get(component, 0.0) + credit
                     self.combat_reward += credit
                 if entity_id:
                     self.rewarded_damage[entity_id] = previously + credited
@@ -364,7 +391,12 @@ class RewardTracker:
                     config.max_combat_reward_per_floor,
                 )
             if credit:
-                components["enemy_kill"] = components.get("enemy_kill", 0.0) + credit
+                component = (
+                    "boss_kill"
+                    if config.combat_reward_scope == "boss_only"
+                    else "enemy_kill"
+                )
+                components[component] = components.get(component, 0.0) + credit
                 self.combat_reward += credit
             if entity_id:
                 self.rewarded_kills.add(entity_id)

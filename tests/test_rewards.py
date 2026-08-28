@@ -377,3 +377,50 @@ def test_death_metal_guide_reward_is_bounded_and_progress_dominant() -> None:
             components,
         )
     assert sum(components.values()) == pytest.approx(5.0)
+
+
+def test_boss_only_combat_scope_rejects_generic_and_boss_add_proxy_credit() -> None:
+    config = RewardConfig(
+        enemy_damage=0.2,
+        enemy_kill=0.25,
+        max_combat_reward_per_floor=5.0,
+        combat_reward_scope="boss_only",
+    )
+    tracker = RewardTracker(config)
+    components: dict[str, float] = {}
+    tracker._score_event(
+        {"kind": "enemy_damage", "entity_id": 1, "amount": 9, "data": {"boss": False}},
+        components,
+    )
+    tracker._score_event(
+        {
+            "kind": "enemy_kill",
+            "entity_id": 2,
+            "amount": 1,
+            "data": {"boss": False, "boss_add": True},
+        },
+        components,
+    )
+    assert components == {}
+    assert tracker.rewarded_damage == {}
+    assert tracker.rewarded_kills == set()
+
+    tracker._score_event(
+        {"kind": "enemy_damage", "entity_id": 3, "amount": 9, "data": {"boss": True}},
+        components,
+    )
+    tracker._score_event(
+        {"kind": "enemy_kill", "entity_id": 3, "amount": 1, "data": {"boss": True}},
+        components,
+    )
+    assert components == {
+        "boss_damage": pytest.approx(1.8),
+        "boss_kill": pytest.approx(0.25),
+    }
+    assert config.specification()["weights"]["combat_reward_scope"] == "boss_only"
+
+
+def test_combat_scope_validation_and_legacy_metadata_compatibility() -> None:
+    with pytest.raises(ValueError, match="combat_reward_scope"):
+        RewardConfig(combat_reward_scope="anything")
+    assert "combat_reward_scope" not in RewardConfig().specification()["weights"]
