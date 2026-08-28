@@ -816,21 +816,23 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
             deaths = status == "dead" and 1 or 0,
         },
     }
-    assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
-    if bridgeCommand then
-        Bridge.markTelemetrySent(bridgeCommand)
-    end
     -- Telemetry allocates a large, short-lived observation table and JSON string
     -- every turn.  The game normally lets Lua's collector choose when to return
     -- that memory, which can look like sustained worker growth during long,
     -- headless runs.  Collect on reset and at a sparse fixed cadence so a worker
     -- with an unusually long episode is bounded too.  One collection per 1000
     -- records keeps short-lived JSON allocations from raising the long-run heap
-    -- high-water mark without changing game state or protocol content.
+    -- high-water mark without changing game state or protocol content.  Collect
+    -- before the cadence-aligned send: Python samples RSS when that transition
+    -- arrives, so collecting afterwards races every qualification sample.
     recordsSinceCollection = recordsSinceCollection + 1
     if kind == "initial" or recordsSinceCollection >= TELEMETRY_COLLECTION_INTERVAL then
         assert(Native.collect(), "AutoDancer telemetry garbage collection failed")
         recordsSinceCollection = 0
+    end
+    assert(Native.send(jsonEncode(record)), "AutoDancer telemetry pipe write failed")
+    if bridgeCommand then
+        Bridge.markTelemetrySent(bridgeCommand)
     end
     lastObservation = record.observation
     lastContext = clone(context)

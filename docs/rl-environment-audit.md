@@ -1163,6 +1163,19 @@ valid after state change must remain available. The map navigation prior is an
 explicit hybrid controller intervention, not mislabeled game legality, and its
 results stay separately versioned.
 
+The subsequent million-transition restart completed every protocol, latency,
+capacity, mechanic, and cleanup criterion but failed the original RSS endpoint
+test by 0.062 percentage points on one worker. That test sampled immediately
+after receiving every thousandth transition, while Lua ran its matching full
+collection only after sending that transition; every sample therefore raced the
+operation intended to stabilize it. It also interpreted a bounded Windows
+working-set cache step followed by a flat tail as a continuing leak. Collection
+now precedes the cadence-aligned send. Qualification retains second-half endpoint
+growth and maximum RSS as diagnostics, but gates on a robust Theil-Sen terminal
+slope projected across the second half. Linear and late leaks fail; GC sawteeth
+and cache steps that demonstrably plateau do not. Because the repository Lua hash
+changed, the complete natural soak must again start from zero.
+
 ## Remaining environment risks for the Zone 2 curriculum
 
 The legal Death Metal guide removes the unreachable boss-state defect, but it

@@ -174,7 +174,10 @@ uv run autodancer-qualify `
 
 The gate requires 125,000 valid transitions from every worker with no natural
 controller fault. Pre-soak phases can be resumed with `--resume`; the natural
-soak always starts from zero after a failure.
+soak always starts from zero after a failure. Worker RSS is sampled every 1,000
+transitions after Lua's matching collection cadence. The memory gate uses a
+robust terminal slope projected across the second half (maximum 5%); endpoint
+working-set growth remains reported separately so cache plateaus stay visible.
 
 ## Experiment lineage
 

@@ -834,6 +834,10 @@ def test_lua_telemetry_reuses_the_built_observation_and_bounds_collection() -> N
     assert "clone(" not in status_function
     assert "local result = observation or emptyObservation()" in status_function
     assert "local TELEMETRY_COLLECTION_INTERVAL = 1000" in source
+    emit_start = source.index("local function emitRecord")
+    emit_end = source.index("\nlocal function emitTurn", emit_start)
+    emit_function = source[emit_start:emit_end]
+    assert emit_function.index("Native.collect()") < emit_function.index("Native.send(")
 
 
 def test_lua_player_health_profiles_preserve_boss_and_boss_add_state() -> None:

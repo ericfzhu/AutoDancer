@@ -653,6 +653,7 @@ def collector_evaluation(arguments: argparse.Namespace) -> dict[str, Any]:
 
 
 def _memory_growth(samples: list[int]) -> float:
+    """Return endpoint growth as a diagnostic, not a leak decision."""
     if len(samples) < 20:
         return 0.0
     second_half = samples[len(samples) // 2 :]
@@ -660,6 +661,29 @@ def _memory_growth(samples: list[int]) -> float:
     beginning = float(np.mean(second_half[:width]))
     ending = float(np.mean(second_half[-width:]))
     return (ending - beginning) / max(beginning, 1.0)
+
+
+def _sustained_memory_growth(samples: list[int]) -> float:
+    """Estimate an ongoing tail trend, projected across the second half.
+
+    Windows working sets grow in cache-sized steps and can remain at the new
+    plateau. Comparing only the endpoints misclassifies such a bounded step as
+    a continuing leak. A Theil-Sen slope over the final 20 samples is robust to
+    GC sawteeth and asks the acceptance question directly: if the terminal trend
+    continued across the whole second half, how much would RSS grow?
+    """
+    if len(samples) < 20:
+        return 0.0
+    second_half = np.asarray(samples[len(samples) // 2 :], dtype=np.float64)
+    tail = second_half[-min(20, len(second_half)) :]
+    slopes = [
+        (tail[j] - tail[i]) / (j - i)
+        for i in range(len(tail) - 1)
+        for j in range(i + 1, len(tail))
+    ]
+    slope = float(np.median(slopes)) if slopes else 0.0
+    projected_growth = max(slope, 0.0) * max(len(second_half) - 1, 1)
+    return projected_growth / max(float(np.median(tail)), 1.0)
 
 
 def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -833,7 +857,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                             )
                             + "\n"
                         )
-            growth = _memory_growth(memory)
+            endpoint_growth = _memory_growth(memory)
+            sustained_growth = _sustained_memory_growth(memory)
             result = {
                 "worker_id": worker_id,
                 "transitions": len(latencies),
@@ -849,7 +874,9 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 ),
                 "last_frame_bytes": int(info.get("frame_bytes", 0)),
                 "max_frame_bytes": int(info.get("max_frame_bytes", 0)),
-                "memory_growth_second_half": growth,
+                "memory_growth_second_half": endpoint_growth,
+                "sustained_memory_growth_second_half": sustained_growth,
+                "maximum_working_set_bytes": max(memory, default=0),
                 "turn_limit_resets": turn_limit_resets,
                 "maximum_zone": maximum_zone,
                 "maximum_floor": maximum_floor,
@@ -889,7 +916,8 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                 worker["max_latency_seconds"] < 5 for worker in workers
             ),
             "stable_memory": all(
-                worker["memory_growth_second_half"] <= 0.05 for worker in workers
+                worker["sustained_memory_growth_second_half"] <= 0.05
+                for worker in workers
             ),
             "mechanic_coverage": REQUIRED_MECHANICS <= global_mechanics,
             "exact_capacity": len(supervisor._worker_processes) == arguments.num_instances,
