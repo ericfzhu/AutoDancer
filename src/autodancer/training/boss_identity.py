@@ -37,6 +37,26 @@ class ResetOnlyVectorEnvironment(Protocol):
     ) -> tuple[dict[str, np.ndarray], list[dict[str, Any]]]: ...
 
 
+OUTCOME_FIELDS = frozenset(
+    {
+        "action",
+        "action_counts",
+        "reward",
+        "return",
+        "turns",
+        "damage",
+        "kills",
+        "phase",
+        "status",
+        "survival",
+        "completion",
+        "completed",
+        "death",
+        "won",
+    }
+)
+
+
 def parse_seeds(value: str) -> list[int]:
     try:
         seeds = [int(item.strip()) for item in value.split(",") if item.strip()]
@@ -132,6 +152,70 @@ def collect_boss_identities(
     return results
 
 
+def validate_identity_calibration_report(
+    report: dict[str, Any],
+    *,
+    expected_seeds: tuple[int, ...],
+    reset_spec: EpisodeResetSpec,
+    num_instances: int,
+) -> tuple[dict[str, Any], ...]:
+    """Validate that an artifact contains only complete reset identities."""
+    expected_header = {
+        "schema_version": 1,
+        "kind": "boss-identity-calibration-v1",
+        "protocol_schema_version": SCHEMA_VERSION,
+        "game_version": SUPPORTED_GAME_VERSION,
+        "steam_build": SUPPORTED_STEAM_BUILD,
+        "character": "Bard",
+        "mode": "AllZonesSeededCurriculum",
+        "num_instances": num_instances,
+        "curriculum_reset": reset_spec.as_dict(),
+    }
+    for key, expected in expected_header.items():
+        if report.get(key) != expected:
+            raise ValueError(f"boss identity calibration {key} mismatch")
+    if report.get("controller_valid") is not True:
+        raise ValueError("boss identity calibration is controller-invalid")
+    if int(report.get("worker_restarts", -1)) != 0 or report.get("infrastructure_events"):
+        raise ValueError("boss identity calibration contains infrastructure failures")
+    if tuple(int(seed) for seed in report.get("seeds", ())) != expected_seeds:
+        raise ValueError("boss identity calibration candidate bank mismatch")
+    if "no gameplay action" not in str(report.get("disclosure", "")):
+        raise ValueError("boss identity calibration lacks reset-only disclosure")
+    qualification_hash = str(report.get("controller_qualification_sha256", ""))
+    if len(qualification_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in qualification_hash.lower()
+    ):
+        raise ValueError("boss identity calibration lacks qualification provenance")
+
+    raw_results = report.get("results")
+    if not isinstance(raw_results, list) or len(raw_results) != len(expected_seeds):
+        raise ValueError("boss identity calibration result count mismatch")
+    results = tuple(dict(result) for result in raw_results)
+    if tuple(int(result.get("seed", -1)) for result in results) != expected_seeds:
+        raise ValueError("boss identity calibration result ordering mismatch")
+    for result in results:
+        leaked = OUTCOME_FIELDS & set(result)
+        if leaked:
+            raise ValueError(
+                "boss identity calibration leaks gameplay outcomes: "
+                + ", ".join(sorted(leaked))
+            )
+        try:
+            boss_type = BossType(int(result.get("boss_type", -1)))
+        except ValueError as error:
+            raise ValueError("boss identity calibration contains an unknown boss") from error
+        if boss_type is BossType.NONE or result.get("boss_name") != boss_type.name:
+            raise ValueError("boss identity calibration boss name/type mismatch")
+        if result.get("curriculum_reset") != reset_spec.as_dict():
+            raise ValueError("boss identity calibration result curriculum mismatch")
+        if not str(result.get("instance_id", "")).startswith("worker-") or any(
+            not str(result.get(key, "")).strip() for key in ("run_id", "session_id", "launch_id")
+        ):
+            raise ValueError("boss identity calibration result identity is incomplete")
+    return results
+
+
 def _load_qualification(path: Path, game_dir: Path, mod_dir: Path) -> dict[str, Any]:
     try:
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -195,6 +279,12 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "infrastructure_events": infrastructure_events,
         "results": results,
     }
+    validate_identity_calibration_report(
+        report,
+        expected_seeds=tuple(arguments.seeds),
+        reset_spec=reset_spec,
+        num_instances=arguments.num_instances,
+    )
     atomic_json(arguments.output, report)
     return report
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from autodancer.experiments.provenance import sha256_file
 from autodancer.training.death_metal_guide_compare import (
     MODES,
     SOURCE_SHA256,
@@ -14,15 +15,83 @@ TRAINING_SEEDS = list(range(80001, 80049))
 
 
 def _write_selections(root: Path, seeds: list[int]) -> Path:
+    reset = {
+        "id": "boss-identity",
+        "start_level": 4,
+        "target_level": 5,
+        "profile": "player20",
+    }
+    calibration = root / "calibration"
+    calibration.mkdir()
+    reports: dict[str, tuple[Path, list[int]]] = {}
+    for bank, candidates in (
+        ("training", list(range(80001, 80257))),
+        ("evaluation", list(range(81001, 81257))),
+    ):
+        path = calibration / f"{bank}-candidates.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "kind": "boss-identity-calibration-v1",
+                    "protocol_schema_version": 10,
+                    "game_version": "v4.2.1-b5713",
+                    "steam_build": "22938426",
+                    "character": "Bard",
+                    "mode": "AllZonesSeededCurriculum",
+                    "num_instances": 8,
+                    "curriculum_reset": reset,
+                    "controller_valid": True,
+                    "worker_restarts": 0,
+                    "infrastructure_events": [],
+                    "seeds": candidates,
+                    "disclosure": (
+                        "reset boss identity only; no gameplay action was selected or issued"
+                    ),
+                    "controller_qualification_sha256": "a" * 64,
+                    "results": [
+                        {
+                            "seed": seed,
+                            "boss_type": 2,
+                            "boss_name": "DEATH_METAL",
+                            "instance_id": f"worker-{index % 8:04d}",
+                            "run_id": f"run-{seed}",
+                            "session_id": "session",
+                            "launch_id": f"launch-{index % 8}",
+                            "curriculum_reset": reset,
+                        }
+                        for index, seed in enumerate(candidates)
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        reports[bank] = path, candidates
     training = root / "training"
     training.mkdir()
     (training / "seed-selection.json").write_text(
-        json.dumps({"seeds": TRAINING_SEEDS}), encoding="utf-8"
+        json.dumps(
+            {
+                "seeds": TRAINING_SEEDS,
+                "boss_type": 2,
+                "disclosure": "boss identity only",
+                "source_report_sha256": sha256_file(reports["training"][0]),
+            }
+        ),
+        encoding="utf-8",
     )
     evaluation = root / "evaluation"
     evaluation.mkdir()
     (evaluation / "heldout-selection.json").write_text(
-        json.dumps({"seeds": seeds}), encoding="utf-8"
+        json.dumps(
+            {
+                "seeds": seeds,
+                "boss_type": 2,
+                "disclosure": "boss identity only",
+                "source_report_sha256": sha256_file(reports["evaluation"][0]),
+            }
+        ),
+        encoding="utf-8",
     )
     return evaluation
 

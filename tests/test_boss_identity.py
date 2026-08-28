@@ -7,7 +7,10 @@ import pytest
 
 from autodancer.constants import BossType, PlayerFeature
 from autodancer.curriculum import EpisodeResetSpec
-from autodancer.training.boss_identity import collect_boss_identities
+from autodancer.training.boss_identity import (
+    collect_boss_identities,
+    validate_identity_calibration_report,
+)
 
 
 class ResetOnlyFakeEnvironment:
@@ -108,4 +111,46 @@ def test_boss_identity_calibration_rejects_observation_info_disagreement() -> No
             environment,
             [11, 12, 13],
             EpisodeResetSpec("boss-identity", 4, 5, "player20"),
+        )
+
+
+def test_identity_report_rejects_gameplay_outcome_leak() -> None:
+    reset_spec = EpisodeResetSpec("boss-identity", 4, 5, "player20")
+    report = {
+        "schema_version": 1,
+        "kind": "boss-identity-calibration-v1",
+        "protocol_schema_version": 10,
+        "game_version": "v4.2.1-b5713",
+        "steam_build": "22938426",
+        "character": "Bard",
+        "mode": "AllZonesSeededCurriculum",
+        "num_instances": 8,
+        "curriculum_reset": reset_spec.as_dict(),
+        "controller_valid": True,
+        "worker_restarts": 0,
+        "infrastructure_events": [],
+        "seeds": [11],
+        "disclosure": "reset boss identity only; no gameplay action was selected or issued",
+        "controller_qualification_sha256": "a" * 64,
+        "results": [
+            {
+                "seed": 11,
+                "boss_type": int(BossType.DEATH_METAL),
+                "boss_name": "DEATH_METAL",
+                "instance_id": "worker-0000",
+                "run_id": "run",
+                "session_id": "session",
+                "launch_id": "launch",
+                "curriculum_reset": reset_spec.as_dict(),
+                "turns": 1,
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="leaks gameplay outcomes"):
+        validate_identity_calibration_report(
+            report,
+            expected_seeds=(11,),
+            reset_spec=reset_spec,
+            num_instances=8,
         )

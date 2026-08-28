@@ -7,6 +7,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from autodancer.constants import BossType
+from autodancer.curriculum import EpisodeResetSpec
+from autodancer.experiments.provenance import sha256_file
+from autodancer.training.boss_identity import validate_identity_calibration_report
+
 MODES = ("deterministic", "stochastic-83001", "stochastic-83002")
 TRIALS = ("seed-82001", "seed-82002", "seed-82003")
 MODE_CONTRACTS = {
@@ -15,6 +20,49 @@ MODE_CONTRACTS = {
     "stochastic-83002": ("stochastic", 83002),
 }
 SOURCE_SHA256 = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
+RESET_SPEC = EpisodeResetSpec("boss-identity", 4, 5, "player20")
+
+
+def _validated_seed_selection(
+    root: Path,
+    *,
+    bank: str,
+    candidates: tuple[int, ...],
+    count: int,
+) -> tuple[int, ...]:
+    calibration_path = root / "calibration" / f"{bank}-candidates.json"
+    calibration = json.loads(calibration_path.read_text(encoding="utf-8-sig"))
+    results = validate_identity_calibration_report(
+        calibration,
+        expected_seeds=candidates,
+        reset_spec=RESET_SPEC,
+        num_instances=8,
+    )
+    expected = tuple(
+        sorted(
+            int(result["seed"])
+            for result in results
+            if int(result["boss_type"]) == int(BossType.DEATH_METAL)
+        )[:count]
+    )
+    if len(expected) != count:
+        raise ValueError(f"EXP-0020 {bank} calibration lacks {count} Death Metal seeds")
+    selection_path = (
+        root / "training" / "seed-selection.json"
+        if bank == "training"
+        else root / "evaluation" / "heldout-selection.json"
+    )
+    selection = json.loads(selection_path.read_text(encoding="utf-8-sig"))
+    selected = tuple(int(seed) for seed in selection.get("seeds", ()))
+    if selected != expected:
+        raise ValueError(f"EXP-0020 {bank} selection does not follow identity-only rule")
+    if int(selection.get("boss_type", -1)) != int(BossType.DEATH_METAL):
+        raise ValueError(f"EXP-0020 {bank} selection boss mismatch")
+    if selection.get("disclosure") != "boss identity only":
+        raise ValueError(f"EXP-0020 {bank} selection disclosure mismatch")
+    if selection.get("source_report_sha256") != sha256_file(calibration_path):
+        raise ValueError(f"EXP-0020 {bank} selection calibration hash mismatch")
+    return selected
 
 
 def _load_report(
@@ -132,18 +180,18 @@ def _aggregate(reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def compare(root: Path) -> dict[str, Any]:
-    training_selection = json.loads(
-        (root / "training" / "seed-selection.json").read_text(encoding="utf-8-sig")
+    training_seeds = _validated_seed_selection(
+        root,
+        bank="training",
+        candidates=tuple(range(80001, 80257)),
+        count=48,
     )
-    training_seeds = tuple(int(seed) for seed in training_selection.get("seeds", ()))
-    if len(training_seeds) != 48 or len(set(training_seeds)) != 48:
-        raise ValueError("EXP-0020 requires exactly 48 unique training seeds")
-    selection = json.loads(
-        (root / "evaluation" / "heldout-selection.json").read_text(encoding="utf-8-sig")
+    seeds = _validated_seed_selection(
+        root,
+        bank="evaluation",
+        candidates=tuple(range(81001, 81257)),
+        count=24,
     )
-    seeds = tuple(int(seed) for seed in selection["seeds"])
-    if len(seeds) != 24 or len(set(seeds)) != 24:
-        raise ValueError("EXP-0020 requires exactly 24 unique held-out seeds")
     if set(training_seeds) & set(seeds):
         raise ValueError("EXP-0020 training and held-out seed banks overlap")
 

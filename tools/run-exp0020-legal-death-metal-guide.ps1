@@ -209,6 +209,7 @@ $trainingPoolArgument = $trainingPool -join ","
     disclosure = "boss identity only"
     seeds = @($trainingPool | ForEach-Object { [int]$_ })
     source_report = $trainingCalibration
+    source_report_sha256 = (Get-FileHash $trainingCalibration -Algorithm SHA256).Hash.ToLowerInvariant()
 } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $guideTraining "seed-selection.json") -Encoding utf8
 
 $evaluationCalibration = Join-Path $guideCalibration "evaluation-candidates.json"
@@ -235,6 +236,7 @@ $heldoutSeedArgument = $heldoutSeeds -join ","
     disclosure = "boss identity only"
     seeds = @($heldoutSeeds | ForEach-Object { [int]$_ })
     source_report = $evaluationCalibration
+    source_report_sha256 = (Get-FileHash $evaluationCalibration -Algorithm SHA256).Hash.ToLowerInvariant()
 } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $guideEvaluation "heldout-selection.json") -Encoding utf8
 
 $checkpoints = [ordered]@{ parent = $guideSource }
