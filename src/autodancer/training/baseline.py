@@ -44,6 +44,7 @@ from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
     NaturalPrefixError,
+    validate_guide_action_contract,
 )
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
 
@@ -915,6 +916,7 @@ def _evaluation_natural_prefix(
 
     total_turns = 0
     failures: list[dict[str, Any]] = []
+    observation = contract_memory.reset_slot(slot, observation)
     for attempt in range(config.max_attempts):
         tracker = DeathMetalPhaseTracker(config)
         tracker.observe(observation, info)
@@ -948,12 +950,20 @@ def _evaluation_natural_prefix(
                     learner_hidden,
                     0.5,
                 )
-            next_observation, reward, terminated, truncated, next_info = worker.step(action)
+            raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
             total_turns += 1
             next_info = dict(next_info)
             next_info["natural_prefix_stage"] = "guide"
             next_info["natural_prefix_attempt"] = attempt + 1
             next_info["natural_prefix_guide_turn"] = guide_turn + 1
+            next_info["action_contract"] = contract_memory.observe(
+                slot,
+                observation,
+                action,
+                raw_next_observation,
+                next_info,
+            )
+            next_observation = contract_memory.apply_slot(slot, raw_next_observation)
             tracker.observe(next_observation, next_info)
             if dashboard_state is not None:
                 dashboard_state.update_worker(
@@ -1009,6 +1019,7 @@ def _evaluation_natural_prefix(
         )
         if attempt + 1 < config.max_attempts:
             observation, info = worker.reset(seed=seed)
+            observation = contract_memory.reset_slot(slot, observation)
     raise NaturalPrefixError(
         worker_id,
         config,
@@ -1329,6 +1340,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             map_location=device,
             weights_only=False,
         )
+        validate_guide_action_contract(guide_payload, arguments.action_contract)
         guide_model = model_from_spec(guide_payload.get("architecture", {}), initialize=False).to(
             device
         )

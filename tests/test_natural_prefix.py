@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -20,6 +23,8 @@ from autodancer.constants import (
 from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
+    natural_prefix_identity,
+    validate_guide_action_contract,
 )
 
 
@@ -104,3 +109,20 @@ def test_non_death_metal_observation_does_not_advance_tracker() -> None:
 def test_natural_prefix_failure_budget_must_be_positive() -> None:
     with pytest.raises(ValueError, match="turn and attempt limits"):
         NaturalPrefixConfig(max_failed_seeds_per_fragment=0)
+
+
+def test_guide_action_contract_must_match_checkpoint() -> None:
+    payload = {"checkpoint_metadata": {"action_contract": "map-navigation-prior-v1"}}
+    validate_guide_action_contract(payload, "map-navigation-prior-v1")
+    with pytest.raises(ValueError, match="Guide action contract mismatch"):
+        validate_guide_action_contract(payload, "current")
+
+
+def test_natural_prefix_identity_binds_exact_guide_bytes(tmp_path: Path) -> None:
+    guide = tmp_path / "guide.pt"
+    guide.write_bytes(b"guide-v1")
+    identity = natural_prefix_identity(NaturalPrefixConfig(target_phase=3), guide)
+
+    assert identity["target_phase"] == 3
+    assert identity["guide_checkpoint"] == str(guide.resolve())
+    assert identity["guide_checkpoint_sha256"] == hashlib.sha256(b"guide-v1").hexdigest()

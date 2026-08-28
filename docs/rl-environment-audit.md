@@ -865,10 +865,21 @@ declared acquisition gate intentionally allows failures. The collector now
 records the failed seed and boundary evidence with zero learner turns, zero
 reward, and no PPO tensors; advances the deterministic seed schedule; and keeps
 collecting until it has the requested number of genuine learner transitions.
-A versioned consecutive-failure budget stops clearly if the guide cannot supply
+A versioned per-fragment failure budget stops clearly if the guide cannot supply
 a usable start distribution. Failure skips and their guide-action cost are
 therefore observable without fabricating experience or silently conditioning
 the evaluation denominator on successful acquisition.
+
+Guide deployment now also reproduces the guide's declared stateful action
+contract during every prefix action. The earlier implementation applied
+`map-navigation-prior-v1` only after handoff, even though the proposed guide is
+trained with that contract; it could therefore execute a different policy while
+generating learner starts. Training and evaluation now update the same
+episode-local wall/navigation memory on each guide transition, clear it on each
+retry, and reset it at handoff. Loading rejects a guide whose checkpoint action
+contract differs from the run, while checkpoint/config lineage binds the
+natural-prefix specification to the guide artifact's SHA-256 digest. A resume
+cannot silently substitute different guide weights at the same path.
 
 This is the live-game analogue of
 [Jump-Start RL](https://arxiv.org/abs/2204.02372): a guide policy induces a

@@ -750,7 +750,7 @@ class VersionedAsyncRolloutCollector:
         worker_id = self.environment.worker_ids[index]
         worker = self.environment.environments[worker_id]
         seed = int(state.info.get("seed", 0))
-        observation = state.observation
+        observation = self.contract_memory.reset_slot(index, state.observation)
         info = state.info
         total_guide_turns = 0
         failure_summaries: list[dict[str, Any]] = []
@@ -795,12 +795,22 @@ class VersionedAsyncRolloutCollector:
                         learner_hidden,
                         0.5,
                     )
-                next_observation, reward, terminated, truncated, next_info = worker.step(action)
+                raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
                 total_guide_turns += 1
                 next_info = dict(next_info)
                 next_info["natural_prefix_stage"] = "guide"
                 next_info["natural_prefix_attempt"] = attempt + 1
                 next_info["natural_prefix_guide_turn"] = guide_turn + 1
+                next_info["action_contract"] = self.contract_memory.observe(
+                    index,
+                    observation,
+                    action,
+                    raw_next_observation,
+                    next_info,
+                )
+                next_observation = self.contract_memory.apply_slot(
+                    index, raw_next_observation
+                )
                 tracker.observe(next_observation, next_info)
                 self._publish_telemetry(index, next_observation, next_info, action, float(reward))
                 last_guide_action = action
@@ -864,6 +874,7 @@ class VersionedAsyncRolloutCollector:
                     seed=seed,
                     options=state.reset_spec.reset_options(),
                 )
+                observation = self.contract_memory.reset_slot(index, observation)
 
         raise NaturalPrefixError(
             worker_id,

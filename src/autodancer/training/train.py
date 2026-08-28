@@ -38,6 +38,8 @@ from autodancer.training.model import (
 from autodancer.training.natural_prefix import (
     NATURAL_PREFIX_RECURRENT_MODES,
     NaturalPrefixConfig,
+    natural_prefix_identity,
+    validate_guide_action_contract,
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
 from autodancer.training.seed_schedule import parse_training_seed_pool
@@ -417,6 +419,11 @@ def train(arguments: argparse.Namespace) -> None:
             recurrent_state_mode=arguments.natural_prefix_recurrent_state,
         )
     )
+    natural_prefix_metadata = (
+        None
+        if natural_prefix is None
+        else natural_prefix_identity(natural_prefix, arguments.natural_prefix_guide)
+    )
     training_seed_pool = (
         ()
         if arguments.training_seed_pool is None
@@ -525,6 +532,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
                 "curriculum_mixture": curriculum_distribution,
+                "natural_prefix": natural_prefix_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -618,15 +626,8 @@ def train(arguments: argparse.Namespace) -> None:
                         **seed_checkpoint_metadata,
                         **curriculum_metadata,
                         **(
-                            {
-                                "natural_prefix": {
-                                    **natural_prefix.specification(),
-                                    "guide_checkpoint": str(
-                                        arguments.natural_prefix_guide.resolve()
-                                    ),
-                                }
-                            }
-                            if natural_prefix is not None
+                            {"natural_prefix": natural_prefix_metadata}
+                            if natural_prefix_metadata is not None
                             else {}
                         ),
                         "freeze_base_updates": arguments.freeze_base_updates,
@@ -645,6 +646,9 @@ def train(arguments: argparse.Namespace) -> None:
                         arguments.natural_prefix_guide,
                         map_location=device,
                         weights_only=False,
+                    )
+                    validate_guide_action_contract(
+                        guide_payload, arguments.action_contract
                     )
                     guide_model = model_from_spec(
                         guide_payload.get("architecture", {}), initialize=False
@@ -807,6 +811,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "curriculum_target_level": arguments.curriculum_target_level,
                             "curriculum_profile": arguments.curriculum_profile,
                             "curriculum_mixture": curriculum_distribution,
+                            "natural_prefix": natural_prefix_metadata,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "supervisor": {
                                 "num_instances": arguments.num_instances,

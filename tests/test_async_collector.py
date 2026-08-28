@@ -136,6 +136,7 @@ class PrefixWorker:
         self.turn = 0
         self.handoffs: list[dict] = []
         self.step_calls = 0
+        self.actions: list[int] = []
         self.seed = 0
         self.run_id = ""
 
@@ -163,7 +164,7 @@ class PrefixWorker:
         }
 
     def step(self, action: int):
-        del action
+        self.actions.append(action)
         self.turn += 1
         self.step_calls += 1
         if self.direct_mutation:
@@ -195,6 +196,7 @@ class PrefixWorker:
                 "zone": 1,
                 "floor": 4,
                 "raw_events": events,
+                "action_outcome": {"category": "wall_attempt"},
             },
         )
 
@@ -803,6 +805,42 @@ def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> No
     assert torch.any(rollout.hiddens[0] != 0)
 
 
+def test_natural_prefix_guide_uses_declared_stateful_action_contract() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    with torch.no_grad():
+        for parameter in guide.parameters():
+            parameter.zero_()
+        guide.actor[-1].bias[int(Action.UP)] = 20.0
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=104,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
+        action_contract="known-invalid-wall-v1",
+    )
+    try:
+        collector.collect(1)
+    finally:
+        collector.close()
+
+    for worker in environment.environments.values():
+        assert worker.actions[0] == int(Action.UP)
+        assert worker.actions[1] != int(Action.UP)
+
+
 def test_natural_prefix_rejects_direct_boss_health_mutation() -> None:
     environment = PrefixEnvironment(direct_mutation=True)
     learner = RecurrentActorCritic(
@@ -917,6 +955,45 @@ def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
     assert results[0]["turns"] == 2
     assert environment.environments["worker-0000"].step_calls == 5
     assert len(environment.environments["worker-0000"].handoffs) == 1
+
+
+def test_natural_prefix_evaluation_uses_declared_stateful_action_contract() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    with torch.no_grad():
+        for parameter in guide.parameters():
+            parameter.zero_()
+        guide.actor[-1].bias[int(Action.UP)] = 20.0
+    _evaluate_model_async(
+        environment,
+        learner,
+        seeds=[9003],
+        max_steps=1,
+        policy_seed=19,
+        device=torch.device("cpu"),
+        dashboard_state=None,
+        action_contract="known-invalid-wall-v1",
+        deterministic=True,
+        guide_model=guide,
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=3,
+            max_attempts=1,
+            deterministic_guide=True,
+        ),
+    )
+    worker = environment.environments["worker-0000"]
+    assert worker.actions[0] == int(Action.UP)
+    assert worker.actions[1] != int(Action.UP)
 
 
 def test_natural_prefix_evaluation_reports_guide_failure_as_gameplay_outcome() -> None:

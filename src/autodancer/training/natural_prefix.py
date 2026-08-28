@@ -8,8 +8,10 @@ state is synthesized and guide transitions are not PPO samples.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -17,6 +19,16 @@ import numpy as np
 from autodancer.constants import ActorKind, BossType, GridChannel, PlayerFeature
 
 NATURAL_PREFIX_RECURRENT_MODES = ("fresh", "warm")
+
+
+def validate_guide_action_contract(payload: Mapping[str, Any], expected: str) -> None:
+    """Require guide deployment to use the policy contract it was trained with."""
+
+    actual = (payload.get("checkpoint_metadata") or {}).get("action_contract")
+    if actual != expected:
+        raise ValueError(
+            f"Guide action contract mismatch: checkpoint={actual!r}, run={expected!r}"
+        )
 
 
 class NaturalPrefixError(RuntimeError):
@@ -86,6 +98,22 @@ class NaturalPrefixConfig:
             "state_semantics": "ordinary-engine-transitions-only",
             "guide_transitions_in_ppo": False,
         }
+
+
+def natural_prefix_identity(config: NaturalPrefixConfig, guide: Path) -> dict[str, Any]:
+    """Bind a handoff contract to the exact frozen guide artifact."""
+
+    if not guide.is_file():
+        raise FileNotFoundError(f"Natural-prefix guide checkpoint does not exist: {guide}")
+    digest = hashlib.sha256()
+    with guide.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        **config.specification(),
+        "guide_checkpoint": str(guide.resolve()),
+        "guide_checkpoint_sha256": digest.hexdigest(),
+    }
 
 
 @dataclass(slots=True)
