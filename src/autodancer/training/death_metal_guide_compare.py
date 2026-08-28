@@ -10,6 +10,7 @@ from typing import Any
 from autodancer.constants import BossType
 from autodancer.curriculum import EpisodeResetSpec
 from autodancer.experiments.provenance import sha256_file
+from autodancer.rewards import load_reward_config
 from autodancer.training.boss_identity import validate_identity_calibration_report
 
 MODES = ("deterministic", "stochastic-83001", "stochastic-83002")
@@ -21,6 +22,9 @@ MODE_CONTRACTS = {
 }
 SOURCE_SHA256 = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
 RESET_SPEC = EpisodeResetSpec("boss-identity", 4, 5, "player20")
+GUIDE_REWARD_SPEC = load_reward_config(
+    Path(__file__).resolve().parents[3] / "configs" / "reward-death-metal-guide-v1.json"
+).specification()
 
 
 def _validated_seed_selection(
@@ -95,6 +99,12 @@ def _load_report(
         raise ValueError(f"character mismatch: {path}")
     if report.get("action_contract") != "map-navigation-prior-v1":
         raise ValueError(f"action contract mismatch: {path}")
+    if report.get("checkpoint_action_contract") != "map-navigation-prior-v1":
+        raise ValueError(f"checkpoint action contract mismatch: {path}")
+    if report.get("evaluation_reward") != GUIDE_REWARD_SPEC:
+        raise ValueError(f"guide reward mismatch: {path}")
+    if expected_training_seeds is not None and report.get("reward") != GUIDE_REWARD_SPEC:
+        raise ValueError(f"checkpoint guide reward mismatch: {path}")
     if int(report.get("num_instances", 0)) != 8:
         raise ValueError(f"worker capacity mismatch: {path}")
     if int(report.get("max_steps_per_episode", 0)) != 500:

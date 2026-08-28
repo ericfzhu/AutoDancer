@@ -5,6 +5,7 @@ from pathlib import Path
 
 from autodancer.experiments.provenance import sha256_file
 from autodancer.training.death_metal_guide_compare import (
+    GUIDE_REWARD_SPEC,
     MODES,
     SOURCE_SHA256,
     TRIALS,
@@ -110,6 +111,9 @@ def _report(
         "policy_seed": policy_seed,
         "character": "Bard",
         "action_contract": "map-navigation-prior-v1",
+        "checkpoint_action_contract": "map-navigation-prior-v1",
+        "reward": GUIDE_REWARD_SPEC,
+        "evaluation_reward": GUIDE_REWARD_SPEC,
         "num_instances": 8,
         "max_steps_per_episode": 500,
         "checkpoint_global_step": 122880,
