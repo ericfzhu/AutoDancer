@@ -1192,6 +1192,19 @@ does not remove four scientific risks:
    checkpoint curves should diagnose this before increasing model size. If the
    primitive-action critic cannot bridge the full hierarchy, event-defined
    options are a causal next architecture rather than denser renewable shaping.
+   The current implementation does preserve the behavior-policy hidden state at
+   each chunk boundary, keeps actions temporally ordered, and masks episode
+   starts, matching the core recurrent-PPO implementation requirements described
+   by [Pleines et al., 2022](https://arxiv.org/abs/2205.11104). However,
+   backpropagation is still truncated after 32 actions. Carried state can contain
+   older information, but losses cannot train how observations more than 32
+   actions earlier should have written that memory. Stored boundary states also
+   become mildly stale during PPO's four update epochs; recurrent-state staleness
+   and burn-in are documented failure modes in longer-lag replay systems
+   ([Kapturowski et al., 2019](https://openreview.net/pdf/387fb2fcee8f74c53cf707a9856f40c458f33933.pdf)).
+   Do not change this inside EXP-0021. If phase depth stalls while immediate boss
+   damage improves, predeclare a controlled 32-versus-64/128 sequence-length arm
+   with identical rollout data, model, reward, seeds, and total transitions.
 5. **Initializer provenance is not a clean causal control.** EXP-0021 starts from
    `runs/assisted-death-metal/training/seed-68002/final.pt`. That A2 policy was
    initialized from the corrected 61,440-transition A2 checkpoint, but was then
