@@ -6,12 +6,22 @@ from pathlib import Path
 from autodancer.training.death_metal_guide_compare import MODES, TRIALS, compare
 
 
-def _report(seeds: list[int], phase4: set[int], *, damage: int) -> dict[str, object]:
+def _report(
+    seeds: list[int], phase4: set[int], *, damage: int, mode: str
+) -> dict[str, object]:
+    policy_mode = "deterministic" if mode == "deterministic" else "stochastic"
+    policy_seed = 0 if mode == "deterministic" else int(mode.removeprefix("stochastic-"))
     return {
         "controller_valid": True,
         "worker_restarts": 0,
         "infrastructure_events": [],
         "seeds": seeds,
+        "policy_mode": policy_mode,
+        "policy_seed": policy_seed,
+        "character": "Bard",
+        "action_contract": "map-navigation-prior-v1",
+        "num_instances": 8,
+        "max_steps_per_episode": 500,
         "curriculum_profile": "player20",
         "curriculum_start_level": 4,
         "curriculum_target_level": 5,
@@ -22,8 +32,13 @@ def _report(seeds: list[int], phase4: set[int], *, damage: int) -> dict[str, obj
                     "status": "curriculum_complete" if seed in phase4 else "dead",
                     "death_metal_phase4_reached": seed in phase4,
                     "boss_phase_depth": 4 if seed in phase4 else 2,
-                    "boss_damage": damage,
+                    "boss_actor_types": [101, 102, 103, 104]
+                    if seed in phase4
+                    else [101, 102],
+                    "boss_damage": max(damage, 7) if seed in phase4 else damage,
                     "turns": 100,
+                    "boss_type": 2,
+                    "furthest_zone": 2 if seed in phase4 else 1,
                 }
                 for seed in seeds
             ]
@@ -48,7 +63,8 @@ def test_guide_gate_requires_reproducible_phase_acquisition(tmp_path: Path) -> N
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
             (directory / "report.json").write_text(
-                json.dumps(_report(seeds, phases, damage=damage)), encoding="utf-8"
+                json.dumps(_report(seeds, phases, damage=damage, mode=mode)),
+                encoding="utf-8",
             )
 
     result = compare(tmp_path)
@@ -72,13 +88,39 @@ def test_guide_gate_rejects_one_lucky_checkpoint(tmp_path: Path) -> None:
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
             (directory / "report.json").write_text(
-                json.dumps(_report(seeds, phases, damage=3)), encoding="utf-8"
+                json.dumps(_report(seeds, phases, damage=3, mode=mode)), encoding="utf-8"
             )
 
     result = compare(tmp_path)
 
     assert result["gate"]["passed"] is False
     assert result["selected_trial"] is None
+
+
+def test_guide_gate_rejects_inconsistent_phase_evidence(tmp_path: Path) -> None:
+    seeds = list(range(81001, 81025))
+    evaluation = tmp_path / "evaluation"
+    evaluation.mkdir()
+    (evaluation / "heldout-selection.json").write_text(
+        json.dumps({"seeds": seeds}), encoding="utf-8"
+    )
+    for name in ("parent", *TRIALS):
+        for mode in MODES:
+            directory = evaluation / name / mode
+            directory.mkdir(parents=True)
+            report = _report(seeds, set(), damage=3, mode=mode)
+            if name == TRIALS[0] and mode == "deterministic":
+                report["trained"]["results"][0]["death_metal_phase4_reached"] = True
+            (directory / "report.json").write_text(
+                json.dumps(report), encoding="utf-8"
+            )
+
+    try:
+        compare(tmp_path)
+    except ValueError as error:
+        assert "inconsistent phase-4 evidence" in str(error)
+    else:
+        raise AssertionError("malformed phase evidence was accepted")
 
 
 def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
