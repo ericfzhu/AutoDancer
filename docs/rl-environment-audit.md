@@ -1125,6 +1125,23 @@ does not remove four scientific risks:
    checkpoint curves should diagnose this before increasing model size. If the
    primitive-action critic cannot bridge the full hierarchy, event-defined
    options are a causal next architecture rather than denser renewable shaping.
+5. **Initializer provenance is not a clean causal control.** EXP-0020 starts from
+   `runs/assisted-death-metal/training/seed-68002/final.pt`. That A2 policy was
+   initialized from the corrected 61,440-transition A2 checkpoint, but was then
+   optimized for another 51,200 transitions under the retired direct-health
+   mutation. Its historical achievements are already excluded, yet excluding
+   them does not erase their influence on its actor and recurrent weights. A
+   controller-valid held-out EXP-0020 success would prove that the resulting
+   policy can perform the legal player-health-only task; it would not isolate
+   whether useful behavior came from the legal curriculum or transferred from
+   the invalid one. Keep this arm because it is a legitimate transfer attempt
+   toward gameplay competence, but before claiming the legal curriculum itself
+   is the causal mechanism, replicate the selected configuration from the clean
+   corrected A2 source at
+   `runs/corrected-a2-replication/training/seed-39001/checkpoint-00061440.pt` on
+   a disjoint development bank. Normal-start Zone 2 acceptance remains valid
+   regardless of initializer provenance only when the final unassisted policy
+   succeeds on the untouched target distribution.
 
 The consequence is a two-level evidence standard. Curriculum phase acquisition
 answers whether the downstream skill is learnable. Only repeated Zone 2 entry
