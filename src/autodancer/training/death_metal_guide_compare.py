@@ -14,10 +14,15 @@ MODE_CONTRACTS = {
     "stochastic-83001": ("stochastic", 83001),
     "stochastic-83002": ("stochastic", 83002),
 }
+SOURCE_SHA256 = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
 
 
 def _load_report(
-    path: Path, expected_seeds: tuple[int, ...], mode: str
+    path: Path,
+    expected_seeds: tuple[int, ...],
+    mode: str,
+    *,
+    expected_training_seeds: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     report = json.loads(path.read_text(encoding="utf-8-sig"))
     if report.get("controller_valid") is not True:
@@ -45,6 +50,32 @@ def _load_report(
         raise ValueError(f"worker capacity mismatch: {path}")
     if int(report.get("max_steps_per_episode", 0)) != 500:
         raise ValueError(f"episode horizon mismatch: {path}")
+    if expected_training_seeds is not None:
+        if report.get("checkpoint_training_seed_schedule") != "uniform-pool-v1":
+            raise ValueError(f"training seed schedule mismatch: {path}")
+        if tuple(int(seed) for seed in report.get("checkpoint_training_seed_pool") or ()) != (
+            expected_training_seeds
+        ):
+            raise ValueError(f"training seed pool mismatch: {path}")
+        if report.get("checkpoint_curriculum") != {
+            "start_level": 4,
+            "target_level": 5,
+            "profile": "player20",
+            "reset_semantics": "normal-reset-sequential-goto-reward-reset-v1",
+        }:
+            raise ValueError(f"checkpoint curriculum mismatch: {path}")
+        if int(report.get("checkpoint_freeze_base_updates", -1)) != 10:
+            raise ValueError(f"base-freeze schedule mismatch: {path}")
+        initialization = report.get("checkpoint_initialization") or {}
+        if initialization.get("sha256") != SOURCE_SHA256:
+            raise ValueError(f"initializer checkpoint mismatch: {path}")
+        if (
+            initialization.get("architecture_upgrade")
+            != "v2_to_v8_actor_parity_fresh_critic"
+        ):
+            raise ValueError(f"initializer architecture transfer mismatch: {path}")
+        if int(report.get("checkpoint_global_step", 0)) != 122880:
+            raise ValueError(f"training transition budget mismatch: {path}")
     episodes = report.get("trained", {}).get("results", [])
     episode_seeds = tuple(int(episode.get("seed", -1)) for episode in episodes)
     if episode_seeds != expected_seeds:
@@ -101,12 +132,20 @@ def _aggregate(reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def compare(root: Path) -> dict[str, Any]:
+    training_selection = json.loads(
+        (root / "training" / "seed-selection.json").read_text(encoding="utf-8-sig")
+    )
+    training_seeds = tuple(int(seed) for seed in training_selection.get("seeds", ()))
+    if len(training_seeds) != 48 or len(set(training_seeds)) != 48:
+        raise ValueError("EXP-0020 requires exactly 48 unique training seeds")
     selection = json.loads(
         (root / "evaluation" / "heldout-selection.json").read_text(encoding="utf-8-sig")
     )
     seeds = tuple(int(seed) for seed in selection["seeds"])
     if len(seeds) != 24 or len(set(seeds)) != 24:
         raise ValueError("EXP-0020 requires exactly 24 unique held-out seeds")
+    if set(training_seeds) & set(seeds):
+        raise ValueError("EXP-0020 training and held-out seed banks overlap")
 
     parent_reports = [
         _load_report(root / "evaluation" / "parent" / mode / "report.json", seeds, mode)
@@ -116,13 +155,23 @@ def compare(root: Path) -> dict[str, Any]:
     trials: dict[str, dict[str, Any]] = {}
     for trial in TRIALS:
         reports = [
-            _load_report(root / "evaluation" / trial / mode / "report.json", seeds, mode)
+            _load_report(
+                root / "evaluation" / trial / mode / "report.json",
+                seeds,
+                mode,
+                expected_training_seeds=training_seeds,
+            )
             for mode in MODES
         ]
         trials[trial] = _aggregate(reports)
 
     all_trial_reports = [
-        _load_report(root / "evaluation" / trial / mode / "report.json", seeds, mode)
+        _load_report(
+            root / "evaluation" / trial / mode / "report.json",
+            seeds,
+            mode,
+            expected_training_seeds=training_seeds,
+        )
         for trial in TRIALS
         for mode in MODES
     ]

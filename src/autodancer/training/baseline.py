@@ -1425,6 +1425,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         None if arguments.trained_only else summarize_episodes(random_results, "masked_random")
     )
     trained = summarize_episodes(trained_results, f"checkpoint_{arguments.policy_mode}")
+    checkpoint_metadata = dict(payload.get("checkpoint_metadata", {}))
     report = {
         "schema_version": 2,
         "created_at": datetime.now(UTC).isoformat(),
@@ -1440,8 +1441,15 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_sha256": _checkpoint_hash(arguments.checkpoint),
         "checkpoint_global_step": int(payload.get("global_step", 0)),
         "checkpoint_updates": int(payload.get("updates", 0)),
-        "reward": payload.get("checkpoint_metadata", {}).get("reward"),
-        "checkpoint_action_contract": payload.get("checkpoint_metadata", {}).get("action_contract"),
+        "reward": checkpoint_metadata.get("reward"),
+        "checkpoint_action_contract": checkpoint_metadata.get("action_contract"),
+        "checkpoint_training_seed_schedule": checkpoint_metadata.get(
+            "training_seed_schedule"
+        ),
+        "checkpoint_training_seed_pool": checkpoint_metadata.get("training_seed_pool"),
+        "checkpoint_curriculum": checkpoint_metadata.get("curriculum"),
+        "checkpoint_freeze_base_updates": checkpoint_metadata.get("freeze_base_updates"),
+        "checkpoint_initialization": checkpoint_metadata.get("initialization"),
         "evaluation_reward": reward_config.specification(),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
