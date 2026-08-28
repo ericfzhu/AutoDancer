@@ -135,3 +135,7 @@ def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
     assert "controller-qualification-player-health-only-world-ready" in source
     assert "$guideTotalSteps = 122880" in source
     assert "-not (Test-Path $guideQualification)" in source
+    assert '"-m", "autodancer.training.boss_identity"' in source
+    assert "$report.results" in source
+    assert '"--max-steps", "1"' not in source
+    assert "autodancer.training.baseline" in source

@@ -528,6 +528,13 @@ separate follow-ups if the calibrated local task still fails.
   verifies reset/run/seed identity and proves that the first action after a
   level transition consumes the new floor's observation rather than the prior
   floor state.
+- **Outcome-blind boss stratification:** EXP-0020 seed calibration uses the
+  reset-only `boss-identity-calibration-v1` path. It launches the declared live
+  curriculum start, verifies Bard/seed/worker/run and observation-versus-info
+  boss identity, and then resets the next wave without ever calling `step()`.
+  The resulting artifact cannot expose action, reward, damage, phase, survival,
+  or completion data, preventing favorable gameplay outcomes from leaking into
+  the Death Metal training or evaluation seed selection.
 - **Rich-input connectivity:** A8 representation probes show that map,
   tactical grid, extended player, and inventory inputs all materially affect
   the network. A8's failure is not explained by disconnected inputs, though it

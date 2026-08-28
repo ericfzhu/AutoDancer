@@ -94,8 +94,14 @@ function Test-GuideEvaluationValid {
 function Select-DeathMetalSeeds {
     param([string]$ReportPath, [int]$Count)
     $report = Get-Content $ReportPath -Raw | ConvertFrom-Json
+    if ($report.kind -ne "boss-identity-calibration-v1") {
+        throw "Seed calibration report is not reset-only identity evidence"
+    }
+    if ($report.controller_valid -ne $true -or [int]$report.worker_restarts -ne 0) {
+        throw "Seed calibration report contains controller failures"
+    }
     return @(
-        $report.trained.results |
+        $report.results |
             Where-Object { [int]$_.boss_type -eq 2 } |
             Sort-Object { [int]$_.seed } |
             Select-Object -First $Count -ExpandProperty seed
@@ -140,14 +146,12 @@ $trainingCalibration = Join-Path $guideCalibration "training-candidates.json"
 if (-not (Test-Path $trainingCalibration)) {
     Write-GuideStatus "calibrating-training-seeds"
     Invoke-GuideChecked -Stage "training seed boss-identity calibration" -Log (Join-Path $guideCalibration "training-console.log") -Arguments @(
-        "-m", "autodancer.training.baseline", "--game-dir", $guideGame,
-        "--mod-dir", $guideMod, "--checkpoint", $guideSource, "--output", $trainingCalibration,
-        "--num-instances", "8", "--seeds", $guideTrainingCandidates, "--max-steps", "1",
-        "--policy-mode", "deterministic", "--trained-only", "--device", "cuda",
-        "--reward-config", $guideReward, "--action-contract", "map-navigation-prior-v1",
+        "-m", "autodancer.training.boss_identity", "--game-dir", $guideGame,
+        "--mod-dir", $guideMod, "--output", $trainingCalibration,
+        "--num-instances", "8", "--seeds", $guideTrainingCandidates,
         "--curriculum-start-level", "4", "--curriculum-target-level", "5",
         "--curriculum-profile", "player20", "--affinity", "none",
-        "--controller-qualification", $guideQualification, "--dashboard", "8765"
+        "--controller-qualification", $guideQualification
     )
 }
 $trainingPool = Select-DeathMetalSeeds $trainingCalibration 48
@@ -168,14 +172,12 @@ $evaluationCalibration = Join-Path $guideCalibration "evaluation-candidates.json
 if (-not (Test-Path $evaluationCalibration)) {
     Write-GuideStatus "calibrating-evaluation-seeds"
     Invoke-GuideChecked -Stage "evaluation seed boss-identity calibration" -Log (Join-Path $guideCalibration "evaluation-console.log") -Arguments @(
-        "-m", "autodancer.training.baseline", "--game-dir", $guideGame,
-        "--mod-dir", $guideMod, "--checkpoint", $guideSource, "--output", $evaluationCalibration,
-        "--num-instances", "8", "--seeds", $guideEvaluationCandidates, "--max-steps", "1",
-        "--policy-mode", "deterministic", "--trained-only", "--device", "cuda",
-        "--reward-config", $guideReward, "--action-contract", "map-navigation-prior-v1",
+        "-m", "autodancer.training.boss_identity", "--game-dir", $guideGame,
+        "--mod-dir", $guideMod, "--output", $evaluationCalibration,
+        "--num-instances", "8", "--seeds", $guideEvaluationCandidates,
         "--curriculum-start-level", "4", "--curriculum-target-level", "5",
         "--curriculum-profile", "player20", "--affinity", "none",
-        "--controller-qualification", $guideQualification, "--dashboard", "8765"
+        "--controller-qualification", $guideQualification
     )
 }
 $heldoutSeeds = Select-DeathMetalSeeds $evaluationCalibration 24
