@@ -29,6 +29,7 @@ from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
     NaturalPrefixError,
+    natural_prefix_policy_sample,
 )
 from autodancer.training.ppo import RolloutBatch
 from autodancer.training.seed_schedule import TrainingSeedSchedule
@@ -766,18 +767,11 @@ class VersionedAsyncRolloutCollector:
             last_guide_reward = 0.0
 
             for guide_turn in range(config.max_guide_turns):
-                sample = float(
-                    np.random.default_rng(
-                        np.random.SeedSequence(
-                            [
-                                config.guide_policy_seed,
-                                seed,
-                                index,
-                                attempt,
-                                guide_turn,
-                            ]
-                        )
-                    ).random()
+                sample = natural_prefix_policy_sample(
+                    config.guide_policy_seed,
+                    seed,
+                    attempt,
+                    guide_turn,
                 )
                 action, _, _, next_guide_hidden = guide_scheduler.infer(
                     observation,

@@ -44,6 +44,7 @@ from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
     NaturalPrefixError,
+    natural_prefix_policy_sample,
     validate_guide_action_contract,
 )
 from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
@@ -927,12 +928,11 @@ def _evaluation_natural_prefix(
         last_action = START_ACTION
         last_reward = 0.0
         for guide_turn in range(config.max_guide_turns):
-            sample = float(
-                np.random.default_rng(
-                    np.random.SeedSequence(
-                        [config.guide_policy_seed, seed, slot, attempt, guide_turn]
-                    )
-                ).random()
+            sample = natural_prefix_policy_sample(
+                config.guide_policy_seed,
+                seed,
+                attempt,
+                guide_turn,
             )
             action, _, _, next_guide_hidden = guide_scheduler.infer(
                 observation,

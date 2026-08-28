@@ -21,6 +21,19 @@ from autodancer.constants import ActorKind, BossType, GridChannel, PlayerFeature
 NATURAL_PREFIX_RECURRENT_MODES = ("fresh", "warm")
 
 
+def natural_prefix_policy_sample(
+    policy_seed: int, game_seed: int, attempt: int, turn: int
+) -> float:
+    """Return a worker-slot-independent guide sample for one legal prefix turn."""
+
+    if attempt < 0 or turn < 0:
+        raise ValueError("natural-prefix attempt and turn must be non-negative")
+    stream = np.random.default_rng(
+        np.random.SeedSequence([int(policy_seed), int(game_seed), int(attempt), int(turn)])
+    )
+    return float(stream.random())
+
+
 def validate_guide_action_contract(payload: Mapping[str, Any], expected: str) -> None:
     """Require guide deployment to use the policy contract it was trained with."""
 
@@ -91,8 +104,8 @@ class NaturalPrefixConfig:
 
     def specification(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
-            "kind": "death-metal-natural-prefix-v1",
+            "schema_version": 2,
+            "kind": "death-metal-natural-prefix-v2",
             **asdict(self),
             "target_health": self.target_health,
             "state_semantics": "ordinary-engine-transitions-only",

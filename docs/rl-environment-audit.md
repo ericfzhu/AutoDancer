@@ -880,6 +880,11 @@ retry, and reset it at handoff. Loading rejects a guide whose checkpoint action
 contract differs from the run, while checkpoint/config lineage binds the
 natural-prefix specification to the guide artifact's SHA-256 digest. A resume
 cannot silently substitute different guide weights at the same path.
+Stochastic guide sampling is keyed only by guide-policy seed, game seed,
+attempt, and prefix turn—not worker slot—so moving the same held-out seed to a
+different evaluation wave cannot change its guide trajectory. These corrected
+semantics are identified as `death-metal-natural-prefix-v2`; v1 evidence must
+not be pooled with it.
 
 This is the live-game analogue of
 [Jump-Start RL](https://arxiv.org/abs/2204.02372): a guide policy induces a

@@ -24,6 +24,7 @@ from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
     natural_prefix_identity,
+    natural_prefix_policy_sample,
     validate_guide_action_contract,
 )
 
@@ -123,6 +124,18 @@ def test_natural_prefix_identity_binds_exact_guide_bytes(tmp_path: Path) -> None
     guide.write_bytes(b"guide-v1")
     identity = natural_prefix_identity(NaturalPrefixConfig(target_phase=3), guide)
 
+    assert identity["schema_version"] == 2
+    assert identity["kind"] == "death-metal-natural-prefix-v2"
     assert identity["target_phase"] == 3
     assert identity["guide_checkpoint"] == str(guide.resolve())
     assert identity["guide_checkpoint_sha256"] == hashlib.sha256(b"guide-v1").hexdigest()
+
+
+def test_natural_prefix_policy_sample_depends_on_seed_attempt_and_turn_only() -> None:
+    sample = natural_prefix_policy_sample(17, 81001, 2, 9)
+    assert sample == natural_prefix_policy_sample(17, 81001, 2, 9)
+    assert sample != natural_prefix_policy_sample(17, 81002, 2, 9)
+    assert sample != natural_prefix_policy_sample(17, 81001, 3, 9)
+    assert sample != natural_prefix_policy_sample(17, 81001, 2, 10)
+    with pytest.raises(ValueError, match="non-negative"):
+        natural_prefix_policy_sample(17, 81001, -1, 9)
