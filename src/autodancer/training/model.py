@@ -633,8 +633,10 @@ class ProjectedAdapterActorCritic(nn.Module):
         return self.base.initial_state(batch_size, device=device)
 
     def set_base_trainable(self, trainable: bool) -> None:
-        for parameter in self.base.parameters():
-            parameter.requires_grad_(trainable)
+        # The critic is fresh during A2 -> A8 actor-parity transfer, so it is
+        # not part of the inherited function protected by the early freeze.
+        for name, parameter in self.base.named_parameters():
+            parameter.requires_grad_(trainable or name.startswith("critic."))
 
     def encode(self, observation: dict[str, Tensor]) -> Tensor:
         return self.base.encode(observation) + self.adapter_projection(self.adapter(observation))

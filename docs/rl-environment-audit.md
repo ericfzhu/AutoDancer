@@ -995,6 +995,13 @@ Warm-start and fine-tune provenance likewise binds the initializer by SHA-256,
 not only by a mutable filesystem path, so a descendant checkpoint remains
 independently attributable after either artifact is moved.
 
+The A2-to-A8 freeze is explicitly actor-scoped. A code audit found that the
+original helper also disabled gradients on A8's fresh critic for ten updates,
+contradicting the `fresh-critic` schedule and forcing early value fitting through
+a fixed random head. The corrected `inherited-actor-base-only-v1` scope freezes
+the transferred encoder/LSTM/actor parameters while the new critic and adapter
+train from update zero; checkpoints and evaluation reports record this scope.
+
 The fixed `80/20` new-stage/mastered-stage mixture in EXP-0019 is consequently a
 controlled first arm, not an assumed optimum. Prioritized Level Replay finds that
 the learning value of a procedural level changes with the current policy and uses

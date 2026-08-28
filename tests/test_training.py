@@ -511,6 +511,41 @@ def test_architecture_eight_actor_warm_start_resets_reward_critic(tmp_path: Path
     )
 
 
+def test_architecture_eight_base_freeze_keeps_fresh_critic_trainable() -> None:
+    model = ProjectedAdapterActorCritic(
+        AdapterConfig(
+            cell_size=32,
+            spatial_size=64,
+            hidden_size=32,
+            entity_limit=16,
+            attention_layers=1,
+            attention_heads=4,
+            tactical_size=16,
+            map_size=16,
+            player_size=8,
+            inventory_size=8,
+        )
+    )
+
+    model.set_base_trainable(False)
+
+    assert all(
+        parameter.requires_grad
+        for name, parameter in model.base.named_parameters()
+        if name.startswith("critic.")
+    )
+    assert all(
+        not parameter.requires_grad
+        for name, parameter in model.base.named_parameters()
+        if not name.startswith("critic.")
+    )
+    assert all(parameter.requires_grad for parameter in model.adapter.parameters())
+    assert all(parameter.requires_grad for parameter in model.adapter_projection.parameters())
+
+    model.set_base_trainable(True)
+    assert all(parameter.requires_grad for parameter in model.base.parameters())
+
+
 def test_architecture_four_checkpoint_can_initialize_interaction_policy(
     tmp_path: Path,
 ) -> None:

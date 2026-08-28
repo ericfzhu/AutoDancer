@@ -122,6 +122,7 @@ def _report(
             "reset_semantics": "normal-reset-sequential-goto-reward-reset-v1",
         },
         "checkpoint_freeze_base_updates": 10,
+        "checkpoint_freeze_base_scope": "inherited-actor-base-only-v1",
         "checkpoint_initialization": {
             "sha256": SOURCE_SHA256,
             "architecture_upgrade": "v2_to_v8_actor_parity_fresh_critic",

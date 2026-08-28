@@ -114,6 +114,8 @@ def _load_report(
             raise ValueError(f"checkpoint curriculum mismatch: {path}")
         if int(report.get("checkpoint_freeze_base_updates", -1)) != 10:
             raise ValueError(f"base-freeze schedule mismatch: {path}")
+        if report.get("checkpoint_freeze_base_scope") != "inherited-actor-base-only-v1":
+            raise ValueError(f"base-freeze scope mismatch: {path}")
         initialization = report.get("checkpoint_initialization") or {}
         if initialization.get("sha256") != SOURCE_SHA256:
             raise ValueError(f"initializer checkpoint mismatch: {path}")

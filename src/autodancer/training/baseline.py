@@ -1449,6 +1449,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_training_seed_pool": checkpoint_metadata.get("training_seed_pool"),
         "checkpoint_curriculum": checkpoint_metadata.get("curriculum"),
         "checkpoint_freeze_base_updates": checkpoint_metadata.get("freeze_base_updates"),
+        "checkpoint_freeze_base_scope": checkpoint_metadata.get("freeze_base_scope"),
         "checkpoint_initialization": checkpoint_metadata.get("initialization"),
         "evaluation_reward": reward_config.specification(),
         "num_instances": arguments.num_instances,

@@ -70,7 +70,7 @@ blocks:
       boss-curriculum-function-preserving-a2-vs-a8-v1: Fine-tune function-identical A2 and zero-projected A8 policies on the same finite boss curriculum, with A8 base weights frozen for its first ten updates.
       single-boss-assisted-a2-v1: Warm-start the A2 encoder, recurrent policy, and actor from the corrected promoted checkpoint while resetting critic and optimizer, then train three independent 51,200-transition trials on one assisted boss distribution.
       assistance-reduction-with-replay-v1: First test frozen transfer to reduced player-health assistance; only if it fails, fine-tune three independent trials on the predeclared harder-to-mastered reset mixture with a fresh optimizer.
-      A2-to-A8-actor-parity-fresh-critic-v2: Copy the complete A2 actor and recurrent function into zero-projected A8, retain exact initial action logits and recurrent state, initialize a fresh A8 critic and optimizer, freeze the A2 base for ten updates, then optimize jointly.
+      A2-to-A8-actor-parity-fresh-critic-v2: Copy the complete A2 actor and recurrent function into zero-projected A8, retain exact initial action logits and recurrent state, initialize a fresh A8 critic and optimizer, freeze only inherited actor/recurrent base parameters for ten updates while training the fresh critic from update zero, then optimize jointly.
   training-level-distribution:
     versions:
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.

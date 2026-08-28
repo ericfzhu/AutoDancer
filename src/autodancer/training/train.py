@@ -534,6 +534,11 @@ def train(arguments: argparse.Namespace) -> None:
                 "curriculum_mixture": curriculum_distribution,
                 "natural_prefix": natural_prefix_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
+                "freeze_base_scope": (
+                    "inherited-actor-base-only-v1"
+                    if arguments.freeze_base_updates
+                    else None
+                ),
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
                 "affinity": arguments.affinity,
@@ -631,6 +636,11 @@ def train(arguments: argparse.Namespace) -> None:
                             else {}
                         ),
                         "freeze_base_updates": arguments.freeze_base_updates,
+                        "freeze_base_scope": (
+                            "inherited-actor-base-only-v1"
+                            if arguments.freeze_base_updates
+                            else None
+                        ),
                     },
                 )
                 resume_metrics: dict[str, Any] = {}
@@ -813,6 +823,11 @@ def train(arguments: argparse.Namespace) -> None:
                             "curriculum_mixture": curriculum_distribution,
                             "natural_prefix": natural_prefix_metadata,
                             "freeze_base_updates": arguments.freeze_base_updates,
+                            "freeze_base_scope": (
+                                "inherited-actor-base-only-v1"
+                                if arguments.freeze_base_updates
+                                else None
+                            ),
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
                                 "game_dir": str(arguments.game_dir),
