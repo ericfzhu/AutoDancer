@@ -31,7 +31,7 @@ from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level, level_progress
-from autodancer.rewards import load_reward_config
+from autodancer.rewards import RewardConfig, load_reward_config
 from autodancer.training.action_contract import (
     ACTION_CONTRACTS,
     ActionContractMemory,
@@ -47,9 +47,24 @@ from autodancer.training.natural_prefix import (
     natural_prefix_policy_sample,
     validate_guide_action_contract,
 )
-from autodancer.training.train import default_mod_dir, replace_observation_rows, resolve_device
+from autodancer.training.train import (
+    default_mod_dir,
+    replace_observation_rows,
+    require_reward_lineage_version,
+    resolve_device,
+)
 
 RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step")
+
+
+def validate_checkpoint_reward_schema(
+    checkpoint: dict[str, Any], evaluation_reward: RewardConfig
+) -> None:
+    checkpoint_version = (
+        checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
+    )
+    if checkpoint_version != evaluation_reward.profile_version:
+        raise ValueError("Evaluation reward schema disagrees with the checkpoint")
 
 
 @dataclass(slots=True)
@@ -1532,14 +1547,10 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         try:
             checkpoint = torch.load(arguments.checkpoint, map_location="cpu", weights_only=False)
             architecture_version = f"A{int(checkpoint['architecture']['version'])}"
-            reward_version = arguments.reward_lineage_version
-            if reward_version is None:
-                raise ValueError("Tracked evaluation requires --reward-lineage-version")
-            checkpoint_reward_version = (
-                checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
+            reward_version = require_reward_lineage_version(arguments.reward_lineage_version)
+            validate_checkpoint_reward_schema(
+                checkpoint, load_reward_config(arguments.reward_config)
             )
-            if not reward_version.startswith(f"V{checkpoint_reward_version}"):
-                raise ValueError("Reward lineage version disagrees with the checkpoint")
             tracker.validate_component_versions(
                 {"architecture": architecture_version, "reward": reward_version},
                 config_hashes={"reward": sha256_file(arguments.reward_config)},

@@ -59,6 +59,13 @@ def resolve_device(name: str) -> torch.device:
     return device
 
 
+def require_reward_lineage_version(value: str | None) -> str:
+    """Require a catalog component ID without imposing naming conventions."""
+    if value is None or not value.strip():
+        raise ValueError("Tracked runs require --reward-lineage-version")
+    return value
+
+
 def default_mod_dir() -> Path | None:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
@@ -546,14 +553,13 @@ def train(arguments: argparse.Namespace) -> None:
             source_checkpoint=source_checkpoint,
         )
         try:
-            if arguments.reward_lineage_version is None:
-                raise ValueError("Tracked training requires --reward-lineage-version")
-            if not arguments.reward_lineage_version.startswith(f"V{reward_config.profile_version}"):
-                raise ValueError("Reward lineage version disagrees with the loaded reward profile")
+            reward_lineage_version = require_reward_lineage_version(
+                arguments.reward_lineage_version
+            )
             tracker.validate_component_versions(
                 {
                     "architecture": f"A{arguments.architecture}",
-                    "reward": arguments.reward_lineage_version,
+                    "reward": reward_lineage_version,
                 },
                 config_hashes={"reward": sha256_file(arguments.reward_config)},
             )

@@ -1002,6 +1002,13 @@ a fixed random head. The corrected `inherited-actor-base-only-v1` scope freezes
 the transferred encoder/LSTM/actor parameters while the new critic and adapter
 train from update zero; checkpoints and evaluation reports record this scope.
 
+Reward lineage uses catalog identity plus the registered configuration hash,
+not a naming convention. The former `V<number>` prefix heuristic would have
+rejected the valid `DeathMetalGuideV1` component before training even though its
+exact configuration SHA-256 is immutable in the catalog. Tracked evaluation
+still requires its loaded reward schema to match the checkpoint schema, while
+the experiment tracker enforces the exact declared component and file hash.
+
 The fixed `80/20` new-stage/mastered-stage mixture in EXP-0019 is consequently a
 controlled first arm, not an assumed optimum. Prioritized Level Replay finds that
 the learning value of a procedural level changes with the current policy and uses

@@ -34,7 +34,7 @@ from autodancer.training.ppo import (
     RolloutBatch,
     generalized_advantage_estimate,
 )
-from autodancer.training.train import RolloutCollector
+from autodancer.training.train import RolloutCollector, require_reward_lineage_version
 
 
 def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:
@@ -150,6 +150,12 @@ def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="training metadata"):
         incompatible.load(path)
+
+
+def test_reward_lineage_accepts_catalog_ids_without_numeric_prefixes() -> None:
+    assert require_reward_lineage_version("DeathMetalGuideV1") == "DeathMetalGuideV1"
+    with pytest.raises(ValueError, match="reward-lineage-version"):
+        require_reward_lineage_version("")
 
 
 def test_checkpoint_rejects_a_different_episode_horizon(tmp_path: Path) -> None:

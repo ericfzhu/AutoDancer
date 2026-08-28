@@ -15,6 +15,7 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
+from autodancer.rewards import RewardConfig
 from autodancer.training.baseline import (
     EpisodeAccumulator,
     compare_summaries,
@@ -24,8 +25,24 @@ from autodancer.training.baseline import (
     recurrent_state_for_action,
     stochastic_policy_sample,
     summarize_episodes,
+    validate_checkpoint_reward_schema,
     zero_hidden_rows,
 )
+
+
+def test_custom_reward_label_still_checks_checkpoint_schema() -> None:
+    checkpoint = {"checkpoint_metadata": {"reward": {"version": 4}}}
+    validate_checkpoint_reward_schema(checkpoint, RewardConfig(profile_version=4))
+
+    with pytest.raises(ValueError, match="reward schema"):
+        validate_checkpoint_reward_schema(
+            checkpoint,
+            RewardConfig(
+                profile_version=2,
+                stair_potential_max=0.0,
+                stair_potential_distance=0,
+            ),
+        )
 
 
 class OneStepEnvironment:
