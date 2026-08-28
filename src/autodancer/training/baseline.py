@@ -1325,6 +1325,23 @@ def _checkpoint_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_declared_source_reference(
+    spec: dict[str, Any], checkpoint: Path, *, repository_root: Path
+) -> None:
+    source = spec.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("Experiment does not declare a source checkpoint")
+    declared_path = source.get("checkpoint")
+    declared_hash = source.get("checkpoint_sha256")
+    if not isinstance(declared_path, str) or not isinstance(declared_hash, str):
+        raise ValueError("Experiment source checkpoint identity is incomplete")
+    expected = (repository_root / declared_path).resolve()
+    if checkpoint.resolve() != expected:
+        raise ValueError("Evaluation source reference path does not match the experiment")
+    if _checkpoint_hash(checkpoint) != declared_hash:
+        raise ValueError("Evaluation source reference hash does not match the experiment")
+
+
 def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
@@ -1472,6 +1489,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "seeds": arguments.seeds,
         "policy_seed": arguments.policy_seed,
         "policy_mode": arguments.policy_mode,
+        "source_reference": bool(getattr(arguments, "source_reference", False)),
         "action_contract": arguments.action_contract,
         "recurrent_state_mode": arguments.recurrent_state_mode,
         "curriculum_start_level": arguments.curriculum_start_level,
@@ -1536,6 +1554,7 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
                 "trained_only": arguments.trained_only,
+                "source_reference": arguments.source_reference,
                 "reward_lineage_version": arguments.reward_lineage_version,
                 "reward_config": (
                     None if arguments.reward_config is None else str(arguments.reward_config)
@@ -1551,8 +1570,17 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             validate_checkpoint_reward_schema(
                 checkpoint, load_reward_config(arguments.reward_config)
             )
+            observed_components = {"reward": reward_version}
+            if arguments.source_reference:
+                validate_declared_source_reference(
+                    tracker.spec.data,
+                    arguments.checkpoint,
+                    repository_root=arguments.experiment_root.resolve().parent,
+                )
+            else:
+                observed_components["architecture"] = architecture_version
             tracker.validate_component_versions(
-                {"architecture": architecture_version, "reward": reward_version},
+                observed_components,
                 config_hashes={"reward": sha256_file(arguments.reward_config)},
             )
         except BaseException as error:
@@ -1626,6 +1654,14 @@ def main() -> int:
         action="store_true",
         help="Evaluate only the deterministic checkpoint policy, without a random baseline",
     )
+    parser.add_argument(
+        "--source-reference",
+        action="store_true",
+        help=(
+            "track this checkpoint as the experiment's frozen source comparator; "
+            "its declared path and SHA-256 must match exactly"
+        ),
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--dashboard", type=int, nargs="?", const=8765)
     parser.add_argument("--dashboard-host", default="127.0.0.1")
@@ -1689,6 +1725,8 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
+    if arguments.source_reference and arguments.experiment_id is None:
+        parser.error("--source-reference requires --experiment-id")
     if arguments.num_instances <= 0 or arguments.max_steps <= 0:
         parser.error("--num-instances and --max-steps must be positive")
     if arguments.curriculum_start_level <= 0:

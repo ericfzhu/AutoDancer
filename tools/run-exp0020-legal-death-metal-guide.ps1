@@ -71,7 +71,10 @@ function Test-GuideTrainingComplete {
 }
 
 function Test-GuideEvaluationValid {
-    param([string]$Path, [string]$Mode, [int]$PolicySeed, [string]$Seeds)
+    param(
+        [string]$Path, [string]$Mode, [int]$PolicySeed, [string]$Seeds,
+        [bool]$SourceReference = $false
+    )
     if (-not (Test-Path $Path)) { return $false }
     try {
         $report = Get-Content $Path -Raw | ConvertFrom-Json
@@ -84,6 +87,7 @@ function Test-GuideEvaluationValid {
             $report.curriculum_profile -eq "player20" -and
             [int]$report.curriculum_start_level -eq 4 -and
             [int]$report.curriculum_target_level -eq 5 -and
+            [bool]$report.source_reference -eq $SourceReference -and
             (@($report.seeds) -join ",") -eq $Seeds
         )
     } catch {
@@ -273,10 +277,11 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
     foreach ($mode in $guideModes) {
         $directory = Join-Path $guideEvaluation "$($checkpointEntry.Key)\$($mode.Name)"
         $output = Join-Path $directory "report.json"
-        if (Test-GuideEvaluationValid $output $mode.Mode $mode.PolicySeed $heldoutSeedArgument) { continue }
+        $sourceReference = $checkpointEntry.Key -eq "parent"
+        if (Test-GuideEvaluationValid $output $mode.Mode $mode.PolicySeed $heldoutSeedArgument $sourceReference) { continue }
         New-Item -ItemType Directory -Force -Path $directory | Out-Null
         Write-GuideStatus "evaluating" $checkpointEntry.Key $mode.Name
-        Invoke-GuideChecked -Stage "evaluation $($checkpointEntry.Key) $($mode.Name)" -Log (Join-Path $directory "console.log") -Arguments @(
+        $evaluationArguments = @(
             "-m", "autodancer.training.baseline", "--game-dir", $guideGame,
             "--mod-dir", $guideMod, "--checkpoint", $checkpointEntry.Value, "--output", $output,
             "--num-instances", "8", "--seeds", $heldoutSeedArgument, "--max-steps", "500",
@@ -289,7 +294,9 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
             "--trial-id", "$($checkpointEntry.Key)-$($mode.Name)", "--mlflow-tracking-uri", $guideTrackingUri,
             "--controller-qualification", $guideQualification, "--dashboard", "8765"
         )
-        if (-not (Test-GuideEvaluationValid $output $mode.Mode $mode.PolicySeed $heldoutSeedArgument)) {
+        if ($sourceReference) { $evaluationArguments += "--source-reference" }
+        Invoke-GuideChecked -Stage "evaluation $($checkpointEntry.Key) $($mode.Name)" -Log (Join-Path $directory "console.log") -Arguments $evaluationArguments
+        if (-not (Test-GuideEvaluationValid $output $mode.Mode $mode.PolicySeed $heldoutSeedArgument $sourceReference)) {
             throw "Invalid evaluation evidence for $($checkpointEntry.Key)/$($mode.Name)"
         }
     }

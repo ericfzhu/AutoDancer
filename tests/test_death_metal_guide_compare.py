@@ -97,7 +97,7 @@ def _write_selections(root: Path, seeds: list[int]) -> Path:
 
 
 def _report(
-    seeds: list[int], phase4: set[int], *, damage: int, mode: str
+    seeds: list[int], phase4: set[int], *, damage: int, mode: str, source_reference: bool = False
 ) -> dict[str, object]:
     policy_mode = "deterministic" if mode == "deterministic" else "stochastic"
     policy_seed = 0 if mode == "deterministic" else int(mode.removeprefix("stochastic-"))
@@ -127,6 +127,7 @@ def _report(
             "sha256": SOURCE_SHA256,
             "architecture_upgrade": "v2_to_v8_actor_parity_fresh_critic",
         },
+        "source_reference": source_reference,
         "curriculum_profile": "player20",
         "curriculum_start_level": 4,
         "curriculum_target_level": 5,
@@ -164,7 +165,15 @@ def test_guide_gate_requires_reproducible_phase_acquisition(tmp_path: Path) -> N
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
             (directory / "report.json").write_text(
-                json.dumps(_report(seeds, phases, damage=damage, mode=mode)),
+                json.dumps(
+                    _report(
+                        seeds,
+                        phases,
+                        damage=damage,
+                        mode=mode,
+                        source_reference=name == "parent",
+                    )
+                ),
                 encoding="utf-8",
             )
 
@@ -185,7 +194,16 @@ def test_guide_gate_rejects_one_lucky_checkpoint(tmp_path: Path) -> None:
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
             (directory / "report.json").write_text(
-                json.dumps(_report(seeds, phases, damage=3, mode=mode)), encoding="utf-8"
+                json.dumps(
+                    _report(
+                        seeds,
+                        phases,
+                        damage=3,
+                        mode=mode,
+                        source_reference=name == "parent",
+                    )
+                ),
+                encoding="utf-8",
             )
 
     result = compare(tmp_path)
@@ -201,7 +219,13 @@ def test_guide_gate_rejects_inconsistent_phase_evidence(tmp_path: Path) -> None:
         for mode in MODES:
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
-            report = _report(seeds, set(), damage=3, mode=mode)
+            report = _report(
+                seeds,
+                set(),
+                damage=3,
+                mode=mode,
+                source_reference=name == "parent",
+            )
             if name == TRIALS[0] and mode == "deterministic":
                 report["trained"]["results"][0]["death_metal_phase4_reached"] = True
             (directory / "report.json").write_text(
@@ -223,7 +247,13 @@ def test_guide_gate_rejects_unbound_or_wrong_initializer(tmp_path: Path) -> None
         for mode in MODES:
             directory = evaluation / name / mode
             directory.mkdir(parents=True)
-            report = _report(seeds, set(), damage=3, mode=mode)
+            report = _report(
+                seeds,
+                set(),
+                damage=3,
+                mode=mode,
+                source_reference=name == "parent",
+            )
             if name == TRIALS[0] and mode == "deterministic":
                 report["checkpoint_initialization"]["sha256"] = "0" * 64
             (directory / "report.json").write_text(json.dumps(report), encoding="utf-8")
@@ -256,3 +286,5 @@ def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
     assert "does not preserve the declared candidate bank" in source
     assert "leaks gameplay outcome fields" in source
     assert "Select-DeathMetalSeeds $trainingCalibration 48 $guideTrainingCandidates" in source
+    assert '$checkpointEntry.Key -eq "parent"' in source
+    assert '"--source-reference"' in source

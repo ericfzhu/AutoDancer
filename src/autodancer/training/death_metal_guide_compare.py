@@ -71,6 +71,7 @@ def _load_report(
     mode: str,
     *,
     expected_training_seeds: tuple[int, ...] | None = None,
+    source_reference: bool = False,
 ) -> dict[str, Any]:
     report = json.loads(path.read_text(encoding="utf-8-sig"))
     if report.get("controller_valid") is not True:
@@ -98,6 +99,8 @@ def _load_report(
         raise ValueError(f"worker capacity mismatch: {path}")
     if int(report.get("max_steps_per_episode", 0)) != 500:
         raise ValueError(f"episode horizon mismatch: {path}")
+    if bool(report.get("source_reference", False)) is not source_reference:
+        raise ValueError(f"source-reference identity mismatch: {path}")
     if expected_training_seeds is not None:
         if report.get("checkpoint_training_seed_schedule") != "uniform-pool-v1":
             raise ValueError(f"training seed schedule mismatch: {path}")
@@ -198,7 +201,12 @@ def compare(root: Path) -> dict[str, Any]:
         raise ValueError("EXP-0020 training and held-out seed banks overlap")
 
     parent_reports = [
-        _load_report(root / "evaluation" / "parent" / mode / "report.json", seeds, mode)
+        _load_report(
+            root / "evaluation" / "parent" / mode / "report.json",
+            seeds,
+            mode,
+            source_reference=True,
+        )
         for mode in MODES
     ]
     parent = _aggregate(parent_reports)

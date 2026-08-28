@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pytest
 import torch
@@ -26,8 +28,25 @@ from autodancer.training.baseline import (
     stochastic_policy_sample,
     summarize_episodes,
     validate_checkpoint_reward_schema,
+    validate_declared_source_reference,
     zero_hidden_rows,
 )
+
+
+def test_source_reference_requires_declared_path_and_hash(tmp_path) -> None:
+    checkpoint = tmp_path / "source.pt"
+    checkpoint.write_bytes(b"source-checkpoint")
+    specification = {
+        "source": {
+            "checkpoint": "source.pt",
+            "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+        }
+    }
+    validate_declared_source_reference(specification, checkpoint, repository_root=tmp_path)
+
+    specification["source"]["checkpoint_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="hash"):
+        validate_declared_source_reference(specification, checkpoint, repository_root=tmp_path)
 
 
 def test_custom_reward_label_still_checks_checkpoint_schema() -> None:
