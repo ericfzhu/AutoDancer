@@ -63,6 +63,16 @@ def test_boss_identity_calibration_never_steps_and_preserves_seed_order() -> Non
     assert len(environment.reset_batches) == 2
     assert environment.reset_batches[1][0] == 14
     assert len(environment.reset_batches[1]) == environment.num_envs
+    assert set(results[0]) == {
+        "seed",
+        "boss_type",
+        "boss_name",
+        "instance_id",
+        "run_id",
+        "session_id",
+        "launch_id",
+        "curriculum_reset",
+    }
 
 
 def test_boss_identity_calibration_rejects_cross_worker_record() -> None:

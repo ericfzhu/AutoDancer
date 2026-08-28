@@ -92,13 +92,56 @@ function Test-GuideEvaluationValid {
 }
 
 function Select-DeathMetalSeeds {
-    param([string]$ReportPath, [int]$Count)
+    param([string]$ReportPath, [int]$Count, [string]$ExpectedSeeds)
     $report = Get-Content $ReportPath -Raw | ConvertFrom-Json
     if ($report.kind -ne "boss-identity-calibration-v1") {
         throw "Seed calibration report is not reset-only identity evidence"
     }
-    if ($report.controller_valid -ne $true -or [int]$report.worker_restarts -ne 0) {
+    if (
+        [int]$report.schema_version -ne 1 -or
+        [int]$report.protocol_schema_version -ne 10 -or
+        $report.character -ne "Bard" -or
+        [int]$report.num_instances -ne 8 -or
+        [int]$report.curriculum_reset.start_level -ne 4 -or
+        [int]$report.curriculum_reset.target_level -ne 5 -or
+        $report.curriculum_reset.profile -ne "player20"
+    ) {
+        throw "Seed calibration report identity does not match EXP-0020"
+    }
+    if (
+        $report.controller_valid -ne $true -or
+        [int]$report.worker_restarts -ne 0 -or
+        @($report.infrastructure_events).Count -ne 0
+    ) {
         throw "Seed calibration report contains controller failures"
+    }
+    $expected = @($ExpectedSeeds.Split(",") | ForEach-Object { [int]$_ })
+    if (
+        (@($report.seeds) -join ",") -ne ($expected -join ",") -or
+        (@($report.results | ForEach-Object { [int]$_.seed }) -join ",") -ne ($expected -join ",")
+    ) {
+        throw "Seed calibration report does not preserve the declared candidate bank"
+    }
+    $forbidden = @(
+        "action", "action_counts", "reward", "return", "turns", "damage", "kills",
+        "phase", "status", "survival", "completion", "completed", "death", "won"
+    )
+    foreach ($result in @($report.results)) {
+        $leaked = @($result.PSObject.Properties.Name | Where-Object { $_ -in $forbidden })
+        if ($leaked.Count -ne 0) {
+            throw "Seed calibration report leaks gameplay outcome fields: $($leaked -join ',')"
+        }
+        if (
+            [string]::IsNullOrWhiteSpace([string]$result.run_id) -or
+            [string]::IsNullOrWhiteSpace([string]$result.session_id) -or
+            [string]::IsNullOrWhiteSpace([string]$result.launch_id) -or
+            $result.instance_id -notmatch '^worker-[0-9]{4}$' -or
+            [int]$result.curriculum_reset.start_level -ne 4 -or
+            [int]$result.curriculum_reset.target_level -ne 5 -or
+            $result.curriculum_reset.profile -ne "player20"
+        ) {
+            throw "Seed calibration result has incomplete live reset identity"
+        }
     }
     return @(
         $report.results |
@@ -154,7 +197,7 @@ if (-not (Test-Path $trainingCalibration)) {
         "--controller-qualification", $guideQualification
     )
 }
-$trainingPool = Select-DeathMetalSeeds $trainingCalibration 48
+$trainingPool = Select-DeathMetalSeeds $trainingCalibration 48 $guideTrainingCandidates
 if ($trainingPool.Count -ne 48) { throw "Expected 48 training Death Metal seeds" }
 $trainingPoolArgument = $trainingPool -join ","
 [ordered]@{
@@ -180,7 +223,7 @@ if (-not (Test-Path $evaluationCalibration)) {
         "--controller-qualification", $guideQualification
     )
 }
-$heldoutSeeds = Select-DeathMetalSeeds $evaluationCalibration 24
+$heldoutSeeds = Select-DeathMetalSeeds $evaluationCalibration 24 $guideEvaluationCandidates
 if ($heldoutSeeds.Count -ne 24) { throw "Expected 24 held-out Death Metal seeds" }
 $heldoutSeedArgument = $heldoutSeeds -join ","
 [ordered]@{

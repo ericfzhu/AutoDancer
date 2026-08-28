@@ -139,3 +139,7 @@ def test_exp0020_launcher_uses_only_legal_player_health_assistance() -> None:
     assert "$report.results" in source
     assert '"--max-steps", "1"' not in source
     assert "autodancer.training.baseline" in source
+    assert "protocol_schema_version -ne 10" in source
+    assert "does not preserve the declared candidate bank" in source
+    assert "leaks gameplay outcome fields" in source
+    assert "Select-DeathMetalSeeds $trainingCalibration 48 $guideTrainingCandidates" in source
