@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -133,6 +134,7 @@ class EpisodeCurriculumSchedule:
     _draws: list[int] = field(init=False, repr=False)
     _selected: dict[str, int] = field(init=False, repr=False)
     _outcomes: dict[str, dict[str, int]] = field(init=False, repr=False)
+    _lock: Lock = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.slots <= 0:
@@ -147,6 +149,7 @@ class EpisodeCurriculumSchedule:
         self._draws = [0] * self.slots
         self._selected = {entry.spec.id: 0 for entry in self.entries}
         self._outcomes = {entry.spec.id: {} for entry in self.entries}
+        self._lock = Lock()
 
     @property
     def probabilities(self) -> np.ndarray:
@@ -159,15 +162,17 @@ class EpisodeCurriculumSchedule:
         index = int(self._rngs[slot].choice(len(self.entries), p=self.probabilities))
         spec = self.entries[index].spec
         self._draws[slot] += 1
-        self._selected[spec.id] += 1
+        with self._lock:
+            self._selected[spec.id] += 1
         return spec
 
     def record_outcome(self, spec: EpisodeResetSpec, status: str) -> None:
         if spec.id not in self._outcomes:
             raise ValueError(f"reset specification {spec.id!r} is not in this schedule")
         outcome = str(status)
-        values = self._outcomes[spec.id]
-        values[outcome] = values.get(outcome, 0) + 1
+        with self._lock:
+            values = self._outcomes[spec.id]
+            values[outcome] = values.get(outcome, 0) + 1
 
     def specification(self) -> dict[str, Any]:
         return {
@@ -177,15 +182,16 @@ class EpisodeCurriculumSchedule:
         }
 
     def state_dict(self) -> dict[str, Any]:
-        return {
-            **self.specification(),
-            "base_seed": int(self.base_seed),
-            "slots": int(self.slots),
-            "draws": list(self._draws),
-            "selected": dict(self._selected),
-            "outcomes": deepcopy(self._outcomes),
-            "rng_states": [deepcopy(rng.bit_generator.state) for rng in self._rngs],
-        }
+        with self._lock:
+            return {
+                **self.specification(),
+                "base_seed": int(self.base_seed),
+                "slots": int(self.slots),
+                "draws": list(self._draws),
+                "selected": dict(self._selected),
+                "outcomes": deepcopy(self._outcomes),
+                "rng_states": [deepcopy(rng.bit_generator.state) for rng in self._rngs],
+            }
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:
         expected = {
@@ -213,6 +219,7 @@ class EpisodeCurriculumSchedule:
             raise ValueError("Curriculum outcome counts must be non-negative")
         for rng, rng_state in zip(self._rngs, rng_states, strict=True):
             rng.bit_generator.state = deepcopy(rng_state)
-        self._draws = draws
-        self._selected = selected
-        self._outcomes = outcomes
+        with self._lock:
+            self._draws = draws
+            self._selected = selected
+            self._outcomes = outcomes

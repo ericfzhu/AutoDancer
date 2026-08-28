@@ -886,6 +886,13 @@ different evaluation wave cannot change its guide trajectory. These corrected
 semantics are identified as `death-metal-natural-prefix-v2`; v1 evidence must
 not be pooled with it.
 
+The weighted curriculum scheduler's shared selection and outcome counters are
+also synchronized across actor threads. Sampling streams remain independently
+keyed per worker, but checkpointed counts can no longer lose increments or vary
+with thread interleaving. This matters for competence-based curriculum updates:
+future stage probabilities must be based on exact gameplay outcomes, not racy
+diagnostic aggregates.
+
 This is the live-game analogue of
 [Jump-Start RL](https://arxiv.org/abs/2204.02372): a guide policy induces a
 reachable start-state distribution for an exploration/learning policy. It also

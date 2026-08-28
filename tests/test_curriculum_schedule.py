@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -50,6 +51,27 @@ def test_curriculum_schedule_rejects_mismatched_resume_distribution() -> None:
     target = EpisodeCurriculumSchedule(4, 1, reversed_entries)
     with pytest.raises(ValueError, match="does not match"):
         target.load_state_dict(source.state_dict())
+
+
+def test_curriculum_schedule_accounts_for_concurrent_actor_outcomes_exactly() -> None:
+    slots = 8
+    iterations = 2000
+    schedule = EpisodeCurriculumSchedule(905, slots, entries())
+
+    def run_slot(slot: int) -> None:
+        for _ in range(iterations):
+            spec = schedule.next(slot)
+            schedule.record_outcome(spec, "dead")
+
+    with ThreadPoolExecutor(max_workers=slots) as executor:
+        list(executor.map(run_slot, range(slots)))
+
+    state = schedule.state_dict()
+    assert sum(state["draws"]) == slots * iterations
+    assert sum(state["selected"].values()) == slots * iterations
+    assert sum(values.get("dead", 0) for values in state["outcomes"].values()) == (
+        slots * iterations
+    )
 
 
 def test_curriculum_mixture_loader_validates_and_preserves_exact_weights(tmp_path) -> None:
