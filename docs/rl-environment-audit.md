@@ -1173,13 +1173,23 @@ working-set cache step followed by a flat tail as a continuing leak. Collection
 now precedes the cadence-aligned send. Qualification retains second-half endpoint
 growth and maximum RSS as diagnostics, but gates on the maximum of a robust
 full-second-half Theil-Sen trend and a final-20-sample trend whose pairwise
-ordering has Kendall support of at least `0.6` and whose final-five median is at
-least one percent above the preceding second-half 99th-percentile envelope.
-Linear and consistently rising late leaks that establish a new memory level
-fail; GC sawteeth, ordered rises within a previously observed envelope, short
-terminal allocation bursts, and cache steps that demonstrably plateau do not.
+ordering has Kendall support of at least `0.6`. Either trend must also establish
+a final-five median at least one percent above its preceding 99th-percentile
+working-set envelope. Linear and consistently rising late leaks that establish a
+new memory level fail; OS working-set trimming and recovery, GC sawteeth, ordered
+rises within a previously observed envelope, short terminal allocation bursts,
+and cache steps that demonstrably plateau do not.
 Because the qualification criterion changed, the complete natural soak must
 again start from zero rather than retroactively promoting the observed failure.
+
+This envelope condition is necessary because Windows working set is not a
+stationary committed-memory measure. In the third million-transition trace, all
+eight workers were trimmed from roughly `1.25–1.49 GB` to `0.7–0.8 GB`; six then
+showed a positive second-half slope while merely recovering inside their earlier
+envelopes, and their final levels remained 41–46% below first-half p99. Treating
+that as a leak made qualification depend on OS paging history. The older
+pre-collection-timing trace still fails because its robust growth also establishes
+new highs, while the post-fix traces remain below their prior envelopes.
 
 ## Remaining environment risks for the Zone 2 curriculum
 

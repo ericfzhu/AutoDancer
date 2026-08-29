@@ -130,6 +130,18 @@ def test_sustained_memory_growth_accepts_ordered_tail_inside_prior_envelope() ->
     assert _sustained_memory_growth(samples) <= 0.05
 
 
+def test_sustained_memory_growth_accepts_working_set_trim_and_recovery() -> None:
+    samples = [
+        1_350_000_000 + (index % 5) * 10_000_000 for index in range(62)
+    ] + [
+        700_000_000 + index * 2_000_000 + (index % 4) * 5_000_000
+        for index in range(63)
+    ]
+
+    assert _memory_growth(samples) > 0.05
+    assert _sustained_memory_growth(samples) <= 0.05
+
+
 def test_sustained_memory_growth_rejects_a_noisy_full_half_leak() -> None:
     samples = [1_000_000_000] * 62 + [
         1_000_000_000 + index * 2_000_000 + (index % 4) * 3_000_000

@@ -676,7 +676,10 @@ def _sustained_memory_growth(samples: list[int]) -> float:
     """
     if len(samples) < 20:
         return 0.0
-    second_half = np.asarray(samples[len(samples) // 2 :], dtype=np.float64)
+    all_samples = np.asarray(samples, dtype=np.float64)
+    split = len(all_samples) // 2
+    first_half = all_samples[:split]
+    second_half = all_samples[split:]
 
     def projected_theil_sen(values: np.ndarray) -> float:
         slopes = [
@@ -688,8 +691,14 @@ def _sustained_memory_growth(samples: list[int]) -> float:
         projected = max(slope, 0.0) * max(len(second_half) - 1, 1)
         return projected / max(float(np.median(values)), 1.0)
 
-    full_growth = projected_theil_sen(second_half)
     tail = second_half[-min(20, len(second_half)) :]
+    terminal_level = float(np.median(tail[-min(5, len(tail)) :]))
+    first_half_high = float(np.percentile(first_half, 99))
+    full_growth = (
+        projected_theil_sen(second_half)
+        if terminal_level > first_half_high * 1.01
+        else 0.0
+    )
     concordant = 0
     discordant = 0
     for i in range(len(tail) - 1):
@@ -702,13 +711,12 @@ def _sustained_memory_growth(samples: list[int]) -> float:
     kendall_tau = (
         (concordant - discordant) / comparable if comparable else 0.0
     )
-    preceding = second_half[: -len(tail)]
+    preceding = all_samples[: -len(tail)]
     preceding_high = (
         float(np.percentile(preceding, 99))
         if len(preceding)
         else float(np.median(tail))
     )
-    terminal_level = float(np.median(tail[-min(5, len(tail)) :]))
     establishes_new_high = terminal_level > preceding_high * 1.01
     tail_growth = (
         projected_theil_sen(tail)

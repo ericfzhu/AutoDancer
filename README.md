@@ -177,9 +177,10 @@ controller fault. Pre-soak phases can be resumed with `--resume`; the natural
 soak always starts from zero after a failure. Worker RSS is sampled every 1,000
 transitions after Lua's matching collection cadence. The memory gate uses a
 robust full-half slope plus a terminal slope only when its pairwise ordering is
-consistently rising and its terminal median establishes a new high above the
-prior memory envelope (maximum 5%); endpoint working-set growth remains reported
-separately so cache plateaus and short allocation bursts stay visible.
+consistently rising. Either slope must establish a terminal median above the
+prior 99th-percentile working-set envelope (maximum 5%); endpoint growth remains
+reported separately so OS trimming/recovery, cache plateaus, and short allocation
+bursts stay visible.
 
 ## Experiment lineage
 
