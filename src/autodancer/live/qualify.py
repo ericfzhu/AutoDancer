@@ -664,26 +664,46 @@ def _memory_growth(samples: list[int]) -> float:
 
 
 def _sustained_memory_growth(samples: list[int]) -> float:
-    """Estimate an ongoing tail trend, projected across the second half.
+    """Estimate sustained RSS growth across the second half of a soak.
 
     Windows working sets grow in cache-sized steps and can remain at the new
-    plateau. Comparing only the endpoints misclassifies such a bounded step as
-    a continuing leak. A Theil-Sen slope over the final 20 samples is robust to
-    GC sawteeth and asks the acceptance question directly: if the terminal trend
-    continued across the whole second half, how much would RSS grow?
+    plateau. Comparing only endpoints misclassifies bounded steps, while blindly
+    projecting the final 20-sample slope misclassifies the rising side of a GC
+    sawtooth. Use the robust full-half Theil-Sen trend, and admit a terminal-tail
+    trend only when its pairwise ordering shows a consistently rising process.
+    This still detects a leak that begins late, without treating a few terminal
+    allocation spikes as growth sustained across the second half.
     """
     if len(samples) < 20:
         return 0.0
     second_half = np.asarray(samples[len(samples) // 2 :], dtype=np.float64)
+
+    def projected_theil_sen(values: np.ndarray) -> float:
+        slopes = [
+            (values[j] - values[i]) / (j - i)
+            for i in range(len(values) - 1)
+            for j in range(i + 1, len(values))
+        ]
+        slope = float(np.median(slopes)) if slopes else 0.0
+        projected = max(slope, 0.0) * max(len(second_half) - 1, 1)
+        return projected / max(float(np.median(values)), 1.0)
+
+    full_growth = projected_theil_sen(second_half)
     tail = second_half[-min(20, len(second_half)) :]
-    slopes = [
-        (tail[j] - tail[i]) / (j - i)
-        for i in range(len(tail) - 1)
-        for j in range(i + 1, len(tail))
-    ]
-    slope = float(np.median(slopes)) if slopes else 0.0
-    projected_growth = max(slope, 0.0) * max(len(second_half) - 1, 1)
-    return projected_growth / max(float(np.median(tail)), 1.0)
+    concordant = 0
+    discordant = 0
+    for i in range(len(tail) - 1):
+        for j in range(i + 1, len(tail)):
+            if tail[j] > tail[i]:
+                concordant += 1
+            elif tail[j] < tail[i]:
+                discordant += 1
+    comparable = concordant + discordant
+    kendall_tau = (
+        (concordant - discordant) / comparable if comparable else 0.0
+    )
+    tail_growth = projected_theil_sen(tail) if kendall_tau >= 0.6 else 0.0
+    return max(full_growth, tail_growth)
 
 
 def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:

@@ -68,6 +68,45 @@ def test_sustained_memory_growth_is_robust_to_gc_sawteeth() -> None:
     assert _sustained_memory_growth(samples) <= 0.05
 
 
+def test_sustained_memory_growth_accepts_a_terminal_gc_upswing() -> None:
+    samples = [1_400_000_000] * 105 + [
+        value * 1_000_000
+        for value in (
+            1_440,
+            1_409,
+            1_410,
+            1_417,
+            1_394,
+            1_394,
+            1_402,
+            1_394,
+            1_394,
+            1_394,
+            1_402,
+            1_394,
+            1_394,
+            1_414,
+            1_420,
+            1_488,
+            1_448,
+            1_450,
+            1_518,
+            1_450,
+        )
+    ]
+
+    assert _sustained_memory_growth(samples) <= 0.05
+
+
+def test_sustained_memory_growth_rejects_a_noisy_full_half_leak() -> None:
+    samples = [1_000_000_000] * 62 + [
+        1_000_000_000 + index * 2_000_000 + (index % 4) * 3_000_000
+        for index in range(63)
+    ]
+
+    assert _sustained_memory_growth(samples) > 0.05
+
+
 def test_sustained_memory_growth_rejects_a_late_rise() -> None:
     samples = [1_000_000_000] * 105 + [
         1_000_000_000 + index * 3_000_000 for index in range(20)

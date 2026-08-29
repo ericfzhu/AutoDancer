@@ -1171,10 +1171,13 @@ collection only after sending that transition; every sample therefore raced the
 operation intended to stabilize it. It also interpreted a bounded Windows
 working-set cache step followed by a flat tail as a continuing leak. Collection
 now precedes the cadence-aligned send. Qualification retains second-half endpoint
-growth and maximum RSS as diagnostics, but gates on a robust Theil-Sen terminal
-slope projected across the second half. Linear and late leaks fail; GC sawteeth
-and cache steps that demonstrably plateau do not. Because the repository Lua hash
-changed, the complete natural soak must again start from zero.
+growth and maximum RSS as diagnostics, but gates on the maximum of a robust
+full-second-half Theil-Sen trend and a final-20-sample trend whose pairwise
+ordering has Kendall support of at least `0.6`. Linear and consistently rising
+late leaks fail; GC sawteeth, short terminal allocation bursts, and cache steps
+that demonstrably plateau do not. Because the qualification criterion changed,
+the complete natural soak must again start from zero rather than retroactively
+promoting the observed failure.
 
 ## Remaining environment risks for the Zone 2 curriculum
 
