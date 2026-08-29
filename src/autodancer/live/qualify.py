@@ -702,7 +702,19 @@ def _sustained_memory_growth(samples: list[int]) -> float:
     kendall_tau = (
         (concordant - discordant) / comparable if comparable else 0.0
     )
-    tail_growth = projected_theil_sen(tail) if kendall_tau >= 0.6 else 0.0
+    preceding = second_half[: -len(tail)]
+    preceding_high = (
+        float(np.percentile(preceding, 99))
+        if len(preceding)
+        else float(np.median(tail))
+    )
+    terminal_level = float(np.median(tail[-min(5, len(tail)) :]))
+    establishes_new_high = terminal_level > preceding_high * 1.01
+    tail_growth = (
+        projected_theil_sen(tail)
+        if kendall_tau >= 0.6 and establishes_new_high
+        else 0.0
+    )
     return max(full_growth, tail_growth)
 
 
