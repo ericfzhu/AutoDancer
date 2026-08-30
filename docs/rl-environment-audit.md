@@ -1440,6 +1440,26 @@ decision on the still-running EXP-0022 gate.
    not ordinary parameter regularization. Until those invariants are implemented
    and tested, `freeze_base_updates` is the only supported retention mechanism;
    an ad hoc minibatch KL would be misleading evidence.
+9. **Temporal abstraction is a post-skill fallback, not a substitute for boss
+   acquisition.** The normal Zone 1 task naturally exposes event-delimited
+   behaviors—explore until stairs are known, route to stairs, fight a local
+   threat, and execute a boss phase—that last much longer than one primitive
+   action. The options framework treats such closed-loop behaviors as
+   interruptible temporally extended actions while preserving primitive actions
+   in the same semi-MDP
+   ([Sutton, Precup, and Singh, 1999](https://people.cs.umass.edu/~barto/courses/cs687/Sutton-Precup-Singh-AIJ99.pdf)).
+   Option-Critic additionally learns internal policies and termination conditions
+   without requiring a new subgoal reward
+   ([Bacon, Harb, and Precup, 2017](https://ojs.aaai.org/index.php/AAAI/article/view/10916)).
+   This is relevant because a 32-action gradient horizon is far shorter than the
+   observed 2,024-turn Floor-3 trajectory. It is not the next intervention:
+   options cannot repair a low-level policy that has never completed the final
+   boss phase. First establish legal phase completion and expand through the full
+   boss. If that succeeds while earlier-floor expansion still fails, compare the
+   unchanged primitive A8 policy against an event-terminated hierarchical arm on
+   matched seeds, rewards, low-level weights, and transitions. Option identity,
+   duration, interruption cause, and task return remain separate diagnostics;
+   shaped option bonuses must not become another renewable proxy.
 
 The causal prediction is specific: terminal-canceling potential should preserve
 boss contact while removing the return advantage of damage-then-die farming,
