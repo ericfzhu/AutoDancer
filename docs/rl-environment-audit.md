@@ -2019,3 +2019,11 @@ held-out winner. If the full gate rejects all trials, the handoff may select a
 checkpoint only by legal completion evidence from the disclosed training runs;
 that choice grants access to trace acquisition, never promotion. The selected
 checkpoint, reason, and handoff state are written atomically before the search.
+
+The first consumer is EXP-0025. It trains three independent PPO trials on at most
+the final 16 actions of every qualified trace, with the earlier actions replayed
+only through the live controller. Conditional acquisition must exceed 10% in
+aggregate, reproduce above 5% in two trials, complete all three optimizer trials,
+and cover at least three distinct game seeds with zero restarts and finite losses.
+Only then may the tail expand backward. This makes reverse-curriculum movement a
+measured competence decision rather than a fixed schedule.
