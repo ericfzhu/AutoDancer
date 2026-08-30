@@ -97,6 +97,7 @@ def test_extracts_full_reset_success_from_evaluation_report(tmp_path: Path) -> N
         json.dumps(
             {
                 "controller_valid": True,
+                "action_contract": "current",
                 "checkpoint_updates": 90,
                 "checkpoint_global_step": 92160,
                 "curriculum_start_level": 4,

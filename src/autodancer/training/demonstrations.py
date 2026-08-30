@@ -255,6 +255,23 @@ def load_successful_traces(path: str | Path) -> tuple[SuccessfulActionTrace, ...
     return load_successful_episode_traces(source)
 
 
+def _source_action_contract(path: Path) -> tuple[str | None, dict[str, str] | None]:
+    if path.suffix.lower() == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, Mapping) and payload.get("action_contract"):
+            return str(payload["action_contract"]), None
+        return None, None
+    config_path = path.parent / "config.json"
+    if not config_path.is_file():
+        return None, None
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    contract = payload.get("action_contract") if isinstance(payload, Mapping) else None
+    return (
+        None if not contract else str(contract),
+        {"path": str(config_path.resolve()), "sha256": _sha256_file(config_path)},
+    )
+
+
 def build_demonstration_bank(paths: Sequence[str | Path]) -> dict[str, Any]:
     """Build a deterministic trace bank with source hashes and duplicate removal."""
 
@@ -267,6 +284,7 @@ def build_demonstration_bank(paths: Sequence[str | Path]) -> dict[str, Any]:
         if not path.is_file():
             raise FileNotFoundError(f"episode journal does not exist: {path}")
         traces = load_successful_traces(path)
+        action_contract, contract_source = _source_action_contract(path)
         sources.append(
             {
                 "path": str(path),
@@ -274,6 +292,8 @@ def build_demonstration_bank(paths: Sequence[str | Path]) -> dict[str, Any]:
                 "kind": (
                     "evaluation-report" if path.suffix.lower() == ".json" else "episode-journal"
                 ),
+                "action_contract": action_contract,
+                "action_contract_source": contract_source,
                 "successful_trace_count": len(traces),
             }
         )

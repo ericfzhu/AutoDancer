@@ -42,6 +42,7 @@ class QualifiedTracePrefixBank:
     qualification_path: Path
     bank_sha256: str
     qualification_sha256: str
+    action_contract: str
     tail_actions: int
     recurrent_state_mode: str
     traces: tuple[QualifiedActionTrace, ...]
@@ -75,6 +76,14 @@ class QualifiedTracePrefixBank:
             raise ValueError("trace-prefix qualification report is not valid and restart-free")
         if report.get("bank_sha256") != bank.get("bank_sha256"):
             raise ValueError("trace-prefix bank and qualification report do not match")
+        source_contracts = {
+            str(source.get("action_contract"))
+            for source in bank.get("sources", [])
+            if isinstance(source, Mapping) and source.get("successful_trace_count", 0)
+        }
+        if len(source_contracts) != 1 or "None" in source_contracts:
+            raise ValueError("trace-prefix sources must bind exactly one action contract")
+        action_contract = source_contracts.pop()
         raw_results = report.get("results")
         if not isinstance(raw_results, list):
             raise ValueError("trace-prefix qualification results must be a list")
@@ -119,6 +128,7 @@ class QualifiedTracePrefixBank:
             qualification_path=qualification_source,
             bank_sha256=str(bank["bank_sha256"]),
             qualification_sha256=_sha256_file(qualification_source),
+            action_contract=action_contract,
             tail_actions=int(tail_actions),
             recurrent_state_mode=recurrent_state_mode,
             traces=selected,
@@ -142,6 +152,7 @@ class QualifiedTracePrefixBank:
             "bank_sha256": self.bank_sha256,
             "qualification": str(self.qualification_path),
             "qualification_sha256": self.qualification_sha256,
+            "action_contract": self.action_contract,
             "tail_actions": self.tail_actions,
             "prefix_actions": {
                 str(trace.seed): len(trace.actions) - self.tail_actions for trace in self.traces

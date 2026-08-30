@@ -438,6 +438,7 @@ def trace_prefix_bank(seed_slots: dict[int, int], *, corrupt: bool = False):
         Path("qualification.json"),
         "a" * 64,
         "b" * 64,
+        "current",
         1,
         "warm",
         tuple(traces),

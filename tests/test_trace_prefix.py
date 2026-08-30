@@ -36,6 +36,9 @@ def episode(seed: int, actions: list[int], *, policy_version: int) -> dict[str, 
 
 def fixtures(tmp_path: Path) -> tuple[Path, Path, dict]:
     journal = tmp_path / "episodes.jsonl"
+    (tmp_path / "config.json").write_text(
+        json.dumps({"action_contract": "current"}), encoding="utf-8"
+    )
     journal.write_text(
         json.dumps(episode(7, [0, 1, 2, 3], policy_version=2)) + "\n",
         encoding="utf-8",
@@ -69,6 +72,7 @@ def test_loads_only_freshly_qualified_prefixes_and_binds_identity(tmp_path: Path
     bank_path, report_path, trace = fixtures(tmp_path)
     prefix = QualifiedTracePrefixBank.load(bank_path, report_path, tail_actions=2)
     assert prefix.seeds == (7,)
+    assert prefix.action_contract == "current"
     assert prefix.trace_for_seed(7).trace_id == trace["trace_id"]
     assert prefix.specification()["prefix_actions"] == {"7": 2}
     assert len(prefix.qualification_sha256) == 64

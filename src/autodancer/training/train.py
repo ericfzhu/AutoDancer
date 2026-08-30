@@ -510,6 +510,11 @@ def train(arguments: argparse.Namespace) -> None:
     )
     trace_prefix_metadata = None if trace_prefix is None else trace_prefix.specification()
     if trace_prefix is not None:
+        if trace_prefix.action_contract != arguments.action_contract:
+            raise ValueError(
+                "trace-prefix action contract mismatch: "
+                f"bank={trace_prefix.action_contract!r}, run={arguments.action_contract!r}"
+            )
         if not training_seed_pool:
             raise ValueError("trace-prefix training requires an explicit finite seed pool")
         missing_trace_seeds = sorted(set(training_seed_pool) - set(trace_prefix.seeds))
