@@ -568,7 +568,9 @@ def train(arguments: argparse.Namespace) -> None:
                 tracker.validate_component_versions(
                     {
                         "training-level-distribution": (
-                            "mixed-curriculum-replay-v1"
+                            "legal-natural-prefix-phase3-v2"
+                            if natural_prefix is not None and natural_prefix.target_phase == 3
+                            else "mixed-curriculum-replay-v1"
                             if arguments.curriculum_mixture is not None
                             else "reverse-curriculum-sequential-goto-v1"
                             if arguments.curriculum_start_level != 1

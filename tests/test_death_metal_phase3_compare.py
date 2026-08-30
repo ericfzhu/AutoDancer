@@ -75,3 +75,7 @@ def test_exp0023_launcher_declares_exact_legal_phase3_contract() -> None:
     assert '"--natural-prefix-policy-seed", "87001"' in source
     assert '"--natural-prefix-recurrent-state", "warm"' in source
     assert "10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89" in source
+
+    training_source = Path("src/autodancer/training/train.py").read_text(encoding="utf-8")
+    assert '"legal-natural-prefix-phase3-v2"' in training_source
+    assert "natural_prefix.target_phase == 3" in training_source
