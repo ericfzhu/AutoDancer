@@ -1920,3 +1920,52 @@ The legal backward sequence after repeatable full-boss acquisition is:
 
 This sequence does not make assisted clears count as final success. It turns them
 into reusable subskills while preserving the normal-start held-out criterion.
+
+## Pure on-policy collection wastes rare successful trajectories
+
+The current PPO learner uses a successful boss trajectory only in the rollout
+update that happened to contain it. After four PPO epochs the trajectory is
+discarded, even when it is one of fewer than ten successes among thousands of
+episodes. `episodes.jsonl` now preserves the exact action sequence for successful
+episodes, but the learner does not consume that evidence again. This is a major
+sample-efficiency mismatch for a live game where environment interaction, not
+gradient computation, dominates cost.
+
+Demonstration-augmented agents were developed for this regime. DQfD combines RL
+updates with a supervised demonstrator-action objective and reports substantial
+data-efficiency gains from small demonstration sets
+([Hester et al., 2018](https://research.google/pubs/deep-q-learning-from-demonstrations/)).
+R2D3 extends demonstration replay to recurrent policies in sparse-reward,
+partially observed environments with variable initial conditions, retaining
+complete sequences rather than treating demonstration transitions independently
+([Paine et al., 2020](https://openreview.net/pdf?id=SygKyeHKDH)). Kickstarting
+uses a teacher-policy distillation loss that can decay as the student improves,
+allowing the learner to surpass the teacher rather than permanently cloning it
+([Schmitt et al., 2018](https://arxiv.org/abs/1803.03835)).
+
+AutoDancer has an unusually strong way to obtain valid demonstrations without
+screenshots, keyboard control, or a simulator: replay an exact successful action
+sequence against the same game seed through the qualified Lua/pipe controller.
+Fresh-launch deterministic replay must first prove that every acknowledgement,
+observation, event, boss phase, and terminal outcome matches the recorded trace.
+Only reproducible traces enter the demonstration bank.
+
+A successful trace can then support two separately testable mechanisms:
+
+1. **Legal trace-prefix curriculum.** Replay ordinary game actions up to a
+   declared number of turns before success, then hand the exact live process to
+   the learner. As the tail becomes reliable, move the handoff earlier. Guide
+   actions remain excluded from PPO and the learner recurrent state is warmed
+   from the observed sequence under its stable feedback contract.
+2. **Recurrent imitation replay.** Recollect observations and action masks during
+   the qualified replay, store complete recurrent chunks with episode boundaries,
+   and add a bounded cross-entropy auxiliary loss on demonstrator actions. Sample
+   demo chunks alongside on-policy PPO updates with an explicit decaying weight;
+   never pretend the off-policy trace is an on-policy PPO rollout.
+
+The trace-prefix arm is the lower-risk first experiment because it reuses the
+existing natural-prefix separation and changes only the start distribution. The
+imitation arm adds an optimization objective and must be evaluated separately.
+For either arm, successful traces and training seeds are development data only.
+Promotion still requires unassisted results on a complete unseen-seed bank, and
+normal-start Zone 2 remains the only final acceptance outcome.
