@@ -1519,3 +1519,54 @@ terminal potential to zero. This is closer to the actual state-potential
 definition than summing attacker-attributed events, credits direct weapons and
 bombs equally, and still cancels every failed partial-health trajectory. Guide
 V3 and historical reward metadata remain unchanged.
+
+## EXP-0023 preflight: curriculum validity versus deployment validity
+
+The phase-3 successor is consistent with Jump-Start RL's core mechanism: a guide
+policy generates reachable start states for an exploration policy rather than
+fabricating convenient states
+([Uchendu et al., 2023](https://proceedings.mlr.press/v202/uchendu23a.html)).
+The exact running-process handoff and warmed learner recurrence address the main
+arrival-state defect in the retired direct-health curricula. They do not make the
+phase curriculum equivalent to the normal task, however. Four remaining gaps are
+now explicit gates rather than implicit assumptions:
+
+1. **Success-conditioned handoffs.** Up to eight stochastic guide attempts on one
+   game seed condition the learner distribution on a guide success. That is useful
+   for downstream skill acquisition but overstates one-attempt deployment
+   reachability. EXP-0023 therefore reports acquisition and completion separately,
+   keeps every selected seed in the unconditional denominator, and treats a pass
+   only as permission to move the handoff backward. Before removing the guide, run
+   a one-attempt acquisition evaluation and then a no-guide evaluation.
+2. **Small procedural training bank.** Forty-eight Death Metal seeds are an
+   acquisition pool, not evidence of broad game generalization. Procgen finds that
+   diverse procedural training distributions are essential and that small level
+   sets can strongly overfit
+   ([Cobbe et al., 2020](https://proceedings.mlr.press/v119/cobbe20a.html)). The
+   disjoint 24-seed bank can reject a narrow policy, but a successful local skill
+   must later train across a much larger, boss-stratified normal-start distribution.
+   At that scale, prioritize by current learning potential while retaining mastered
+   seeds, following Prioritized Level Replay
+   ([Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)).
+3. **Recurrent boundary identity.** A recurrent policy's hidden state is part of
+   its effective state. R2D2 identifies recurrent-state staleness and
+   representational drift as material learning problems
+   ([Kapturowski et al., 2019](https://openreview.net/pdf?id=r1lyTjAqYX)). The
+   learner therefore processes the complete guide observation/action/reward
+   history under the frozen rollout policy version; checkpoint evaluation now
+   exposes and verifies the exact training natural-prefix contract. A fresh-state
+   result cannot be substituted for this warm-state experiment.
+4. **Reward invariance is narrower than our implementation.** Classical PBRS
+   preserves optimal policies for transition reward `gamma*Phi(s')-Phi(s)`
+   ([Ng, Harada, and Russell, 1999](https://people.eecs.berkeley.edu/~pabbeel/cs287-fa09/readings/NgHaradaRussell-shaping-ICML1999.pdf)).
+   AutoDancer also feeds previous reward into the recurrent policy, so the theorem
+   does not literally prove invariance here. V5 consequently remains an experiment,
+   not a correctness theorem: direct combat bonuses are zero, failed progress is
+   terminally canceled, task success is scored separately, and promotion ignores
+   shaped return.
+
+The final project criterion is unchanged. Even a perfect phase-3 learner has only
+solved a player20-assisted downstream subtask for one of four Zone 1 bosses. The
+curriculum must contract assistance, move through phase 2 and the full boss start,
+cover every boss type, expand through Floors 3, 2, and 1, and finally demonstrate
+Zone 2 entry from untouched All Zones starts on multiple unseen seeds.
