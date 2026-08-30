@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import random
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -20,6 +21,7 @@ from autodancer.constants import (
     GridChannel,
     PlayerFeature,
 )
+from autodancer.rewards import RewardConfig
 from autodancer.training.model import (
     START_ACTION,
     AdapterActorCritic,
@@ -28,13 +30,18 @@ from autodancer.training.model import (
     ProjectedAdapterActorCritic,
     RecurrentActorCritic,
 )
+from autodancer.training.natural_prefix import NaturalPrefixConfig
 from autodancer.training.ppo import (
     PPOConfig,
     RecurrentPPO,
     RolloutBatch,
     generalized_advantage_estimate,
 )
-from autodancer.training.train import RolloutCollector, require_reward_lineage_version
+from autodancer.training.train import (
+    RolloutCollector,
+    evaluate_policy,
+    require_reward_lineage_version,
+)
 
 
 def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:
@@ -488,10 +495,7 @@ def test_architecture_eight_actor_warm_start_resets_reward_critic(tmp_path: Path
             inventory_size=8,
         )
     ).eval()
-    critic_before = {
-        name: value.clone()
-        for name, value in target.base.critic.state_dict().items()
-    }
+    critic_before = {name: value.clone() for name, value in target.base.critic.state_dict().items()}
     algorithm = RecurrentPPO(
         target,
         PPOConfig(rollout_length=1, sequence_length=1),
@@ -816,3 +820,31 @@ def test_checkpoint_rng_states_are_moved_back_to_cpu_before_restore(
         "torch": "torch-cpu",
         "cuda": ["cuda-0-cpu", "cuda-1-cpu"],
     }
+
+
+def test_periodic_evaluation_routes_guide_reward_contract(monkeypatch) -> None:
+    captured = {}
+
+    def fake_evaluate(*args, **kwargs):
+        captured.update(kwargs)
+        return [{"episode_return": 1.0}, {"episode_return": 2.0}]
+
+    monkeypatch.setattr(
+        "autodancer.training.baseline._evaluate_deterministic_async",
+        fake_evaluate,
+    )
+    guide_reward = RewardConfig()
+    model = small_model()
+    result = evaluate_policy(
+        SimpleNamespace(num_envs=2),
+        model,
+        device=torch.device("cpu"),
+        seed=77,
+        steps=10,
+        guide_model=model,
+        natural_prefix=NaturalPrefixConfig(),
+        guide_reward=guide_reward,
+    )
+
+    assert captured["guide_reward"] is guide_reward
+    assert result == {"evaluation_episodes": 2.0, "evaluation_mean_return": 1.5}

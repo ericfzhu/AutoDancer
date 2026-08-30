@@ -395,7 +395,7 @@ def evaluate_policy(
         action_contract=action_contract,
         guide_model=guide_model,
         natural_prefix=natural_prefix,
-        guide_reward_config=guide_reward,
+        guide_reward=guide_reward,
     )
     scores = [float(episode["episode_return"]) for episode in episodes]
     return {
