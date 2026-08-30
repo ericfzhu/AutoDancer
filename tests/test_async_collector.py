@@ -1050,6 +1050,53 @@ def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
     assert len(environment.environments["worker-0000"].handoffs) == 1
 
 
+def test_natural_prefix_evaluation_uses_checkpoint_guide_rewards() -> None:
+    class RecordingGuide(RecurrentActorCritic):
+        def __init__(self, config: ModelConfig) -> None:
+            super().__init__(config)
+            self.previous_rewards: list[float] = []
+
+        def step(self, observation, state):
+            self.previous_rewards.extend(
+                float(value) for value in observation["previous_reward"].cpu()
+            )
+            return super().step(observation, state)
+
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecordingGuide(learner.config)
+    _evaluate_model_async(
+        environment,
+        learner,
+        seeds=[9004],
+        max_steps=1,
+        policy_seed=20,
+        device=torch.device("cpu"),
+        dashboard_state=None,
+        action_contract="current",
+        deterministic=True,
+        guide_model=guide,
+        guide_reward=RewardConfig(),
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+        ),
+    )
+
+    assert max(guide.previous_rewards) < 1.0
+    assert any(value == pytest.approx(0.03) for value in guide.previous_rewards)
+
+
 def test_natural_prefix_evaluation_uses_declared_stateful_action_contract() -> None:
     environment = PrefixEnvironment()
     learner = RecurrentActorCritic(
