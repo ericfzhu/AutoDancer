@@ -1591,6 +1591,15 @@ nominally frozen period. The experiment remains unchanged through all three
 trials; changing executable code between trials would invalidate their matched
 comparison.
 
+The first atomic checkpoint makes the retention risk measurable. Relative to the
+exact source checkpoint, at update 30 the inherited base actor had moved by an
+L2 norm of `11.933` (`2.45%` of its source norm), the sensory adapter by `3.474`
+(`6.49%`), and the adapter projection by `2.958` (`96.1%` of its source norm).
+Parameter distance is not behavioral KL and cannot by itself establish loss of
+the rare clear. It does establish that the nominal warm-up did not keep the
+complete source actor near its initialization, especially along the projection
+that controls how all A8-only information enters the recurrent policy.
+
 The broader RL literature makes policy retention a first-class experimental
 variable rather than an implementation detail:
 
