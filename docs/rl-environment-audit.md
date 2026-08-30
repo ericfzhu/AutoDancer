@@ -1466,3 +1466,20 @@ boss contact while removing the return advantage of damage-then-die farming,
 and a reachable phase-3 start should supply successful completion trajectories.
 Neither mechanism counts as normal-start evidence. Promotion still requires
 repeatable Zone 2 entry from untouched normal All Zones seeds.
+
+### EXP-0022 freeze-boundary diagnosis
+
+The first 20 updates of all three trials reject immediate inherited-actor
+forgetting as the explanation for the guide's lack of kills. Boss damage per
+death increased after the ten-update inherited-base freeze ended in every trial:
+`1.716 -> 2.143` for seed 86001, `1.726 -> 2.325` for seed 86002, and
+`2.176 -> 2.455` for seed 86003. The matched frozen/joint mean KL values were
+`0.0059/0.0150`, `0.0058/0.0131`, and `0.0068/0.0170`; all losses remained
+finite and no worker restarted or recovered. This is training-process evidence,
+not held-out phase competence, and EXP-0022 must still finish unchanged.
+Nevertheless, the replicated direction means a teacher-KL arm is not the next
+causal intervention. The active actor retains and increases boss contact; the
+unresolved problem is converting renewable partial damage into deep phases and a
+clear. Select the next legal handoff only from completed held-out phase evidence,
+then test terminal-canceling potential. Revisit recurrent kickstarting only if
+contact collapses at that handoff.
