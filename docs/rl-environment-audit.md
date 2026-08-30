@@ -1291,3 +1291,42 @@ distribution backward as competence becomes reliable
 ([Florensa et al., 2017](https://arxiv.org/abs/1707.05300)). EXP-0021 is only the
 goal-adjacent acquisition stage. A pass authorizes, but does not substitute for,
 phase-3, phase-2, full-boss, earlier-floor, and finally unseen normal-start tests.
+
+## EXP-0021 avoidance exploit and time-limit semantics
+
+EXP-0021 supplied direct evidence of an environment-objective mismatch. The
+matched parent dealt 141 authoritative boss-damage points across 72 held-out
+episodes and died in every one. After 122,880 transitions, all three trained
+policies dealt zero boss damage across 216 episodes, never left Death Metal
+phase 1, never died, and reached the 500-turn client limit every time. One
+argmax trial waited on 87.96% of actions; the other policies mostly traversed
+safe movement loops. Stochastic evaluation did not restore contact.
+
+The transition from contact to avoidance occurred in all three training curves
+at roughly 20,000--30,000 transitions. Under DeathMetalGuideV2, early contact
+earned boss credit but accumulated player-damage and death penalties, whereas
+a client-limit trajectory earned zero. The learned behavior is therefore a
+reward exploit in the strict operational sense: it improves specified return by
+avoiding the intended task. It is not evidence that A8 lacks the observations,
+capacity, or recurrent state needed to act on the boss.
+
+The cutoff must not be patched casually. Pardo et al.'s
+[time-limit analysis](https://proceedings.mlr.press/v80/pardo18a.html)
+distinguishes a finite-horizon task, where remaining time belongs in the state
+and the horizon is terminal, from an indefinite task whose collection cutoff
+must bootstrap. AutoDancer currently implements the latter. Adding a timeout
+penalty while retaining hidden horizon and bootstrap semantics would change
+both the objective and the value target inconsistently. EXP-0022 instead keeps
+the cutoff semantics fixed and removes player-damage and death penalties only
+from the assisted boss-guide reward. It tests the causal prediction that a
+nonnegative boss-contact objective retains and improves contact while passive
+avoidance remains unrewarded.
+
+This does not imply that damage and death should be unpenalized in the final
+normal-start policy. The guide is a goal-adjacent skill-acquisition objective;
+success is selected by held-out phase depth and Zone 2 entry, not shaped return.
+Survival costs can be restored gradually when successful trajectories exist and
+assistance contracts. If aligned reward still erases the inherited actor,
+[kickstarting](https://arxiv.org/abs/1803.03835) with a decaying teacher-policy
+KL is the next isolated mechanism. Applying it before correcting the reward
+would merely force the student to resist its own stated objective.

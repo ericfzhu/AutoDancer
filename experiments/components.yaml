@@ -24,6 +24,10 @@ blocks:
         description: Non-renewable Death Metal guide restricted to authoritative boss-tagged damage and kills, plus survival and real level transitions.
         config: configs/reward-death-metal-guide-v2.json
         config_sha256: e2d35ec226b90b64477f49e1aa07ac7752929d38de5cf238a300294cd3c838d4
+      DeathMetalGuideV3:
+        description: Outcome-aligned boss-only guide that removes player-damage and death penalties after EXP-0021 demonstrated that they made zero-contact timeout preferable to unsuccessful boss practice.
+        config: configs/reward-death-metal-guide-v3.json
+        config_sha256: ed80eade70d8133ada9cd7eff44db3fbff6a1657a6e07e7df72e0bd29891096e
   architecture:
     versions:
       A2: Entity-attention recurrent actor-critic baseline.
@@ -99,3 +103,4 @@ blocks:
       single-boss-assisted-v7: Evaluate deterministic and turn-keyed stochastic policies on a predeclared, telemetry-selected held-out set of one boss type; report distinct successful seeds, completion rate/time, boss attribution, deaths, and controller validity separately from shaped return.
       assistance-transfer-and-retention-v8: Gate reduced-assistance transfer on fresh single-boss seeds, then if optimization is required evaluate both the harder profile and matched-seed mastered-profile retention under deterministic and turn-keyed stochastic control.
       legal-death-metal-guide-v9: On disjoint telemetry-confirmed Death Metal seeds, score authoritative boss phase depth, phase-4 acquisition, damage, deaths, and Zone 2 entry under deterministic and two turn-keyed stochastic modes; acquisition failures remain in the denominator.
+      legal-death-metal-guide-v10: V9 evaluation plus zero-contact timeout, wait, movement, and action-distribution diagnostics for the outcome-aligned guide reward.

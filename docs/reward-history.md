@@ -777,6 +777,38 @@ Assistance is then reduced only after success lies in an intermediate band;
 normal-start evaluation remains unassisted and is the only evidence that can
 promote a Zone 2 policy.
 
+### EXP-0021 result: the guide reward preferred avoidance
+
+EXP-0021 completed three independent 122,880-transition A8 trials and 288
+matched held-out episodes with valid controllers. The frozen parent attacked:
+it dealt 141 authoritative boss-damage points across 72 episodes, reached mean
+Death Metal phase depth `1.458`, and died in every episode. Every trained trial
+instead reached exactly phase 1, dealt zero boss damage, survived, and consumed
+the full 500-turn limit in all 216 episodes. The failure reproduced under
+argmax and two turn-keyed stochastic policy streams.
+
+This was not merely an evaluation-mode collapse. During each training trial,
+boss contact remained common for the ten frozen-base updates, then fell to
+nearly zero by roughly 20,000--30,000 transitions while time-limit episodes
+appeared and entropy contracted. DeathMetalGuideV2 paid `+0.20` per
+authoritative boss-damage point, but also charged `-0.05` per player-damage
+point and `-2` on death. Unsuccessful practice therefore had negative return;
+avoiding the boss until the client cutoff had exactly zero return because that
+cutoff is correctly treated as a bootstrapped training truncation. PPO found
+the higher-return behavior specified by the reward.
+
+The next reward version changes only this measured conflict. Boss damage,
+boss kill, real floor/zone completion, all caps, the player20 environment, and
+the 500-turn bootstrapped cutoff stay fixed. Player-damage and death shaping are
+set to zero during guide acquisition, making authoritative boss interaction
+nonnegative and leaving avoidance at zero. A hidden timeout penalty is not
+added: the cutoff is not part of the game objective, and converting it into a
+finite-horizon terminal would also require time-aware observations and changed
+bootstrapping semantics. If the outcome-aligned reward still loses inherited
+contact behavior, a separately declared kickstarting/teacher-KL experiment is
+the next diagnostic; teacher regularization must not conceal a reward that
+itself prefers the exploit.
+
 ## Rules for future entries
 
 Every new reward version must record:
@@ -798,3 +830,5 @@ failure mode.
 - Ng, Harada, and Russell, [Policy invariance under reward transformations](https://people.eecs.berkeley.edu/~russell/papers/icml99-shaping.pdf)
 - Küttler et al., [The NetHack Learning Environment](https://arxiv.org/abs/2006.13760)
 - Bukaty and Kanne, [Using Human Gameplay to Augment Reinforcement Learning Models for Crypt of the NecroDancer](https://bbukaty.github.io/CoNBot/report.pdf)
+- Pardo et al., [Time Limits in Reinforcement Learning](https://proceedings.mlr.press/v80/pardo18a.html)
+- Schmitt et al., [Kickstarting Deep Reinforcement Learning](https://arxiv.org/abs/1803.03835)

@@ -1,0 +1,75 @@
+schema_version: 1
+id: EXP-0022
+title: Outcome-aligned legal Death Metal guide acquisition
+question: Does removing the guide reward's demonstrated survival-over-contact preference preserve inherited boss engagement and produce repeatable deep Death Metal phases?
+hypothesis: With player-damage and death shaping removed, authoritative boss contact has nonnegative return while passive avoidance remains zero; the A2-to-A8 student should retain contact beyond 30,000 transitions and improve held-out phase depth instead of converging to 500-turn zero-contact episodes.
+changed_blocks: [reward, evaluation]
+component_versions:
+  reward: DeathMetalGuideV3
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-qualified
+  environment-semantics: player-health-only-boss-curriculum-v4
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: A2-to-A8-actor-parity-fresh-critic-v2
+  training-level-distribution: reverse-curriculum-sequential-goto-v1
+  runtime: async-native-pipe-v1
+  evaluation: legal-death-metal-guide-v10
+invariants:
+  - the exact passed eight-worker one-million-transition controller qualification is required before training
+  - Bard begins from normal seeded All Zones followed by real-game sequential GOTO to Zone 1 Floor 4
+  - player20 changes only Bard's starting current and maximum health; boss and boss-add state remains untouched
+  - only authoritative data.boss damage and kill events receive guide combat credit
+  - boss combat credit remains entity-deduplicated and floor-capped below real floor plus zone completion
+  - player damage and gameplay death produce exactly zero guide credit; infrastructure faults remain invalid rather than gameplay
+  - the 500-turn client cutoff remains a nonterminal bootstrapped collection truncation and receives no reward
+  - EXP-0021 and EXP-0022 differ only in player_damage minus 0.05 to 0 and death minus 2 to 0, plus disjoint seeds and evaluation identity
+  - source actor, recurrent transition, and logits are preserved at initialization while critic, optimizer, episode state, and RNG are fresh
+  - the inherited actor base is frozen for exactly ten PPO updates and then jointly optimized
+  - calibration, training, and evaluation banks are disjoint and calibration observes boss identity only
+  - every selected seed is telemetry-confirmed Death Metal; no candidate is selected by policy performance
+  - exactly eight fixed-capacity workers, one policy version per rollout, and zero natural infrastructure contamination are required
+  - shaped return never selects a checkpoint; phase acquisition and live Zone 2 entry are the primary evidence
+  - no player20 result constitutes unassisted boss completion or normal-start Zone 2 evidence
+arms:
+  - id: a8-player20-outcome-aligned-guide
+    description: Three independent A8 trials initialized at exact A2 actor parity and trained on untouched Death Metal with boss-only positive acquisition credit and no survival penalties.
+source:
+  checkpoint: runs/assisted-death-metal/training/seed-68002/final.pt
+  checkpoint_sha256: bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5
+  provenance_limit: The source is only a local-policy initializer; its retired boss-mutating achievements remain invalid.
+calibration:
+  training_candidate_seed_range: 84001-84256
+  training_selection: ascending first 48 seeds whose official boss_type telemetry is DEATH_METAL
+  evaluation_candidate_seed_range: 85001-85256
+  evaluation_selection: ascending first 24 seeds whose official boss_type telemetry is DEATH_METAL
+  disclosure_limit: boss identity only; no action, damage, survival, phase, or completion outcomes
+training:
+  training_seeds: [86001, 86002, 86003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  initialization: exact A2 actor and recurrent parity with zero-projected A8 adapter, fresh critic and optimizer
+  freeze_base_updates: 10
+  transition_budget_per_trial: 122880
+  checkpoint_steps: [30720, 61440, 92160, 122880]
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns_per_episode: 500
+  reward_config: configs/reward-death-metal-guide-v3.json
+  reward_config_sha256: ed80eade70d8133ada9cd7eff44db3fbff6a1657a6e07e7df72e0bd29891096e
+evaluation:
+  heldout_game_seeds: recorded before training from the declared evaluation calibration range
+  workers: 8
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns: 500
+  modes: [deterministic, stochastic-87001, stochastic-87002]
+  primary_outcome: authoritative Death Metal phase-4 acquisition with all selected seeds retained in the denominator
+  secondary_outcomes: [live Zone 2 Floor 1 entry, phase depth, authoritative boss damage, boss kills, zero-contact timeouts, deaths, turns]
+  diagnostics: [action distribution, wait rate, idle rate, wall attempts, boss actor types, boss health, reward components, entropy, KL, clipping, gradients, controller validity]
+decision_rule: Accept a legal guide only if the three-final aggregate phase-4 rate is at least 25 percent, at least two finals reach phase 4 on at least 20 percent of held-out seeds, at least 12 distinct held-out seeds reach phase 4 across finals, every final deals nonzero boss damage, mean boss damage improves over the matched parent, and controller invariants hold. Select lexicographically by Zone 2 entries, phase-4 rate, mean phase depth, boss damage, zero-contact timeout rate, death rate, then turns. If the gate fails but contact remains materially above EXP-0021, retain the parent and test decaying teacher-policy KL under this same reward. If contact again collapses, diagnose actor retention before any architecture scaling. A passing guide authorizes separately declared assistance reduction and backward start-distribution expansion; it is not normal-start promotion.
