@@ -12,3 +12,18 @@ normal-start Zone 2 evidence. A pass authorizes assistance contraction and
 backward curriculum expansion; a failure authorizes a separately declared
 teacher-KL retention test rather than another simultaneous reward or
 architecture change.
+
+## Result
+
+Rejected for the declared phase-4 guide gate. The three finals retained boss
+contact and improved held-out phase 2 from 33.3% to 94.9% and phase 3 from 1.4%
+to 12.0%, but reached phase 4 zero times. Trial 86002 produced one legal
+player20-assisted boss clear and live Zone 2 entry on held-out seed 85097; this
+is downstream acquisition evidence, not normal-start promotion.
+
+The predeclared teacher-KL fallback is not taken next because the hypothesized
+retention failure did not occur: damage per death increased immediately after
+unfreezing in all three trials. The observed failure is instead renewable
+partial damage with almost universal death. The successor therefore uses a real
+phase handoff and terminal-canceling state potential. Its source, seeds, gate,
+and evaluation are declared separately.

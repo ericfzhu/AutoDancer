@@ -809,6 +809,33 @@ contact behavior, a separately declared kickstarting/teacher-KL experiment is
 the next diagnostic; teacher regularization must not conceal a reward that
 itself prefers the exploit.
 
+### EXP-0022 result: contact restored, completion still sparse
+
+DeathMetalGuideV3 removed only the guide's player-damage and death penalties.
+All three 122,880-transition trials retained contact after the inherited base
+unfroze, and held-out boss damage increased from the parent's 133 points to 803
+across the three finals. Phase 2 rose from `33.3%` to `94.9%` and phase 3 from
+`1.4%` to `12.0%`. No final reached the declared phase-4 evidence gate, however,
+and 215 of 216 held-out episodes ended in death. The experiment is rejected for
+its phase-4 guide question rather than extending direct damage shaping.
+
+One controller-valid episode did kill Death Metal and enter Zone 2: trial 86002,
+stochastic stream 87001, game seed 85097, in 94 turns. Because this used the
+player20 Bard-only assistance, it proves a legal downstream trajectory exists but
+does not count as normal-start progress. It is retained as acquisition evidence
+for a separately declared reachable phase curriculum.
+
+The completion exposed the next reward defect. A bomb reduced boss health but
+was absent from Bard-attributed `boss_damage`; the same discrepancy reproduced
+on another one-bomb episode. DeathMetalPotentialV5 consequently uses the bounded
+visible boss-health reduction from the exact legal handoff as `Phi`, rather than
+attacker-attributed damage events. It pays `gamma * Phi(s') - Phi(s)`, forces
+`Phi=0` on genuine death or level completion, retains potential across a client
+time-limit, and has no direct damage/kill bonus. The hypothesis is that a legal
+later-phase start supplies completion trajectories while failed partial damage
+has zero discounted shaping return. Selection remains based on live phase depth,
+boss clear, and Zone 2 entry—not the potential return.
+
 ## Rules for future entries
 
 Every new reward version must record:

@@ -139,13 +139,16 @@ def natural_prefix_identity(config: NaturalPrefixConfig, guide: Path) -> dict[st
 
 @dataclass(slots=True)
 class DeathMetalPhaseTracker:
-    """Require visible, damage-backed evidence of Death Metal phase conversion.
+    """Require visible, state-backed evidence of Death Metal phase conversion.
 
     Health alone is deliberately insufficient: the invalid historical profile
     directly set health without invoking Death Metal's conversion handler.  A
     valid boundary therefore requires the expected number of distinct observed
-    boss entity types as well as cumulative boss damage and current health.
-    Type-hash collisions can only make this conservative test fail closed.
+    boss entity types as well as observed health loss and current health.  The
+    direct boss-damage event total is retained as diagnostic evidence, but is
+    not authoritative because legal indirect damage (notably Bard's bomb) names
+    the bomb rather than Bard as its source. Type-hash collisions can only make
+    this conservative test fail closed.
     """
 
     config: NaturalPrefixConfig
@@ -211,9 +214,10 @@ class DeathMetalPhaseTracker:
         if self.initial_health is None or health is None:
             return False
         required_damage = max(self.initial_health - self.config.target_health, 1)
+        observed_health_loss = max(self.initial_health - health, 0)
         return bool(
             health <= self.config.target_health
-            and self.boss_damage >= required_damage
+            and observed_health_loss >= required_damage
             and len(self.observed_actor_types) >= self.config.target_phase
         )
 
@@ -224,6 +228,11 @@ class DeathMetalPhaseTracker:
             "target_health": self.config.target_health,
             "initial_health": self.initial_health,
             "minimum_health": self.minimum_health,
+            "observed_health_loss": (
+                None
+                if self.initial_health is None or self.minimum_health is None
+                else max(self.initial_health - self.minimum_health, 0)
+            ),
             "boss_damage": self.boss_damage,
             "observed_actor_types": sorted(self.observed_actor_types),
             "observations_with_boss": self.observations_with_boss,

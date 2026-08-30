@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0022",
+  "decided_at": "2026-08-30T09:05:52.8418709Z",
+  "outcome": "rejected",
+  "selected_arm": null,
+  "evidence": [
+    "runs/legal-death-metal-guide-v3/comparison.json",
+    "runs/legal-death-metal-guide-v3/evaluation/seed-86002/stochastic-87001/report.json",
+    "runs/legal-death-metal-guide-v3/training/seed-86001/metrics.jsonl",
+    "runs/legal-death-metal-guide-v3/training/seed-86002/metrics.jsonl",
+    "runs/legal-death-metal-guide-v3/training/seed-86003/metrics.jsonl"
+  ],
+  "mlflow_run_ids": [],
+  "summary": "Outcome-aligned shaping restored contact and raised held-out phase 2 from 33.3% to 94.9% and phase 3 from 1.4% to 12.0%, but all three finals missed the declared phase-4 gate. One legal player20-assisted episode killed Death Metal and entered Zone 2 on seed 85097; it is acquisition evidence, not normal-start promotion. Immediate post-freeze contact improved in every trial, rejecting actor-retention loss as the next target. Direct renewable damage is retired in favor of a separately declared reachable phase handoff with terminal-canceling visible-health potential."
+}

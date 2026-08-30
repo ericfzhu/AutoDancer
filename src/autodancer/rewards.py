@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.constants import GridChannel, PlayerFeature, Terrain
+from autodancer.constants import ActorKind, GridChannel, PlayerFeature, Terrain
 
 REWARD_PROFILE_VERSION = 4
 
@@ -38,6 +38,7 @@ class RewardConfig:
     max_item_reward_per_floor: float = 0.50
     boss_progress_potential_per_damage: float = 0.0
     max_boss_progress_damage: int = 9
+    boss_progress_source: str = "visible_boss_health_delta_v1"
     currency: float = 0.0
     max_currency_per_turn: int = 25
     container_opened: float = 0.0
@@ -81,6 +82,8 @@ class RewardConfig:
             raise ValueError("Reward V2 cannot enable stair potential shaping")
         if self.profile_version != 5 and self.boss_progress_potential_per_damage:
             raise ValueError("Boss progress potential requires Reward V5")
+        if self.boss_progress_source != "visible_boss_health_delta_v1":
+            raise ValueError("boss_progress_source must be visible_boss_health_delta_v1")
         if self.combat_reward_scope not in ("all", "boss_and_adds", "boss_only"):
             raise ValueError("combat_reward_scope must be one of: all, boss_and_adds, boss_only")
 
@@ -104,6 +107,7 @@ class RewardConfig:
             # Preserve the exact metadata contract of every historical profile.
             weights.pop("boss_progress_potential_per_damage")
             weights.pop("max_boss_progress_damage")
+            weights.pop("boss_progress_source")
         # Preserve byte-for-byte-compatible metadata for every historical reward
         # profile.  Only scoped profiles need to declare this newer field.
         if self.combat_reward_scope == "all":
@@ -129,6 +133,8 @@ class RewardTracker:
         self.item_reward = 0.0
         self.boss_progress_damage = 0
         self.boss_progress_potential = 0.0
+        self.boss_initial_health: int | None = None
+        self.boss_minimum_health: int | None = None
         self.zone = 0
         self.floor = 0
 
@@ -155,6 +161,17 @@ class RewardTracker:
     @staticmethod
     def _inventory_types(observation: Mapping[str, np.ndarray]) -> set[int]:
         return {int(value) for value in observation["inventory"][:, 1] if int(value) != 0}
+
+    @staticmethod
+    def _visible_boss_health(observation: Mapping[str, np.ndarray]) -> int | None:
+        grid = observation["grid"]
+        mask = (
+            (grid[..., GridChannel.ACTOR_CLASS] == int(ActorKind.BOSS))
+            & (grid[..., GridChannel.HEALTH] > 0)
+            & (grid[..., GridChannel.VISIBILITY] == 2)
+        )
+        health = grid[..., GridChannel.HEALTH][mask]
+        return int(health.min()) if health.size else None
 
     @classmethod
     def _stairs(
@@ -221,6 +238,8 @@ class RewardTracker:
         self.item_reward = 0.0
         self.boss_progress_damage = 0
         self.boss_progress_potential = 0.0
+        self.boss_initial_health = self._visible_boss_health(observation)
+        self.boss_minimum_health = self.boss_initial_health
         self.rewarded_kills.clear()
         self.rewarded_damage.clear()
 
@@ -343,17 +362,20 @@ class RewardTracker:
             self._score_event(event, components)
 
         if config.boss_progress_potential_per_damage:
-            boss_damage = sum(
-                max(int(event.get("amount", 0) or 0), 0)
-                for event in event_list
-                if event.get("kind") == "enemy_damage"
-                and isinstance(event.get("data"), Mapping)
-                and event["data"].get("boss") is True
-            )
-            self.boss_progress_damage = min(
-                self.boss_progress_damage + boss_damage,
-                config.max_boss_progress_damage,
-            )
+            visible_health = self._visible_boss_health(observation)
+            if visible_health is not None:
+                if self.boss_initial_health is None:
+                    self.boss_initial_health = visible_health
+                self.boss_minimum_health = (
+                    visible_health
+                    if self.boss_minimum_health is None
+                    else min(self.boss_minimum_health, visible_health)
+                )
+            if self.boss_initial_health is not None and self.boss_minimum_health is not None:
+                self.boss_progress_damage = min(
+                    max(self.boss_initial_health - self.boss_minimum_health, 0),
+                    config.max_boss_progress_damage,
+                )
             # A real terminal or level transition ends this boss objective. A
             # client time limit is only a collection truncation and therefore
             # retains its potential for value bootstrapping.
@@ -369,6 +391,8 @@ class RewardTracker:
             self.boss_progress_potential = next_boss_potential
             if objective_ended:
                 self.boss_progress_damage = 0
+                self.boss_initial_health = None
+                self.boss_minimum_health = None
 
         status = str(info.get("episode_status", "running"))
         if terminated and status == "won":

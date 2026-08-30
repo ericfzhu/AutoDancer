@@ -10,6 +10,7 @@ from autodancer.constants import (
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
     PLAYER_FEATURES,
+    ActorKind,
     GridChannel,
     PlayerFeature,
     Terrain,
@@ -34,6 +35,17 @@ def observation(*, x: int = 0, y: int = 0) -> dict[str, np.ndarray]:
         "inventory": np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": np.ones(ACTION_COUNT, dtype=np.int8),
     }
+
+
+def boss_observation(health: int, *, x: int = 0, y: int = 0) -> dict[str, np.ndarray]:
+    value = observation(x=x, y=y)
+    row = GRID_SIZE // 2
+    column = row + 1
+    value["grid"][row, column, GridChannel.VISIBILITY] = 2
+    value["grid"][row, column, GridChannel.ACTOR_CLASS] = int(ActorKind.BOSS)
+    value["grid"][row, column, GridChannel.HEALTH] = health
+    value["grid"][row, column, GridChannel.MAX_HEALTH] = 9
+    return value
 
 
 def test_exploration_reward_is_novelty_bounded_and_not_repeatable() -> None:
@@ -457,6 +469,7 @@ def test_death_metal_potential_profile_has_no_direct_renewable_combat_credit() -
     assert config.enemy_damage == config.enemy_kill == 0
     assert config.boss_progress_potential_per_damage == pytest.approx(0.2)
     assert config.max_boss_progress_damage == 9
+    assert config.boss_progress_source == "visible_boss_health_delta_v1"
     assert config.boss_progress_potential_per_damage * 9 < config.floor_complete
 
 
@@ -466,24 +479,24 @@ def _boss_damage(amount: int = 1) -> list[dict]:
 
 def test_boss_progress_potential_cancels_partial_progress_on_death() -> None:
     tracker = RewardTracker(_boss_potential_config())
-    value = observation()
+    value = boss_observation(9)
     tracker.reset(value, {"zone": 1, "floor": 4})
     first, _ = tracker.score(
-        value,
+        boss_observation(8),
         {"zone": 1, "floor": 4, "episode_status": "running"},
         _boss_damage(),
         terminated=False,
         truncated=False,
     )
     second, _ = tracker.score(
-        value,
+        boss_observation(7),
         {"zone": 1, "floor": 4, "episode_status": "running"},
         _boss_damage(),
         terminated=False,
         truncated=False,
     )
     death, parts = tracker.score(
-        value,
+        boss_observation(7),
         {"zone": 1, "floor": 4, "episode_status": "dead"},
         [],
         terminated=True,
@@ -495,17 +508,17 @@ def test_boss_progress_potential_cancels_partial_progress_on_death() -> None:
 
 def test_boss_progress_potential_survives_time_limit_but_ends_on_level_change() -> None:
     tracker = RewardTracker(_boss_potential_config())
-    value = observation()
+    value = boss_observation(9)
     tracker.reset(value, {"zone": 1, "floor": 4})
     tracker.score(
-        value,
+        boss_observation(8),
         {"zone": 1, "floor": 4, "episode_status": "running"},
         _boss_damage(),
         terminated=False,
         truncated=False,
     )
     truncated, _ = tracker.score(
-        value,
+        boss_observation(8),
         {"zone": 1, "floor": 4, "episode_status": "time_limit"},
         [],
         terminated=False,
@@ -529,7 +542,7 @@ def test_boss_progress_potential_survives_time_limit_but_ends_on_level_change() 
 
 def test_boss_progress_potential_ignores_adds_and_rebases_at_handoff() -> None:
     tracker = RewardTracker(_boss_potential_config())
-    value = observation()
+    value = boss_observation(9)
     info = {"zone": 1, "floor": 4, "episode_status": "running"}
     tracker.reset(value, info)
     ignored, parts = tracker.score(
@@ -550,24 +563,42 @@ def test_boss_progress_potential_ignores_adds_and_rebases_at_handoff() -> None:
     assert "boss_progress_potential" not in parts
 
     tracker.score(
-        value,
+        boss_observation(4),
         info,
         _boss_damage(5),
         terminated=False,
         truncated=False,
     )
     assert tracker.boss_progress_potential == pytest.approx(1.0)
-    tracker.reset(value, info)
+    tracker.reset(boss_observation(4), info)
     assert tracker.boss_progress_damage == 0
     assert tracker.boss_progress_potential == 0
     first_learner_damage, _ = tracker.score(
-        value,
+        boss_observation(3),
         info,
         _boss_damage(),
         terminated=False,
         truncated=False,
     )
     assert first_learner_damage == pytest.approx(0.198)
+
+
+def test_boss_progress_potential_credits_indirect_bomb_health_loss() -> None:
+    tracker = RewardTracker(_boss_potential_config())
+    info = {"zone": 1, "floor": 4, "episode_status": "running"}
+    tracker.reset(boss_observation(9), info)
+
+    reward, parts = tracker.score(
+        boss_observation(5),
+        info,
+        [],
+        terminated=False,
+        truncated=False,
+    )
+
+    assert reward == pytest.approx(0.99 * 0.8)
+    assert parts["boss_progress_potential"] == pytest.approx(0.99 * 0.8)
+    assert tracker.boss_progress_damage == 4
 
 
 def test_checkpoint_reward_contract_round_trips_v4_and_v5_exactly() -> None:

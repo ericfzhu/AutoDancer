@@ -71,6 +71,18 @@ def test_death_metal_phase4_requires_health_damage_and_four_entity_types() -> No
     assert tracker.snapshot()["observed_actor_types"] == [101, 102, 103, 104]
 
 
+def test_indirect_bomb_damage_can_satisfy_natural_handoff() -> None:
+    tracker = DeathMetalPhaseTracker(NaturalPrefixConfig(target_phase=3))
+    tracker.observe(boss_observation(health=9, actor_type=101))
+    tracker.observe(boss_observation(health=6, actor_type=102), damage(1, 102))
+    tracker.observe(boss_observation(health=4, actor_type=103), damage(1, 103))
+
+    snapshot = tracker.snapshot()
+    assert tracker.reached
+    assert snapshot["observed_health_loss"] == 5
+    assert snapshot["boss_damage"] == 2
+
+
 def test_direct_health_mutation_cannot_satisfy_natural_handoff() -> None:
     tracker = DeathMetalPhaseTracker(NaturalPrefixConfig(target_phase=4))
     tracker.observe(boss_observation(health=9, actor_type=101))

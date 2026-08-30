@@ -1483,3 +1483,39 @@ unresolved problem is converting renewable partial damage into deep phases and a
 clear. Select the next legal handoff only from completed held-out phase evidence,
 then test terminal-canceling potential. Revisit recurrent kickstarting only if
 contact collapses at that handoff.
+
+## EXP-0022 completed outcome and indirect-damage audit
+
+EXP-0022 is rejected for its declared phase-4 guide question. Across three
+final checkpoints, three policy modes, and 216 held-out episodes, it reached
+phase 2 in 205 episodes (94.9%), phase 3 in 26 (12.0%), phase 4 in none, and
+Zone 2 once. The matched parent reached phase 2 in 24/72 episodes (33.3%), phase
+3 in 1/72 (1.4%), and never completed. All controller reports were valid with
+zero restarts. Outcome-aligned shaping therefore restored and deepened contact,
+but direct renewable damage still overwhelmingly converged to damage followed
+by death. The phase-4 acceptance gate remains failed; the single completion is
+downstream acquisition evidence, not a reason to relax that gate.
+
+The completion is nevertheless the first valid assisted live Zone 2 trajectory
+from an ordinary reachable Death Metal state. Trial 86002 under stochastic
+policy stream 87001 killed the unmodified 9-HP boss on held-out game seed 85097
+and entered Zone 2 in 94 turns. The player20 profile changed Bard health only.
+This does not count as normal-start Zone 2, but it proves the legal downstream
+task is possible for the learned policy.
+
+That episode also exposed a reward-state mismatch. Death Metal's observed health
+fell from 9 to 1 before the killing hit, while direct `boss_damage` events summed
+to only 5. The only bomb action accounts for the missing indirect damage. The
+same pattern appeared on seed 85100: one bomb, six observed health lost, and only
+two direct boss-damage events. Every other held-out episode had exact equality.
+This is not a phase-role telemetry failure: the damage event correctly names the
+bomb entity rather than Bard, but an event-source reward omits a legitimate
+player action that advances the objective.
+
+DeathMetalPotentialV5 therefore derives `Phi` from the minimum visible boss
+health relative to the legal learner handoff, capped at nine damage. Temporary
+absence retains the previous potential; death and real level transitions force
+terminal potential to zero. This is closer to the actual state-potential
+definition than summing attacker-attributed events, credits direct weapons and
+bombs equally, and still cancels every failed partial-health trajectory. Guide
+V3 and historical reward metadata remain unchanged.

@@ -16,6 +16,7 @@
   "max_item_reward_per_floor": 0.0,
   "boss_progress_potential_per_damage": 0.2,
   "max_boss_progress_damage": 9,
+  "boss_progress_source": "visible_boss_health_delta_v1",
   "currency": 0.0,
   "max_currency_per_turn": 0,
   "container_opened": 0.0,
