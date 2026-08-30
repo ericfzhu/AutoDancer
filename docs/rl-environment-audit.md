@@ -1330,3 +1330,58 @@ assistance contracts. If aligned reward still erases the inherited actor,
 [kickstarting](https://arxiv.org/abs/1803.03835) with a decaying teacher-policy
 KL is the next isolated mechanism. Applying it before correcting the reward
 would merely force the student to resist its own stated objective.
+
+## Successor constraints discovered during EXP-0022
+
+These are implementation constraints for a later experiment, not a premature
+decision on the still-running EXP-0022 gate.
+
+1. **Partial boss damage is renewable across deaths.** DeathMetalGuideV3 pays
+   positive credit for authoritative boss-health reduction and intentionally
+   charges nothing for death. The entity and floor caps prevent within-episode
+   loops, but reset after every death. A policy can therefore optimize repeated
+   early-phase damage without ever converting that damage into a boss clear.
+   Training must report boss damage, phase depth, kills, and Zone 2 entries
+   separately; damage or shaped return alone cannot select a checkpoint.
+2. **The next boss shaping term must cancel failed partial progress.** If
+   EXP-0022 retains contact but stalls before completion, replace the direct
+   damage bonus with `gamma * Phi(s') - Phi(s)`, where `Phi` is bounded,
+   authoritative Death Metal progress relative to the learner handoff. Set
+   `Phi(terminal)=0` for genuine death or victory, so accumulated progress is
+   repaid when an episode ends without converting it into task reward. Preserve
+   the real final observation and nonzero potential at a client time-limit,
+   because that cutoff is a training truncation rather than an MDP terminal.
+   This follows the policy-invariance form of
+   [Ng, Harada, and Russell (1999)](https://people.eecs.berkeley.edu/~russell/papers/icml99-shaping.pdf),
+   the episodic terminal correction analyzed by
+   [Grześ (2017)](https://kar.kent.ac.uk/60614/), and the partial-episode
+   bootstrap distinction in
+   [Pardo et al. (2018)](https://proceedings.mlr.press/v80/pardo18a.html).
+3. **A frozen guide needs its own reward stream.** Architecture A8 consumes the
+   previous reward as a recurrent policy input. The current natural-prefix path
+   loads and freezes the guide weights and validates its action contract, but it
+   feeds the guide rewards produced by the learner's active reward tracker.
+   Changing learner shaping therefore changes guide behavior despite identical
+   guide weights. A valid natural-prefix implementation must reconstruct and
+   validate the exact reward specification stored in the guide checkpoint, run
+   a separate guide-side `RewardTracker` for guide inference, and keep the
+   learner-side reward stream only for warming learner recurrence. Learner
+   reward accounting is still reset at the handoff, so guide rewards never enter
+   PPO returns.
+4. **Later-phase starts must be reached, not synthesized.** The repository's
+   natural-prefix mechanism uses ordinary acknowledged actions, requires
+   damage-backed phase evidence, and hands over the exact running process. This
+   is the legal equivalent of expanding a reverse curriculum backward from a
+   goal-adjacent start distribution. It matches the central curriculum principle
+   of keeping starts at an intermediate difficulty rather than mixing uniformly
+   impossible tasks
+   ([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+   A phase-3 learner may advance only after the guide reaches that boundary
+   reliably on disjoint seeds; subsequent stages expand to phase 2, full boss,
+   earlier floors, and finally normal All Zones starts.
+
+The causal prediction is specific: terminal-canceling potential should preserve
+boss contact while removing the return advantage of damage-then-die farming,
+and a reachable phase-3 start should supply successful completion trajectories.
+Neither mechanism counts as normal-start evidence. Promotion still requires
+repeatable Zone 2 entry from untouched normal All Zones seeds.
