@@ -2023,6 +2023,14 @@ checkpoint only by legal completion evidence from the disclosed training runs;
 that choice grants access to trace acquisition, never promotion. The selected
 checkpoint, reason, and handoff state are written atomically before the search.
 
+Checkpoint time is part of the training-data search because PPO can forget a rare
+skill after first acquiring it. The handoff tests the selected trial's final,
+92,160-step, and 61,440-step checkpoints in that order, each in an isolated
+recoverable search directory. It publishes the first checkpoint whose traces pass
+the three-distinct-seed fresh-replay gate and records every rejected candidate.
+This selection sees only the disclosed training bank; promotion remains reserved
+for later frozen-policy evaluation on disjoint seeds.
+
 The first consumer is EXP-0025. It trains three independent PPO trials on at most
 the final 16 actions of every qualified trace, with the earlier actions replayed
 only through the live controller. Conditional acquisition must exceed 10% in

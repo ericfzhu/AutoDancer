@@ -22,12 +22,19 @@ $comparisonPath = Join-Path $experiment "comparison.json"
 $handoffStatus = Join-Path $traceRoot "handoff-status.json"
 [System.IO.Directory]::CreateDirectory($traceRoot) | Out-Null
 
-function Write-HandoffStatus([string]$Status, [string]$Trial = "", [string]$Reason = "", [string]$ErrorText = "") {
+function Write-HandoffStatus(
+    [string]$Status,
+    [string]$Trial = "",
+    [string]$Reason = "",
+    [string]$Checkpoint = "",
+    [string]$ErrorText = ""
+) {
     $payload = [ordered]@{
         schema_version = 1
         status = $Status
         selected_trial = $Trial
         selection_reason = $Reason
+        selected_checkpoint = $Checkpoint
         error = $ErrorText
         updated_at = (Get-Date).ToUniversalTime().ToString("o")
     }
@@ -38,6 +45,7 @@ function Write-HandoffStatus([string]$Status, [string]$Trial = "", [string]$Reas
 
 $selectedTrial = ""
 $selectionReason = ""
+$selectedCheckpoint = ""
 try {
     Write-HandoffStatus "waiting-for-exp0024"
     while ($true) {
@@ -84,21 +92,84 @@ try {
         $selectionReason = "training-only-full-boss-completions"
     }
 
-    $checkpoint = Join-Path $experiment "training\$selectedTrial\final.pt"
     $trainingSelection = Join-Path $experiment "training\seed-selection.json"
     $excludedSelection = Join-Path $experiment "evaluation\heldout-selection.json"
-    Write-HandoffStatus "searching" $selectedTrial $selectionReason
-    & (Join-Path $PSScriptRoot "run-qualified-trace-search.ps1") `
-        -GameDir $GameDir `
-        -Checkpoint $checkpoint `
-        -SeedSelection $trainingSelection `
-        -ExcludedSeedSelection $excludedSelection `
-        -RunDir $traceRoot
-    if ($LASTEXITCODE -ne 0) {
-        throw "Qualified trace search exited with code $LASTEXITCODE"
+    $publishedStatus = Join-Path $traceRoot "status.json"
+    if (Test-Path -LiteralPath $publishedStatus -PathType Leaf) {
+        $existing = Get-Content -LiteralPath $publishedStatus -Raw | ConvertFrom-Json
+        if ([bool]$existing.valid -and [int]$existing.qualified_distinct_seed_count -ge 3) {
+            $selectedCheckpoint = [string]$existing.checkpoint
+            Write-HandoffStatus "complete" $selectedTrial $selectionReason $selectedCheckpoint
+            return
+        }
     }
-    Write-HandoffStatus "complete" $selectedTrial $selectionReason
+
+    $trialDirectory = Join-Path $experiment "training\$selectedTrial"
+    $checkpointNames = @("final.pt", "checkpoint-00092160.pt", "checkpoint-00061440.pt")
+    $checkpointCandidates = @(
+        $checkpointNames |
+            ForEach-Object { Join-Path $trialDirectory $_ } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+    )
+    if ($checkpointCandidates.Count -eq 0) {
+        throw "Selected EXP-0024 trial has no searchable checkpoint"
+    }
+    $candidateFailures = [System.Collections.Generic.List[object]]::new()
+    foreach ($checkpoint in $checkpointCandidates) {
+        $candidateName = [System.IO.Path]::GetFileNameWithoutExtension($checkpoint)
+        $candidateRoot = Join-Path $traceRoot "candidates\$selectedTrial\$candidateName"
+        Write-HandoffStatus "searching" $selectedTrial $selectionReason $checkpoint
+        try {
+            & (Join-Path $PSScriptRoot "run-qualified-trace-search.ps1") `
+                -GameDir $GameDir `
+                -Checkpoint $checkpoint `
+                -SeedSelection $trainingSelection `
+                -ExcludedSeedSelection $excludedSelection `
+                -RunDir $candidateRoot
+            if ($LASTEXITCODE -ne 0) {
+                throw "Qualified trace search exited with code $LASTEXITCODE"
+            }
+            $candidateStatusPath = Join-Path $candidateRoot "status.json"
+            $candidateStatus = Get-Content -LiteralPath $candidateStatusPath -Raw | ConvertFrom-Json
+            if (-not [bool]$candidateStatus.valid -or [int]$candidateStatus.qualified_distinct_seed_count -lt 3) {
+                throw "Qualified trace search did not meet the three-seed gate"
+            }
+            $selectedCheckpoint = $checkpoint
+            $published = [ordered]@{}
+            foreach ($property in $candidateStatus.psobject.Properties) {
+                $published[$property.Name] = $property.Value
+            }
+            $published["selected_trial"] = $selectedTrial
+            $published["selection_reason"] = $selectionReason
+            $published["candidate_run"] = $candidateRoot
+            $published["checkpoint_candidates"] = $checkpointCandidates
+            $published["failed_candidates"] = @($candidateFailures)
+            $temporaryStatus = Join-Path $traceRoot ".status.json.tmp"
+            $published | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporaryStatus -Encoding utf8
+            Move-Item -LiteralPath $temporaryStatus -Destination $publishedStatus -Force
+            break
+        } catch {
+            $candidateError = $_.Exception.Message
+            $competenceMiss = $candidateError -match (
+                "No successful full-reset traces|Trace search exhausted|Qualified traces cover only"
+            )
+            if (-not $competenceMiss) {
+                throw
+            }
+            $candidateFailures.Add(
+                [ordered]@{
+                    checkpoint = $checkpoint
+                    error = $candidateError
+                }
+            )
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($selectedCheckpoint)) {
+        $detail = @($candidateFailures | ForEach-Object { "$($_.checkpoint): $($_.error)" }) -join "; "
+        throw "Every competence-window checkpoint failed qualified trace search: $detail"
+    }
+    Write-HandoffStatus "complete" $selectedTrial $selectionReason $selectedCheckpoint
 } catch {
-    Write-HandoffStatus "failed" $selectedTrial $selectionReason $_.Exception.Message
+    Write-HandoffStatus "failed" $selectedTrial $selectionReason $selectedCheckpoint $_.Exception.Message
     throw
 }
