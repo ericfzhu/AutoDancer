@@ -20,6 +20,7 @@ from autodancer.progress import deeper_level
 from autodancer.training.demonstrations import (
     build_demonstration_bank,
     iter_trace_actions,
+    normalized_observation_digest,
     validate_demonstration_bank,
     validate_demonstration_sources,
     write_demonstration_bank,
@@ -55,6 +56,7 @@ def replay_trace(environment: ReplayEnvironment, trace: Mapping[str, Any]) -> di
     seed = int(trace["seed"])
     reset = dict(trace["curriculum_reset"])
     observation, reset_info = environment.reset(seed=seed, options={"curriculum": reset})
+    turn_digests = [normalized_observation_digest(observation)]
     actual_events: Counter[str] = Counter()
     furthest = (
         int(reset_info.get("zone") or observation["player"][PlayerFeature.ZONE]),
@@ -76,6 +78,7 @@ def replay_trace(environment: ReplayEnvironment, trace: Mapping[str, Any]) -> di
             error = f"recorded action {action} is masked at replay turn {executed}"
             break
         observation, _, terminated, truncated, info = environment.step(action)
+        turn_digests.append(normalized_observation_digest(observation))
         executed += 1
         terminal = bool(terminated or truncated)
         status = str(info.get("episode_status", "running"))
@@ -117,6 +120,7 @@ def replay_trace(environment: ReplayEnvironment, trace: Mapping[str, Any]) -> di
             "event_counts": dict(actual_events),
         },
         "elapsed_seconds": time.monotonic() - started,
+        "turn_digests": turn_digests,
     }
 
 

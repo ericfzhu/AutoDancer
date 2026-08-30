@@ -47,6 +47,10 @@ from autodancer.training.natural_prefix import (
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
 from autodancer.training.seed_schedule import parse_training_seed_pool
+from autodancer.training.trace_prefix import (
+    TRACE_PREFIX_RECURRENT_MODES,
+    QualifiedTracePrefixBank,
+)
 
 TelemetryCallback = Callable[
     [dict[str, np.ndarray], list[dict[str, Any]], np.ndarray | None, np.ndarray | None],
@@ -494,6 +498,25 @@ def train(arguments: argparse.Namespace) -> None:
         if arguments.training_seed_pool is None
         else parse_training_seed_pool(arguments.training_seed_pool)
     )
+    trace_prefix = (
+        None
+        if getattr(arguments, "trace_prefix_bank", None) is None
+        else QualifiedTracePrefixBank.load(
+            arguments.trace_prefix_bank,
+            arguments.trace_prefix_qualification,
+            tail_actions=arguments.trace_prefix_tail_actions,
+            recurrent_state_mode=arguments.trace_prefix_recurrent_state,
+        )
+    )
+    trace_prefix_metadata = None if trace_prefix is None else trace_prefix.specification()
+    if trace_prefix is not None:
+        if not training_seed_pool:
+            raise ValueError("trace-prefix training requires an explicit finite seed pool")
+        missing_trace_seeds = sorted(set(training_seed_pool) - set(trace_prefix.seeds))
+        if missing_trace_seeds:
+            raise ValueError(
+                f"training seeds have no qualified trace prefix: {missing_trace_seeds}"
+            )
     curriculum_entries = (
         load_curriculum_mixture(arguments.curriculum_mixture)
         if arguments.curriculum_mixture is not None
@@ -632,6 +655,7 @@ def train(arguments: argparse.Namespace) -> None:
                     else asdict(adaptive_curriculum_config)
                 ),
                 "natural_prefix": natural_prefix_metadata,
+                "trace_prefix": trace_prefix_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "freeze_base_scope": (
                     "inherited-actor-base-only-v1" if arguments.freeze_base_updates else None
@@ -663,6 +687,8 @@ def train(arguments: argparse.Namespace) -> None:
                         "training-level-distribution": (
                             "legal-natural-prefix-phase3-v2"
                             if natural_prefix is not None and natural_prefix.target_phase == 3
+                            else "qualified-trace-tail-v4"
+                            if trace_prefix is not None
                             else "mixed-curriculum-replay-v1"
                             if arguments.curriculum_mixture is not None
                             else "reverse-curriculum-sequential-goto-v1"
@@ -742,6 +768,11 @@ def train(arguments: argparse.Namespace) -> None:
                             if natural_prefix_metadata is not None
                             else {}
                         ),
+                        **(
+                            {"trace_prefix": trace_prefix_metadata}
+                            if trace_prefix_metadata is not None
+                            else {}
+                        ),
                         "freeze_base_updates": arguments.freeze_base_updates,
                         "freeze_base_scope": (
                             "inherited-actor-base-only-v1"
@@ -814,6 +845,7 @@ def train(arguments: argparse.Namespace) -> None:
                     natural_prefix=natural_prefix,
                     guide_reward_config=guide_reward,
                     policy_feedback_config=policy_feedback_config,
+                    trace_prefix=trace_prefix,
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -903,6 +935,7 @@ def train(arguments: argparse.Namespace) -> None:
                             natural_prefix=natural_prefix,
                             guide_reward_config=guide_reward,
                             policy_feedback_config=policy_feedback_config,
+                            trace_prefix=trace_prefix,
                         )
                         metrics["training_seed_schedule_state"] = collector.seed_schedule_state()
                         metrics["curriculum_schedule_state"] = collector.curriculum_schedule_state()
@@ -971,6 +1004,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 else asdict(adaptive_curriculum_config)
                             ),
                             "natural_prefix": natural_prefix_metadata,
+                            "trace_prefix": trace_prefix_metadata,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "freeze_base_scope": (
                                 "inherited-actor-base-only-v1"
@@ -1159,6 +1193,22 @@ def main() -> int:
         choices=NATURAL_PREFIX_RECURRENT_MODES,
         default="fresh",
     )
+    parser.add_argument(
+        "--trace-prefix-bank",
+        type=Path,
+        help="hash-bound successful action traces for a legal learner-tail curriculum",
+    )
+    parser.add_argument(
+        "--trace-prefix-qualification",
+        type=Path,
+        help="fresh-launch live replay qualification report for --trace-prefix-bank",
+    )
+    parser.add_argument("--trace-prefix-tail-actions", type=int, default=16)
+    parser.add_argument(
+        "--trace-prefix-recurrent-state",
+        choices=TRACE_PREFIX_RECURRENT_MODES,
+        default="warm",
+    )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--freeze-actor-updates",
@@ -1249,6 +1299,20 @@ def main() -> int:
             parser.error("natural-prefix training does not yet support curriculum mixtures")
         if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
             parser.error("natural-prefix turn and attempt limits must be positive")
+    trace_parts = (arguments.trace_prefix_bank, arguments.trace_prefix_qualification)
+    if any(value is not None for value in trace_parts) and not all(
+        value is not None for value in trace_parts
+    ):
+        parser.error("--trace-prefix-bank and --trace-prefix-qualification are required together")
+    if arguments.trace_prefix_bank is not None:
+        if arguments.natural_prefix_guide is not None:
+            parser.error("natural and trace prefixes are mutually exclusive")
+        if arguments.curriculum_mixture is not None:
+            parser.error("trace-prefix training currently requires one fixed curriculum reset")
+        if arguments.training_seed_pool is None:
+            parser.error("trace-prefix training requires --training-seed-pool")
+        if arguments.trace_prefix_tail_actions <= 0:
+            parser.error("--trace-prefix-tail-actions must be positive")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)

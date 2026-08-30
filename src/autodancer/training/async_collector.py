@@ -29,6 +29,7 @@ from autodancer.live.protocol import ProtocolError
 from autodancer.progress import deeper_level
 from autodancer.rewards import RewardConfig, RewardTracker
 from autodancer.training.action_contract import ActionContractMemory
+from autodancer.training.demonstrations import normalized_observation_digest
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
@@ -38,6 +39,10 @@ from autodancer.training.natural_prefix import (
 )
 from autodancer.training.ppo import RolloutBatch
 from autodancer.training.seed_schedule import TrainingSeedSchedule
+from autodancer.training.trace_prefix import (
+    QualifiedTracePrefixBank,
+    TracePrefixError,
+)
 
 
 @dataclass(slots=True)
@@ -240,6 +245,7 @@ class VersionedAsyncRolloutCollector:
         natural_prefix: NaturalPrefixConfig | None = None,
         guide_reward_config: RewardConfig | None = None,
         policy_feedback_config: RewardConfig | None = None,
+        trace_prefix: QualifiedTracePrefixBank | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -256,6 +262,9 @@ class VersionedAsyncRolloutCollector:
             )
         self.guide_model = guide_model
         self.natural_prefix = natural_prefix
+        if natural_prefix is not None and trace_prefix is not None:
+            raise ValueError("natural and trace prefixes are mutually exclusive")
+        self.trace_prefix = trace_prefix
         self.guide_reward_config = guide_reward_config
         self.policy_feedback_config = policy_feedback_config
         self.action_contract = action_contract
@@ -284,7 +293,7 @@ class VersionedAsyncRolloutCollector:
             [item[0] for item in initial_resets],
             options=[item[1].reset_options() for item in initial_resets],
         )
-        if self.natural_prefix is None:
+        if not self._prefix_enabled:
             observations = self.contract_memory.reset_batch(observations)
         initial_hidden = model.initial_state(environment.num_envs, device=device)
         self.states = [
@@ -293,7 +302,7 @@ class VersionedAsyncRolloutCollector:
                 infos[index],
                 initial_hidden[index : index + 1],
                 initial_resets[index][1],
-                prefix_pending=self.natural_prefix is not None,
+                prefix_pending=self._prefix_enabled,
             )
             for index in range(environment.num_envs)
         ]
@@ -323,6 +332,10 @@ class VersionedAsyncRolloutCollector:
         )
         for index, state in enumerate(self.states):
             self._publish_telemetry(index, state.observation, state.info, None, None)
+
+    @property
+    def _prefix_enabled(self) -> bool:
+        return self.natural_prefix is not None or self.trace_prefix is not None
 
     def _publish_telemetry(
         self,
@@ -537,14 +550,14 @@ class VersionedAsyncRolloutCollector:
                     options=state.reset_spec.reset_options(),
                     failure=failure,
                 )
-                if self.natural_prefix is None:
+                if not self._prefix_enabled:
                     observation = self.contract_memory.reset_slot(index, observation)
                 self.states[index] = ActorState(
                     observation,
                     info,
                     self.model.initial_state(1, device=self.device),
                     state.reset_spec,
-                    prefix_pending=self.natural_prefix is not None,
+                    prefix_pending=self._prefix_enabled,
                 )
                 self._reset_policy_feedback(index, observation, info)
                 self._publish_telemetry(index, observation, info, None, None)
@@ -584,7 +597,11 @@ class VersionedAsyncRolloutCollector:
         for fragment_step in range(length):
             while state.prefix_pending:
                 try:
-                    state = self._run_natural_prefix(index, state, scheduler)
+                    state = (
+                        self._run_trace_prefix(index, state, scheduler)
+                        if self.trace_prefix is not None
+                        else self._run_natural_prefix(index, state, scheduler)
+                    )
                 except NaturalPrefixError as error:
                     natural_prefix_failures += 1
                     metadata = {
@@ -778,14 +795,14 @@ class VersionedAsyncRolloutCollector:
                     seed=next_seed,
                     options=next_spec.reset_options(),
                 )
-                if self.natural_prefix is None:
+                if not self._prefix_enabled:
                     next_observation = self.contract_memory.reset_slot(index, next_observation)
                 state = ActorState(
                     next_observation,
                     next_info,
                     self.model.initial_state(1, device=self.device),
                     next_spec,
-                    prefix_pending=self.natural_prefix is not None,
+                    prefix_pending=self._prefix_enabled,
                 )
                 self._reset_policy_feedback(index, next_observation, next_info)
             else:
@@ -823,6 +840,136 @@ class VersionedAsyncRolloutCollector:
                 "max_remembered_hazards": float(max_remembered_hazards),
                 "natural_prefix_failures": float(natural_prefix_failures),
             },
+        )
+
+    def _run_trace_prefix(
+        self,
+        index: int,
+        state: ActorState,
+        learner_scheduler: InferenceScheduler,
+    ) -> ActorState:
+        """Replay a qualified live action prefix and hand its exact state to PPO."""
+
+        bank = self.trace_prefix
+        if bank is None:
+            return state
+        worker_id = self.environment.worker_ids[index]
+        worker = self.environment.environments[worker_id]
+        seed = int(state.info.get("seed", 0))
+        trace = bank.trace_for_seed(seed)
+        if state.reset_spec.as_dict() != trace.reset_spec.as_dict():
+            raise TracePrefixError(
+                worker_id,
+                trace.trace_id,
+                0,
+                "live curriculum reset does not match the qualified trace",
+            )
+        raw_observation = state.observation
+        expected_reset = trace.turn_digests[0]
+        if normalized_observation_digest(raw_observation) != expected_reset:
+            raise TracePrefixError(
+                worker_id,
+                trace.trace_id,
+                0,
+                "fresh reset observation digest mismatch",
+            )
+        observation = self.contract_memory.reset_slot(index, raw_observation)
+        info = state.info
+        learner_hidden = self.model.initial_state(1, device=self.device)
+        previous_action = START_ACTION
+        learner_previous_reward = 0.0
+        learner_feedback_tracker = self._new_policy_feedback_tracker(observation, info)
+        prefix_actions = trace.actions[: -bank.tail_actions]
+
+        for turn, action in enumerate(prefix_actions, start=1):
+            if not bool(observation["action_mask"][action]):
+                raise TracePrefixError(
+                    worker_id,
+                    trace.trace_id,
+                    turn - 1,
+                    f"qualified action {action} is masked",
+                )
+            next_learner_hidden = learner_hidden
+            if bank.recurrent_state_mode == "warm":
+                _, _, _, next_learner_hidden = learner_scheduler.infer(
+                    observation,
+                    previous_action,
+                    learner_previous_reward,
+                    learner_hidden,
+                    0.5,
+                )
+            raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
+            next_info = dict(next_info)
+            next_info["trace_prefix_stage"] = "guide"
+            next_info["trace_prefix_turn"] = turn
+            next_info["trace_prefix_id"] = trace.trace_id
+            next_info["action_contract"] = self.contract_memory.observe(
+                index,
+                observation,
+                action,
+                raw_next_observation,
+                next_info,
+            )
+            if normalized_observation_digest(raw_next_observation) != trace.turn_digests[turn]:
+                raise TracePrefixError(
+                    worker_id,
+                    trace.trace_id,
+                    turn,
+                    "observation digest mismatch",
+                )
+            if terminated or truncated:
+                raise TracePrefixError(
+                    worker_id,
+                    trace.trace_id,
+                    turn,
+                    "episode ended before the declared learner tail",
+                )
+            next_observation = self.contract_memory.apply_slot(index, raw_next_observation)
+            if learner_feedback_tracker is None:
+                learner_feedback = float(reward)
+            else:
+                learner_feedback, _ = learner_feedback_tracker.score(
+                    next_observation,
+                    next_info,
+                    next_info.get("raw_events", ()),
+                    terminated=False,
+                    truncated=False,
+                )
+            self._publish_telemetry(index, next_observation, next_info, action, float(reward))
+            observation = next_observation
+            info = next_info
+            learner_hidden = next_learner_hidden
+            previous_action = action
+            learner_previous_reward = float(learner_feedback)
+
+        metadata = {
+            **bank.specification(),
+            "trace_id": trace.trace_id,
+            "seed": trace.seed,
+            "guide_turns": len(prefix_actions),
+            "learner_tail_actions": bank.tail_actions,
+            "handoff_sequence": int(info.get("sequence", -1)),
+            "handoff_run_id": str(info.get("run_id", "")),
+            "handoff_observation_digest": trace.turn_digests[len(prefix_actions)],
+        }
+        handed_observation, handed_info = worker.begin_learning_segment(info, metadata=metadata)
+        warm = bank.recurrent_state_mode == "warm"
+        effective_observation = (
+            self.contract_memory.apply_slot(index, handed_observation)
+            if warm
+            else self.contract_memory.reset_slot(index, handed_observation)
+        )
+        self._policy_feedback_trackers[index] = learner_feedback_tracker
+        return ActorState(
+            effective_observation,
+            handed_info,
+            learner_hidden if warm else self.model.initial_state(1, device=self.device),
+            state.reset_spec,
+            previous_action=previous_action if warm else START_ACTION,
+            previous_reward=learner_previous_reward if warm else 0.0,
+            episode_start=not warm,
+            prefix_pending=False,
+            prefix_metadata=metadata,
         )
 
     def _run_natural_prefix(

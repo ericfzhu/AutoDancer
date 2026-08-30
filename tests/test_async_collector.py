@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -29,9 +30,15 @@ from autodancer.curriculum import EpisodeResetSpec, WeightedResetSpec
 from autodancer.rewards import RewardConfig
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.baseline import _evaluate_model_async
+from autodancer.training.demonstrations import normalized_observation_digest
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
 from autodancer.training.natural_prefix import NaturalPrefixConfig, NaturalPrefixError
 from autodancer.training.seed_schedule import TrainingSeedSchedule
+from autodancer.training.trace_prefix import (
+    QualifiedActionTrace,
+    QualifiedTracePrefixBank,
+    TracePrefixError,
+)
 
 
 def test_actor_state_initializes_progress_from_reset_level() -> None:
@@ -400,6 +407,106 @@ def test_async_collector_uses_opt_in_adaptive_curriculum_and_checkpoints_it() ->
     assert state["mode"] == "adaptive-competence-v1"
     assert state["active_index"] == 1
     assert state["mastered_indices"] == [0, 1]
+
+
+def trace_prefix_bank(seed_slots: dict[int, int], *, corrupt: bool = False):
+    traces = []
+    reset_spec = EpisodeResetSpec("fixed", 4, 5, "player20")
+    for seed, slot in sorted(seed_slots.items()):
+        worker = PrefixWorker(slot)
+        initial, _ = worker.reset(seed=seed, options=reset_spec.reset_options())
+        observations = [initial]
+        for action in (0, 1, 2):
+            next_observation, *_ = worker.step(action)
+            observations.append(next_observation)
+        digests = [normalized_observation_digest(value) for value in observations]
+        if corrupt:
+            digests[1] = "0" * 64
+        traces.append(
+            QualifiedActionTrace(
+                trace_id=f"{seed:064x}",
+                seed=seed,
+                reset_spec=reset_spec,
+                actions=(0, 1, 2),
+                turn_digests=tuple(digests),
+                source_policy_version=4,
+                source_global_step=4096,
+            )
+        )
+    return QualifiedTracePrefixBank(
+        Path("bank.json"),
+        Path("qualification.json"),
+        "a" * 64,
+        "b" * 64,
+        1,
+        "warm",
+        tuple(traces),
+    )
+
+
+def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
+    environment = PrefixEnvironment()
+    for worker in environment.environments.values():
+        worker.slot = 0
+    pool = (7, 8)
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=83,
+        training_seed_pool=pool,
+        curriculum_entries=(WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),),
+        trace_prefix=trace_prefix_bank({7: 0, 8: 0}),
+    )
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+    assert rollout.actions.shape == (1, 2)
+    for worker in environment.environments.values():
+        assert worker.actions[:2] == [0, 1]
+        assert worker.handoffs[0]["learner_tail_actions"] == 1
+
+
+def test_async_collector_fails_closed_when_trace_prefix_digest_diverges() -> None:
+    environment = PrefixEnvironment()
+    for worker in environment.environments.values():
+        worker.slot = 0
+    pool = (7, 8)
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=84,
+        training_seed_pool=pool,
+        curriculum_entries=(WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),),
+        trace_prefix=trace_prefix_bank({7: 0, 8: 0}, corrupt=True),
+    )
+    try:
+        with pytest.raises(TracePrefixError, match="observation digest mismatch"):
+            collector.collect(1)
+    finally:
+        collector.close()
 
 
 def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:

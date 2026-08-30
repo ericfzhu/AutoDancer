@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from autodancer.constants import ACTION_COUNT
+import numpy as np
+
+from autodancer.constants import ACTION_COUNT, PlayerFeature
 
 DEMONSTRATION_BANK_SCHEMA = 1
 SUCCESS_STATUSES = frozenset({"curriculum_complete", "victory"})
@@ -19,6 +21,22 @@ SUCCESS_STATUSES = frozenset({"curriculum_complete", "victory"})
 
 def _canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def normalized_observation_digest(observation: Mapping[str, Any]) -> str:
+    """Hash policy observations while excluding wall-clock-derived music fields."""
+
+    digest = hashlib.sha256()
+    for name in sorted(observation):
+        value = np.asarray(observation[name]).copy()
+        if name == "player":
+            value[[PlayerFeature.MUSIC_ELAPSED_DS, PlayerFeature.MUSIC_REMAINING_DS]] = 0
+        contiguous = np.ascontiguousarray(value)
+        digest.update(name.encode("utf-8"))
+        digest.update(contiguous.dtype.str.encode("ascii"))
+        digest.update(_canonical_json(contiguous.shape))
+        digest.update(contiguous.tobytes())
+    return digest.hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -79,6 +97,10 @@ class SuccessfulActionTrace:
 
         status = str(episode.get("status", ""))
         if status not in SUCCESS_STATUSES:
+            return None
+        if episode.get("natural_prefix") or episode.get("learning_segment"):
+            # Collector episode actions begin at the learner handoff. Such a
+            # sequence is not replayable from the recorded curriculum reset.
             return None
         if episode.get("infrastructure_valid") is not True:
             raise ValueError("successful episode is not infrastructure-valid")

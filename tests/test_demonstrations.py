@@ -82,6 +82,14 @@ def test_successful_trace_rejects_invalid_or_incomplete_evidence(tmp_path: Path)
         load_successful_episode_traces(path)
 
 
+def test_prefixed_success_is_not_misrepresented_as_a_full_reset_trace(tmp_path: Path) -> None:
+    path = tmp_path / "episodes.jsonl"
+    prefixed = episode()
+    prefixed["natural_prefix"] = {"kind": "qualified-live-trace-prefix-v1"}
+    write_journal(path, [prefixed])
+    assert load_successful_episode_traces(path) == ()
+
+
 def test_bank_hash_and_trace_identity_are_tamper_evident(tmp_path: Path) -> None:
     path = tmp_path / "episodes.jsonl"
     write_journal(path, [episode()])

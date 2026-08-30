@@ -57,6 +57,7 @@ blocks:
       mixed-assisted-curriculum-v3: Per-episode live boss starts draw one of several declared assistance profiles from an exact checkpointed distribution, with mastered-start replay and same-task infrastructure recovery.
       player-health-only-boss-curriculum-v4: A tagged training-only real-game boss start may increase Bard's starting health but snapshots and requires exact preservation of every boss and boss-add objective before collection begins.
       legal-death-metal-phase3-handoff-v5: A frozen policy uses only ordinary acknowledged actions from the player-health-only live boss start; the learner inherits the exact running state only after observed health loss and three distinct official Death Metal phase entities prove a legal phase-3 boundary.
+      qualified-trace-handoff-v6: A fresh live reset replays an exact successful action prefix only after the complete trace reproduced terminal gameplay and every normalized observation digest on a fresh launch; the same process is handed to the learner without state mutation, guide transitions are excluded, and divergence fails the run closed.
   learner-diagnostics:
     versions:
       critic-health-v2: Explained variance plus value, return, raw-advantage, reward-scale, and pre-clipping gradient diagnostics.
@@ -98,6 +99,7 @@ blocks:
         description: Ordered legal boundaries use infrastructure-excluding rolling gameplay outcomes and Wilson confidence bounds to promote or demote difficulty, while deterministic per-worker sampling reserves explicit mass for current acquisition, mastered-boundary replay, and frontier probes; scheduler windows, counters, active boundary, allocation, and RNG streams resume exactly.
         config: configs/adaptive-curriculum-zone2-v1.json
         config_sha256: 6e14e4a07ff36130036b1a4140084d58eb18c5b7d6ac237ed971e4fa02302c6f
+      qualified-trace-tail-v4: Fresh-launch replay-qualified successful action sequences execute through the live controller to a hash-identified observation boundary; guide actions remain outside PPO, the learner recurrent state is warmed from actual observations and stable feedback, and a declared final action tail is learned on-policy before the handoff expands backward.
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.
