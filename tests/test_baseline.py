@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+import autodancer.training.baseline as baseline_module
 from autodancer.constants import (
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
@@ -30,6 +31,7 @@ from autodancer.training.baseline import (
     stochastic_policy_sample,
     summarize_episodes,
     validate_checkpoint_reward_schema,
+    validate_checkpoint_trace_prefix,
     validate_declared_source_reference,
     zero_hidden_rows,
 )
@@ -102,6 +104,25 @@ def test_custom_reward_label_still_checks_checkpoint_schema() -> None:
                 stair_potential_distance=0,
             ),
         )
+
+
+def test_trace_prefix_evaluation_requires_exact_checkpoint_identity() -> None:
+    class Prefix:
+        def specification(self):
+            return {
+                "bank_sha256": "a" * 64,
+                "qualification_sha256": "b" * 64,
+                "action_contract": "current",
+                "tail_actions": 16,
+                "recurrent_state_mode": "warm",
+            }
+
+    prefix = Prefix()
+    metadata = {"trace_prefix": prefix.specification()}
+    validate_checkpoint_trace_prefix(metadata, prefix)  # type: ignore[arg-type]
+    metadata["trace_prefix"] = {**prefix.specification(), "tail_actions": 32}
+    with pytest.raises(ValueError, match="tail_actions"):
+        validate_checkpoint_trace_prefix(metadata, prefix)  # type: ignore[arg-type]
 
 
 class OneStepEnvironment:
@@ -297,6 +318,29 @@ def test_live_evaluation_rejects_unknown_policy_mode() -> None:
             device=torch.device("cpu"),
             policy_mode="temperature-seven",
         )
+
+
+def test_live_evaluation_forwards_qualified_trace_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = object()
+    captured: dict[str, object] = {}
+
+    def fake_evaluate(*args, **kwargs):
+        del args
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(baseline_module, "_evaluate_model_async", fake_evaluate)
+    results = evaluate_live_policy(
+        OneStepEnvironment(),  # type: ignore[arg-type]
+        seeds=[41_001],
+        max_steps=10,
+        policy_seed=7,
+        device=torch.device("cpu"),
+        model=object(),  # type: ignore[arg-type]
+        trace_prefix=marker,  # type: ignore[arg-type]
+    )
+    assert results == []
+    assert captured["trace_prefix"] is marker
 
 
 def test_stochastic_policy_samples_are_turn_keyed_and_reproducible() -> None:

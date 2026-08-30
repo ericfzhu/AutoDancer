@@ -13,3 +13,6 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "at_least_three_distinct_completion_seeds" in source
     assert '"expand_trace_tail"' in source
     assert '"retain_tail_boundary"' in source
+    assert "autodancer.training.baseline" in source
+    assert "stochastic-98001" in source
+    assert "frozen final-policy episodes" in source

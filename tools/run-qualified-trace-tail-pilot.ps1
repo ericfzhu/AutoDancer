@@ -28,6 +28,7 @@ $root = Resolve-RepositoryPath $RunDir
 $searchStatusPath = Join-Path $traceRoot "status.json"
 $pipelineStatusPath = Join-Path $root "pipeline-status.json"
 $reward = Join-Path $repoRoot "configs\reward-death-metal-potential-v5.json"
+$mod = Join-Path $repoRoot "mods\AutoDancer"
 $qualification = Join-Path $repoRoot "runs\controller-qualification-player-health-only-world-ready-memory-controlled\qualification.json"
 $trackingPath = (Join-Path $repoRoot ".runtime\mlflow\mlflow.db").Replace("\", "/")
 $trackingUri = "sqlite:///$trackingPath"
@@ -47,16 +48,19 @@ function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorT
     Move-Item -LiteralPath $temporary -Destination $pipelineStatusPath -Force
 }
 
-function Read-TrialSummary([string]$Directory, [int]$Seed) {
-    $journal = Join-Path $Directory "episodes.jsonl"
+function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
     $metrics = Join-Path $Directory "metrics.jsonl"
-    if (-not (Test-Path -LiteralPath $journal -PathType Leaf) -or -not (Test-Path -LiteralPath $metrics -PathType Leaf)) {
-        throw "Trace-tail trial lacks episode or metric evidence: $Directory"
+    if (-not (Test-Path -LiteralPath $metrics -PathType Leaf)) {
+        throw "Trace-tail trial lacks metric evidence: $Directory"
     }
-    $episodes = @(Get-Content -LiteralPath $journal | ConvertFrom-Json | Where-Object {
-        [bool]$_.infrastructure_valid -and [string]$_.natural_prefix.kind -eq "qualified-live-trace-prefix-v1"
+    $payloads = @($Reports | ForEach-Object { Get-Content -LiteralPath $_ -Raw | ConvertFrom-Json })
+    if (@($payloads | Where-Object { -not [bool]$_.controller_valid }).Count) {
+        throw "Trace-tail final-policy evaluation contains controller contamination: $Directory"
+    }
+    $episodes = @($payloads | ForEach-Object { $_.trained.results } | Where-Object {
+        [string]$_.natural_prefix.kind -eq "qualified-live-trace-prefix-v1"
     })
-    if ($episodes.Count -eq 0) { throw "Trace-tail trial contains no qualified learner-tail episodes: $Directory" }
+    if ($episodes.Count -eq 0) { throw "Trace-tail trial contains no frozen final-policy episodes: $Directory" }
     $completed = @($episodes | Where-Object { [string]$_.status -eq "curriculum_complete" })
     $last = Get-Content -LiteralPath $metrics -Tail 1 | ConvertFrom-Json
     $lossesFinite = @("policy_loss", "value_loss", "entropy", "approx_kl") | ForEach-Object {
@@ -73,10 +77,11 @@ function Read-TrialSummary([string]$Directory, [int]$Seed) {
         mean_completion_turns = if ($completed.Count) {
             [double](($completed | Measure-Object turns -Average).Average)
         } else { 0.0 }
-        worker_restarts = [int]$last.worker_restarts
+        worker_restarts = [int]$last.worker_restarts + [int](($payloads | Measure-Object worker_restarts -Sum).Sum)
         finite_losses = -not ($lossesFinite -contains $false)
         final_global_step = [int]$last.global_step
         final_checkpoint = Join-Path $Directory "final.pt"
+        evaluation_reports = $Reports
     }
 }
 
@@ -103,6 +108,11 @@ try {
     if ($tailActions -le 0) { throw "Qualified traces are too short to leave a legal replay prefix" }
     $gameSeeds = @($search.qualified_distinct_seeds | ForEach-Object { [int]$_ } | Sort-Object -Unique)
     $gameSeedCsv = $gameSeeds -join ","
+    $evaluationModes = @(
+        [pscustomobject]@{ name = "deterministic"; mode = "deterministic"; policy_seed = 0 },
+        [pscustomobject]@{ name = "stochastic-98001"; mode = "stochastic"; policy_seed = 98001 },
+        [pscustomobject]@{ name = "stochastic-98002"; mode = "stochastic"; policy_seed = 98002 }
+    )
 
     $summaries = [System.Collections.Generic.List[object]]::new()
     foreach ($trainingSeed in $TrainingSeeds) {
@@ -114,7 +124,7 @@ try {
             Write-PilotStatus "training" $trial
             $arguments = @(
                 "-m", "autodancer.training.train", "--game-dir", $GameDir,
-                "--mod-dir", (Join-Path $repoRoot "mods\AutoDancer"), "--num-instances", "8",
+                "--mod-dir", $mod, "--num-instances", "8",
                 "--total-steps", "$TotalSteps", "--run-dir", $directory, "--device", "cuda",
                 "--architecture", "8", "--seed", "$trainingSeed", "--checkpoint-interval", "30720",
                 "--evaluation-interval", "0", "--max-turns", "500", "--action-contract", "map-navigation-prior-v1",
@@ -140,7 +150,59 @@ try {
                 throw "Trace-tail training failed for $trial"
             }
         }
-        $summaries.Add((Read-TrialSummary $directory $trainingSeed))
+        $evaluationReports = [System.Collections.Generic.List[string]]::new()
+        foreach ($mode in $evaluationModes) {
+            $evaluationDirectory = Join-Path $root "evaluation\$trial\$($mode.name)"
+            [System.IO.Directory]::CreateDirectory($evaluationDirectory) | Out-Null
+            $report = Join-Path $evaluationDirectory "report.json"
+            if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+                Write-PilotStatus "evaluating" "$trial-$($mode.name)"
+                & $python -m autodancer.training.baseline `
+                    --game-dir $GameDir `
+                    --mod-dir $mod `
+                    --checkpoint $final `
+                    --output $report `
+                    --num-instances 8 `
+                    --seeds $gameSeedCsv `
+                    --max-steps 64 `
+                    --policy-mode $mode.mode `
+                    --policy-seed $mode.policy_seed `
+                    --trained-only `
+                    --device cuda `
+                    --reward-config $reward `
+                    --policy-feedback-reward-config $reward `
+                    --reward-lineage-version DeathMetalPotentialV5 `
+                    --action-contract map-navigation-prior-v1 `
+                    --curriculum-start-level 4 `
+                    --curriculum-target-level 5 `
+                    --curriculum-profile player20 `
+                    --trace-prefix-bank $bank `
+                    --trace-prefix-qualification $traceQualification `
+                    --trace-prefix-tail-actions $tailActions `
+                    --trace-prefix-recurrent-state warm `
+                    --affinity none `
+                    --experiment-id EXP-0025 `
+                    --experiment-arm a8-qualified-trace-tail `
+                    --trial-id "$trial-$($mode.name)" `
+                    --mlflow-tracking-uri $trackingUri `
+                    --controller-qualification $qualification `
+                    --dashboard 8765
+                if ($LASTEXITCODE -ne 0) { throw "Trace-tail evaluation failed for $trial/$($mode.name)" }
+            }
+            $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+            if (
+                -not [bool]$payload.controller_valid -or
+                [System.IO.Path]::GetFullPath([string]$payload.checkpoint) -ne [System.IO.Path]::GetFullPath($final) -or
+                (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
+                [string]$payload.policy_mode -ne [string]$mode.mode -or
+                [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
+                [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
+            ) {
+                throw "Trace-tail evaluation report identity mismatch: $report"
+            }
+            $evaluationReports.Add($report)
+        }
+        $summaries.Add((Read-TrialSummary $directory $trainingSeed $evaluationReports.ToArray()))
     }
 
     $allEpisodes = ($summaries | Measure-Object episodes -Sum).Sum

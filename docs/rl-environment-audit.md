@@ -2027,3 +2027,8 @@ aggregate, reproduce above 5% in two trials, complete all three optimizer trials
 and cover at least three distinct game seeds with zero restarts and finite losses.
 Only then may the tail expand backward. This makes reverse-curriculum movement a
 measured competence decision rather than a fixed schedule.
+
+The gate uses fresh frozen-final evaluations, not the cumulative training journal.
+Each final checkpoint replays the qualified prefix and controls only the tail under
+deterministic and two predeclared stochastic streams. This prevents transient
+early competence followed by PPO forgetting from authorizing a harder boundary.

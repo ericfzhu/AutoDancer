@@ -43,6 +43,7 @@ from autodancer.training.action_contract import (
 )
 from autodancer.training.async_collector import InferenceScheduler
 from autodancer.training.dashboard import DashboardServer, DashboardState
+from autodancer.training.demonstrations import normalized_observation_digest
 from autodancer.training.model import START_ACTION, PolicyModel, model_from_spec
 from autodancer.training.natural_prefix import (
     NATURAL_PREFIX_RECURRENT_MODES,
@@ -53,6 +54,11 @@ from autodancer.training.natural_prefix import (
     natural_prefix_policy_sample,
     validate_guide_action_contract,
 )
+from autodancer.training.trace_prefix import (
+    TRACE_PREFIX_RECURRENT_MODES,
+    QualifiedTracePrefixBank,
+    TracePrefixError,
+)
 from autodancer.training.train import (
     default_mod_dir,
     replace_observation_rows,
@@ -61,6 +67,29 @@ from autodancer.training.train import (
 )
 
 RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step")
+
+
+def validate_checkpoint_trace_prefix(
+    checkpoint_metadata: dict[str, Any], trace_prefix: QualifiedTracePrefixBank
+) -> None:
+    """Require frozen evaluation to reproduce the checkpoint's exact handoff distribution."""
+
+    checkpoint_spec = checkpoint_metadata.get("trace_prefix")
+    if not isinstance(checkpoint_spec, dict):
+        raise ValueError("Checkpoint has no qualified trace-prefix training identity")
+    expected = trace_prefix.specification()
+    identity_keys = (
+        "bank_sha256",
+        "qualification_sha256",
+        "action_contract",
+        "tail_actions",
+        "recurrent_state_mode",
+    )
+    mismatches = [key for key in identity_keys if checkpoint_spec.get(key) != expected.get(key)]
+    if mismatches:
+        raise ValueError(
+            "Evaluation trace prefix disagrees with checkpoint identity: " + ", ".join(mismatches)
+        )
 
 
 def validate_checkpoint_reward_schema(
@@ -810,6 +839,7 @@ def evaluate_live_policy(
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
     policy_feedback_config: RewardConfig | None = None,
+    trace_prefix: QualifiedTracePrefixBank | None = None,
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -833,9 +863,10 @@ def evaluate_live_policy(
             natural_prefix=natural_prefix,
             guide_reward=guide_reward,
             policy_feedback_config=policy_feedback_config,
+            trace_prefix=trace_prefix,
         )
-    if natural_prefix is not None or guide_model is not None:
-        raise ValueError("natural-prefix evaluation requires a trained learner model")
+    if natural_prefix is not None or guide_model is not None or trace_prefix is not None:
+        raise ValueError("prefix evaluation requires a trained learner model")
     rng = np.random.default_rng(policy_seed)
     results: list[dict[str, Any]] = []
     parking_seed = 2_000_000_000
@@ -1133,6 +1164,147 @@ def _evaluation_natural_prefix(
     )
 
 
+def _evaluation_trace_prefix(
+    *,
+    worker: Any,
+    worker_id: str,
+    slot: int,
+    seed: int,
+    observation: dict[str, np.ndarray],
+    info: dict[str, Any],
+    learner_model: PolicyModel,
+    learner_scheduler: InferenceScheduler,
+    bank: QualifiedTracePrefixBank,
+    device: torch.device,
+    contract_memory: ActionContractMemory,
+    dashboard_state: DashboardState | None,
+    policy_feedback_config: RewardConfig | None,
+) -> tuple[dict[str, np.ndarray], dict[str, Any], Tensor, int, float, RewardTracker | None]:
+    """Replay the exact qualified prefix before frozen final-policy evaluation."""
+
+    trace = bank.trace_for_seed(seed)
+    reset_spec = dict(info.get("curriculum_reset") or {})
+    if reset_spec != trace.reset_spec.as_dict():
+        raise TracePrefixError(
+            worker_id,
+            trace.trace_id,
+            0,
+            "live curriculum reset does not match the qualified trace",
+        )
+    if normalized_observation_digest(observation) != trace.turn_digests[0]:
+        raise TracePrefixError(
+            worker_id,
+            trace.trace_id,
+            0,
+            "fresh reset observation digest mismatch",
+        )
+    observation = contract_memory.reset_slot(slot, observation)
+    learner_hidden = learner_model.initial_state(1, device=device)
+    previous_action = START_ACTION
+    learner_previous_reward = 0.0
+    feedback_tracker = (
+        None if policy_feedback_config is None else RewardTracker(policy_feedback_config)
+    )
+    if feedback_tracker is not None:
+        feedback_tracker.reset(observation, info)
+    prefix_actions = trace.actions[: -bank.tail_actions]
+    for turn, action in enumerate(prefix_actions, start=1):
+        if not bool(observation["action_mask"][action]):
+            raise TracePrefixError(
+                worker_id,
+                trace.trace_id,
+                turn - 1,
+                f"qualified action {action} is masked",
+            )
+        next_learner_hidden = learner_hidden
+        if bank.recurrent_state_mode == "warm":
+            _, _, _, next_learner_hidden = learner_scheduler.infer(
+                observation,
+                previous_action,
+                learner_previous_reward,
+                learner_hidden,
+                0.5,
+            )
+        raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
+        next_info = dict(next_info)
+        next_info["trace_prefix_stage"] = "guide"
+        next_info["trace_prefix_turn"] = turn
+        next_info["trace_prefix_id"] = trace.trace_id
+        next_info["action_contract"] = contract_memory.observe(
+            slot,
+            observation,
+            action,
+            raw_next_observation,
+            next_info,
+        )
+        if normalized_observation_digest(raw_next_observation) != trace.turn_digests[turn]:
+            raise TracePrefixError(
+                worker_id,
+                trace.trace_id,
+                turn,
+                "observation digest mismatch",
+            )
+        if terminated or truncated:
+            raise TracePrefixError(
+                worker_id,
+                trace.trace_id,
+                turn,
+                "episode ended before the declared learner tail",
+            )
+        next_observation = contract_memory.apply_slot(slot, raw_next_observation)
+        learner_feedback = float(reward)
+        if feedback_tracker is not None:
+            learner_feedback, _ = feedback_tracker.score(
+                next_observation,
+                next_info,
+                next_info.get("raw_events", ()),
+                terminated=False,
+                truncated=False,
+            )
+        if dashboard_state is not None:
+            dashboard_state.update_worker(
+                slot,
+                worker_id,
+                next_observation,
+                next_info,
+                action=action,
+                reward=float(reward),
+            )
+        observation = next_observation
+        info = next_info
+        learner_hidden = next_learner_hidden
+        previous_action = action
+        learner_previous_reward = float(learner_feedback)
+    metadata = {
+        **bank.specification(),
+        "trace_id": trace.trace_id,
+        "seed": trace.seed,
+        "guide_turns": len(prefix_actions),
+        "learner_tail_actions": bank.tail_actions,
+        "handoff_sequence": int(info.get("sequence", -1)),
+        "handoff_run_id": str(info.get("run_id", "")),
+        "handoff_observation_digest": trace.turn_digests[len(prefix_actions)],
+    }
+    handed_observation, handed_info = worker.begin_learning_segment(info, metadata=metadata)
+    if bank.recurrent_state_mode == "warm":
+        return (
+            contract_memory.apply_slot(slot, handed_observation),
+            handed_info,
+            learner_hidden,
+            previous_action,
+            learner_previous_reward,
+            feedback_tracker,
+        )
+    return (
+        contract_memory.reset_slot(slot, handed_observation),
+        handed_info,
+        learner_model.initial_state(1, device=device),
+        START_ACTION,
+        0.0,
+        feedback_tracker,
+    )
+
+
 def _evaluate_model_async(
     environment: AutoDancerVectorEnv,
     model: PolicyModel,
@@ -1149,6 +1321,7 @@ def _evaluate_model_async(
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
     policy_feedback_config: RewardConfig | None = None,
+    trace_prefix: QualifiedTracePrefixBank | None = None,
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
     if recurrent_state_mode not in RECURRENT_STATE_MODES:
@@ -1159,6 +1332,8 @@ def _evaluate_model_async(
         or all(value is not None for value in prefix_parts)
     ):
         raise ValueError("guide_model, natural_prefix, and guide_reward must be supplied together")
+    if trace_prefix is not None and natural_prefix is not None:
+        raise ValueError("natural-prefix and trace-prefix evaluation are mutually exclusive")
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -1169,7 +1344,7 @@ def _evaluate_model_async(
         reset_seeds = [*wave_seeds, *range(parking_seed, parking_seed + padding)]
         parking_seed += padding
         observations, infos = environment.reset(reset_seeds)
-        if natural_prefix is None:
+        if natural_prefix is None and trace_prefix is None:
             observations = contract_memory.reset_batch(observations)
         scheduler = InferenceScheduler(
             model,
@@ -1212,6 +1387,52 @@ def _evaluate_model_async(
                 feedback_tracker.reset(observation, info)
             attempts = 0
             while True:
+                if trace_prefix is not None:
+                    try:
+                        (
+                            observation,
+                            info,
+                            hidden,
+                            previous_action,
+                            previous_reward,
+                            feedback_tracker,
+                        ) = _evaluation_trace_prefix(
+                            worker=environment.environments[worker_id],
+                            worker_id=worker_id,
+                            slot=index,
+                            seed=seed,
+                            observation=observation,
+                            info=info,
+                            learner_model=model,
+                            learner_scheduler=scheduler,
+                            bank=trace_prefix,
+                            device=device,
+                            contract_memory=contract_memory,
+                            dashboard_state=dashboard_state,
+                            policy_feedback_config=policy_feedback_config,
+                        )
+                    except (TimeoutError, NativePipeError, ProtocolError) as error:
+                        attempts += 1
+                        failure = environment._failure(
+                            index,
+                            error,
+                            operation="trace_prefix_evaluation",
+                            context={"seed": seed, "attempt": attempts},
+                        )
+                        if attempts >= 3:
+                            raise
+                        observation, info = environment.recover(index, seed, failure=failure)
+                        hidden = model.initial_state(1, device=device)
+                        previous_action = START_ACTION
+                        previous_reward = 0.0
+                        feedback_tracker = (
+                            None
+                            if policy_feedback_config is None
+                            else RewardTracker(policy_feedback_config)
+                        )
+                        if feedback_tracker is not None:
+                            feedback_tracker.reset(observation, info)
+                        continue
                 if (
                     natural_prefix is not None
                     and guide_model is not None
@@ -1490,6 +1711,25 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             recurrent_state_mode=arguments.natural_prefix_recurrent_state,
         )
     )
+    trace_prefix = (
+        None
+        if arguments.trace_prefix_bank is None
+        else QualifiedTracePrefixBank.load(
+            arguments.trace_prefix_bank,
+            arguments.trace_prefix_qualification,
+            tail_actions=arguments.trace_prefix_tail_actions,
+            recurrent_state_mode=arguments.trace_prefix_recurrent_state,
+        )
+    )
+    if trace_prefix is not None:
+        if trace_prefix.action_contract != arguments.action_contract:
+            raise ValueError(
+                "trace-prefix action contract mismatch: "
+                f"bank={trace_prefix.action_contract!r}, run={arguments.action_contract!r}"
+            )
+        missing_seeds = sorted(set(arguments.seeds) - set(trace_prefix.seeds))
+        if missing_seeds:
+            raise ValueError(f"evaluation seeds have no qualified trace prefix: {missing_seeds}")
     guide_model: PolicyModel | None = None
     guide_reward: RewardConfig | None = None
     if arguments.natural_prefix_guide is not None:
@@ -1517,6 +1757,8 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         arguments.policy_feedback_reward_config,
     )
     checkpoint_metadata = dict(payload.get("checkpoint_metadata", {}))
+    if trace_prefix is not None:
+        validate_checkpoint_trace_prefix(checkpoint_metadata, trace_prefix)
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -1582,6 +1824,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     natural_prefix=natural_prefix,
                     guide_reward=guide_reward,
                     policy_feedback_config=policy_feedback_config,
+                    trace_prefix=trace_prefix,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -1618,6 +1861,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_training_seed_pool": checkpoint_metadata.get("training_seed_pool"),
         "checkpoint_curriculum": checkpoint_metadata.get("curriculum"),
         "checkpoint_natural_prefix": checkpoint_metadata.get("natural_prefix"),
+        "checkpoint_trace_prefix": checkpoint_metadata.get("trace_prefix"),
         "checkpoint_freeze_base_updates": checkpoint_metadata.get("freeze_base_updates"),
         "checkpoint_freeze_base_scope": checkpoint_metadata.get("freeze_base_scope"),
         "checkpoint_initialization": checkpoint_metadata.get("initialization"),
@@ -1646,6 +1890,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "guide_checkpoint_sha256": _checkpoint_hash(arguments.natural_prefix_guide),
             }
         ),
+        "trace_prefix": None if trace_prefix is None else trace_prefix.specification(),
         "worker_restarts": restarts,
         "controller_valid": restarts == 0 and not infrastructure_events,
         "infrastructure_events": infrastructure_events,
@@ -1710,6 +1955,22 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                 "policy_feedback_reward_config_sha256": sha256_file(
                     arguments.policy_feedback_reward_config
                 ),
+                "trace_prefix_bank": (
+                    None
+                    if arguments.trace_prefix_bank is None
+                    else str(arguments.trace_prefix_bank)
+                ),
+                "trace_prefix_bank_sha256": sha256_file(arguments.trace_prefix_bank),
+                "trace_prefix_qualification": (
+                    None
+                    if arguments.trace_prefix_qualification is None
+                    else str(arguments.trace_prefix_qualification)
+                ),
+                "trace_prefix_qualification_sha256": sha256_file(
+                    arguments.trace_prefix_qualification
+                ),
+                "trace_prefix_tail_actions": arguments.trace_prefix_tail_actions,
+                "trace_prefix_recurrent_state": arguments.trace_prefix_recurrent_state,
             },
             source_checkpoint=arguments.checkpoint,
         )
@@ -1867,6 +2128,14 @@ def main() -> int:
         choices=NATURAL_PREFIX_RECURRENT_MODES,
         default="fresh",
     )
+    parser.add_argument("--trace-prefix-bank", type=Path)
+    parser.add_argument("--trace-prefix-qualification", type=Path)
+    parser.add_argument("--trace-prefix-tail-actions", type=int, default=16)
+    parser.add_argument(
+        "--trace-prefix-recurrent-state",
+        choices=TRACE_PREFIX_RECURRENT_MODES,
+        default="warm",
+    )
     parser.add_argument("--experiment-id", help="registered immutable experiment id")
     parser.add_argument("--experiment-arm", help="arm id declared in experiment.yaml")
     parser.add_argument("--trial-id", help="stable evaluation trial label")
@@ -1903,6 +2172,23 @@ def main() -> int:
             )
         if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
             parser.error("natural-prefix turn and attempt limits must be positive")
+    trace_parts = (arguments.trace_prefix_bank, arguments.trace_prefix_qualification)
+    if any(value is not None for value in trace_parts) and not all(
+        value is not None for value in trace_parts
+    ):
+        parser.error("--trace-prefix-bank and --trace-prefix-qualification are required together")
+    if arguments.trace_prefix_bank is not None:
+        if not arguments.trained_only:
+            parser.error("trace-prefix evaluation requires --trained-only")
+        if arguments.natural_prefix_guide is not None:
+            parser.error("natural-prefix and trace-prefix evaluation are mutually exclusive")
+        if arguments.curriculum_start_level != 4 or arguments.curriculum_target_level != 5:
+            parser.error(
+                "--trace-prefix-bank requires --curriculum-start-level 4 "
+                "--curriculum-target-level 5"
+            )
+        if arguments.trace_prefix_tail_actions <= 0:
+            parser.error("--trace-prefix-tail-actions must be positive")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     report = run_baseline(arguments)

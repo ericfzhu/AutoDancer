@@ -162,7 +162,7 @@ experiments:
     registered_at: '2026-08-30T10:52:47.9325633+00:00'
   EXP-0025:
     spec: experiments/EXP-0025/experiment.yaml
-    spec_sha256: 188b8b0fcdfdebeb4d496474dff7b79b0e9faf91265977dc306b5f9f03041c64
+    spec_sha256: 2a1f43c418151c1d31bdbc592fae1e979d707653800caa398165fdfa8d6cd2ce
     status: planned
     historical: false
     registered_at: '2026-08-30T14:05:00+00:00'

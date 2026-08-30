@@ -44,7 +44,9 @@ training:
   curriculum_profile: player20
   reward_config: configs/reward-death-metal-potential-v5.json
 evaluation:
-  population: completed qualified learner-tail episodes on every selected training seed
+  population: frozen final checkpoints evaluated after exact qualified handoffs on every selected training seed
+  modes: [deterministic, stochastic-98001, stochastic-98002]
+  learner_turn_cap: 64
   primary_outcome: conditional live Zone 2 entry after the handoff
-  diagnostics: [per-trial completion rate, distinct completion seeds, learner turns, finite losses, worker restarts]
-decision_rule: Expand the legal trace tail only if aggregate conditional completion is at least 10 percent, at least two of three optimizer trials complete at least 5 percent, at least three distinct qualified game seeds complete, every optimizer trial completes at least once, losses are finite, and controller restarts remain zero. Otherwise retain the boundary and diagnose acquisition rather than claiming progress. No outcome is normal-start promotion.
+  diagnostics: [final-policy per-trial completion rate, distinct completion seeds, learner turns, finite losses, worker restarts]
+decision_rule: Expand the legal trace tail only if the three frozen final checkpoints aggregate at least 10 percent conditional completion across deterministic and two predeclared stochastic modes, at least two of three optimizer trials complete at least 5 percent, at least three distinct qualified game seeds complete, every optimizer trial completes at least once, losses are finite, and training plus evaluation controller restarts remain zero. Training-curve successes are diagnostic only and can never pass the gate. Otherwise retain the boundary and diagnose acquisition rather than claiming progress. No outcome is normal-start promotion.
