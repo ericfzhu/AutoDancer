@@ -19,9 +19,12 @@ conflated with the initial multi-seed normal-start milestone.
 
 ## Evidence from the current system
 
-- Stochastic PPO collection has reached Zone 1 Floor 3.
-- Deterministic held-out evaluation has reached Zone 1 Floor 2.
-- No recorded policy has reached Zone 2.
+- Normal-start stochastic evaluation has reached Zone 1 Floor 3 once and Floor 2
+  across multiple seeds.
+- Legal player20 Death Metal curricula have entered Zone 2, including nine
+  on-policy full-boss training clears in EXP-0024 trial 1.
+- No recorded policy has reached Zone 2 from a normal All Zones start; assisted
+  boss clears remain subskill evidence only.
 - The promoted A2 checkpoint still has policy entropy around 1.18 nats, while
   the A8 continuation is around 1.31. Training samples those distributions, but
   promotion evaluation has always selected per-state argmax.
