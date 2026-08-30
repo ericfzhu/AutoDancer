@@ -2012,3 +2012,10 @@ then qualifies every retained trace on fresh launches. Exhausting the stream ban
 without that diversity fails rather than silently accepting one lucky seed. This
 is a training-data diversity gate, not a promotion result; every final claim still
 comes from new unassisted seeds.
+
+The EXP-0024-to-trace-search handoff is recoverable and waits for the experiment
+pipeline to shut down its workers. A passing experiment uses its predeclared
+held-out winner. If the full gate rejects all trials, the handoff may select a
+checkpoint only by legal completion evidence from the disclosed training runs;
+that choice grants access to trace acquisition, never promotion. The selected
+checkpoint, reason, and handoff state are written atomically before the search.
