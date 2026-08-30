@@ -200,7 +200,7 @@ def load_successful_evaluation_traces(path: str | Path) -> tuple[SuccessfulActio
     if not isinstance(results, list):
         raise ValueError("evaluation trace source has no trained episode results")
     reset = {
-        "id": "evaluation",
+        "id": "fixed",
         "start_level": int(payload.get("curriculum_start_level", 1)),
         "target_level": payload.get("curriculum_target_level"),
         "profile": str(payload.get("curriculum_profile", "normal")),

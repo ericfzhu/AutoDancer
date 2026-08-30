@@ -133,6 +133,7 @@ def test_extracts_full_reset_success_from_evaluation_report(tmp_path: Path) -> N
     assert len(traces) == 1
     assert traces[0].seed == 92043
     assert traces[0].source_policy_version == 90
+    assert traces[0].curriculum_reset["id"] == "fixed"
     assert traces[0].curriculum_reset["profile"] == "player20"
 
 
