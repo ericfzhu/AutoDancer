@@ -1648,6 +1648,20 @@ separate frozen teacher hidden state over the same observation/action history.
 The comparison must measure source-policy KL and boss phase/completion retention,
 not merely training damage.
 
+PPO clipping is also not a hard trust-region constraint. Through update 36,
+EXP-0024's rolling ten-update approximate KL was about `0.026` while boss damage
+per death had fallen to `2.94` and no clear had occurred. OpenAI's reference PPO
+implementation explicitly warns that clipping can still permit an update that
+moves too far and uses approximate-KL early stopping, with `0.01` as its default
+target
+([OpenAI Spinning Up PPO](https://spinningup.openai.com/en/latest/algorithms/ppo.html)).
+The next retention-controlled arm should therefore expose separate actor and
+critic learning rates, actor-only freeze duration, and a declared target KL.
+Critic calibration must remain possible while actor updates are disabled; after
+unfreezing, actor minibatch updates should stop for that rollout once the target
+KL is exceeded. Record optimizer steps actually taken so a stopped update is not
+mistaken for a normal four-epoch update.
+
 There is a second curriculum constraint. Reverse Curriculum Generation selects
 starts in an intermediate-success region and moves them backward as competence
 improves rather than making a large jump from an easy solved state to a nearly
