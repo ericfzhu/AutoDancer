@@ -1423,6 +1423,23 @@ decision on the still-running EXP-0022 gate.
    specialization. If a phase learner loses contact immediately, compare a
    predeclared decaying teacher-policy KL arm before scaling the network or
    inventing another combat bonus.
+8. **Recurrent kickstarting needs a separate teacher trajectory.** A teacher KL
+   cannot be computed correctly by passing the student's stored chunk-boundary
+   hidden state through a frozen teacher. Once their parameters diverge, that
+   state no longer represents the teacher's history; resetting the teacher every
+   32-step PPO chunk is also inconsistent with its deployed recurrent policy.
+   A valid implementation must carry a frozen teacher hidden state per live actor,
+   update it on the same ordered observation/action history using the teacher's
+   checkpoint-defined previous-reward stream, apply the same legal action mask,
+   and store the resulting masked teacher distribution with each on-policy
+   transition. Episode and curriculum-handoff resets must clear or preserve that
+   state under an explicit contract. Checkpoint identity, architecture, reward,
+   and action-contract hashes are part of the experiment metadata. This is the
+   recurrent analogue of the fixed-teacher policy used by
+   [Kickstarting Deep Reinforcement Learning](https://arxiv.org/abs/1803.03835),
+   not ordinary parameter regularization. Until those invariants are implemented
+   and tested, `freeze_base_updates` is the only supported retention mechanism;
+   an ad hoc minibatch KL would be misleading evidence.
 
 The causal prediction is specific: terminal-canceling potential should preserve
 boss contact while removing the return advantage of damage-then-die farming,
