@@ -527,6 +527,49 @@ def test_boss_progress_potential_survives_time_limit_but_ends_on_level_change() 
     assert tracker.boss_progress_potential == 0
 
 
+def test_boss_progress_potential_ignores_adds_and_rebases_at_handoff() -> None:
+    tracker = RewardTracker(_boss_potential_config())
+    value = observation()
+    info = {"zone": 1, "floor": 4, "episode_status": "running"}
+    tracker.reset(value, info)
+    ignored, parts = tracker.score(
+        value,
+        info,
+        [
+            {"kind": "enemy_damage", "amount": 9, "data": {"boss": False}},
+            {
+                "kind": "enemy_damage",
+                "amount": 9,
+                "data": {"boss": False, "boss_add": True},
+            },
+        ],
+        terminated=False,
+        truncated=False,
+    )
+    assert ignored == 0
+    assert "boss_progress_potential" not in parts
+
+    tracker.score(
+        value,
+        info,
+        _boss_damage(5),
+        terminated=False,
+        truncated=False,
+    )
+    assert tracker.boss_progress_potential == pytest.approx(1.0)
+    tracker.reset(value, info)
+    assert tracker.boss_progress_damage == 0
+    assert tracker.boss_progress_potential == 0
+    first_learner_damage, _ = tracker.score(
+        value,
+        info,
+        _boss_damage(),
+        terminated=False,
+        truncated=False,
+    )
+    assert first_learner_damage == pytest.approx(0.198)
+
+
 def test_checkpoint_reward_contract_round_trips_v4_and_v5_exactly() -> None:
     for config in (RewardConfig(), _boss_potential_config()):
         specification = config.specification()
