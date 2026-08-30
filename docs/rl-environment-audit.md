@@ -1570,3 +1570,60 @@ solved a player20-assisted downstream subtask for one of four Zone 1 bosses. The
 curriculum must contract assistance, move through phase 2 and the full boss start,
 cover every boss type, expand through Floors 3, 2, and 1, and finally demonstrate
 Zone 2 entry from untouched All Zones starts on multiple unseen seeds.
+
+## EXP-0024 post-launch policy-retention audit
+
+EXP-0024 starts from the exact A8 checkpoint produced by EXP-0022 and resets the
+critic and optimizer. Its declared ten-update freeze is not, however, a complete
+actor freeze. `ProjectedAdapterActorCritic.set_base_trainable(false)` protects
+the inherited A2 encoder, recurrence, and actor head while leaving the trained
+A8 sensory adapter and adapter projection trainable. That scope was correct for
+the original A2-to-A8 zero-projection experiment, where the adapter was new. It
+does not preserve an A8-to-A8 source function during downstream fine-tuning.
+
+This distinction matters because the successful full-boss behavior is rare. At
+24 updates, the first EXP-0024 trial had accumulated 314 deaths, 1,059 directly
+attributed boss-damage events, zero boss kills, and zero Zone 2 entries. Contact
+has not collapsed, so these observations do not yet prove catastrophic
+forgetting. They do prove that the actor is being updated without a positive
+full-boss trajectory, and the inherited adapter is allowed to drift during the
+nominally frozen period. The experiment remains unchanged through all three
+trials; changing executable code between trials would invalidate their matched
+comparison.
+
+The broader RL literature makes policy retention a first-class experimental
+variable rather than an implementation detail:
+
+- Kickstarting adds an on-policy teacher-distillation objective so the student
+  can retain useful teacher behavior while continuing RL optimization
+  ([Schmitt et al., 2018](https://arxiv.org/abs/1803.03835)).
+- Reincarnating RL reports that naive fine-tuning can degrade a transferred
+  policy, that lower fine-tuning learning rates can materially improve reuse,
+  and that abruptly removing teacher dependence can cause performance collapse
+  ([Agarwal et al., 2022](https://arxiv.org/abs/2206.01626)).
+- Direct studies of RL fine-tuning also find substantial forgetting under most
+  ordinary fine-tuning methods and preserve prior skills by keeping the
+  pretrained path frozen while learning modulation around it
+  ([Schmied et al., 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/77e59fafe99e94f822e79bf9308ec377-Abstract-Conference.html)).
+
+If EXP-0024 misses its held-out clear gate, the next controlled experiment must
+hold reward, source checkpoint, starts, action contract, and evaluation seeds
+fixed while changing policy retention only. The primary arm should freeze the
+entire actor during critic calibration, then unfreeze it at a reduced actor
+learning rate. A teacher-KL arm is justified only if that simpler intervention
+still loses the source behavior; for a recurrent policy it must maintain a
+separate frozen teacher hidden state over the same observation/action history.
+The comparison must measure source-policy KL and boss phase/completion retention,
+not merely training damage.
+
+There is a second curriculum constraint. Reverse Curriculum Generation selects
+starts in an intermediate-success region and moves them backward as competence
+improves rather than making a large jump from an easy solved state to a nearly
+always-failing one
+([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+If full-boss player20 success remains effectively zero, PPO is again operating
+outside that useful band. The next start should then be the latest *operationally
+collectable* legal phase boundary with repeatable success, or the full boss with
+a smaller single-variable assistance contraction—not another renewable reward.
+Any such curriculum result remains acquisition evidence; only normal-start,
+unseen-seed Zone 2 entry satisfies promotion.
