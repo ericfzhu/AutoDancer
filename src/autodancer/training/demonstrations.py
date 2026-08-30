@@ -29,6 +29,22 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_demonstration_sources(payload: Mapping[str, Any]) -> None:
+    """Require every source journal to retain the bytes bound into the bank."""
+
+    sources = payload.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("demonstration bank sources must be a non-empty list")
+    for source in sources:
+        if not isinstance(source, Mapping):
+            raise ValueError("demonstration bank source must be an object")
+        path = Path(str(source.get("path", "")))
+        if not path.is_file():
+            raise FileNotFoundError(f"demonstration source no longer exists: {path}")
+        if _sha256_file(path) != str(source.get("sha256", "")):
+            raise ValueError(f"demonstration source hash mismatch: {path}")
+
+
 def _integer_mapping(value: Any, field: str) -> dict[str, int]:
     if not isinstance(value, Mapping):
         raise ValueError(f"successful episode {field} must be an object")
