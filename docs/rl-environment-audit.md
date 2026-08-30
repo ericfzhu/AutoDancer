@@ -1600,6 +1600,29 @@ the rare clear. It does establish that the nominal warm-up did not keep the
 complete source actor near its initialization, especially along the projection
 that controls how all A8-only information enters the recurrent policy.
 
+Weight parity is not policy parity here for a second reason: previous reward is
+part of the actor observation. The source checkpoint learned under V4, where a
+non-damage boss turn normally supplied reward `0`. V5 potential decay supplies
+`-0.002 * prior boss damage` on such a turn. The context encoder receives both a
+smoothly scaled reward and `sign(previous_reward)`, so even a live `-0.008`
+decay changes the sign feature discontinuously from `0` to `-1`. A one-step
+source-checkpoint diagnostic on the eight current dashboard observations, with
+fresh hidden state and the same zero map in both arms, found action-probability
+shifts up to `1.93` percentage points and KL up to `0.00129`; no argmax changed.
+This narrow probe neither uses the true accumulated map/hidden state nor measures
+multi-turn recurrence, so it is evidence of an immediate input-contract change,
+not a behavioral-failure estimate.
+
+The clean follow-up must separate the optimization reward from the stable policy
+feedback stream. Evaluate the frozen source on identical seeds and action RNGs
+with (a) V4 feedback/V4 scoring, (b) V4 feedback/V5 scoring, and (c) V5
+feedback/V5 scoring. If only (c) degrades, future fine-tuning should optimize V5
+while feeding the actor its checkpoint-compatible V4 feedback. Longer term, a
+new architecture should use stable task-event feedback (or no reward input)
+rather than exposing experiment-specific shaping weights as part of the policy
+observation. Without that separation, a reward ablation silently changes both
+the objective and the environment presented to the actor.
+
 The broader RL literature makes policy retention a first-class experimental
 variable rather than an implementation detail:
 
