@@ -361,6 +361,12 @@ def test_episode_diagnostics_measure_idle_exploration_and_stair_conversion() -> 
     assert result["staircase_exits"] == 1
     assert result["stair_discovery_to_exit_turns"] == [1]
     assert result["extrinsic_return"] == 5.0
+    assert result["successful_action_sequence"] is None
+    assert accumulator.finish("curriculum_complete")["successful_action_sequence"] == [
+        int(Action.WAIT),
+        int(Action.RIGHT),
+        int(Action.DOWN),
+    ]
 
 
 def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns() -> None:

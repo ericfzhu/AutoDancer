@@ -189,6 +189,72 @@ def load_successful_episode_traces(path: str | Path) -> tuple[SuccessfulActionTr
     return tuple(traces)
 
 
+def load_successful_evaluation_traces(path: str | Path) -> tuple[SuccessfulActionTrace, ...]:
+    """Extract replayable successes from a trained-policy live evaluation report."""
+
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("trained"), Mapping):
+        raise ValueError("evaluation trace source must contain a trained policy report")
+    results = payload["trained"].get("results")
+    if not isinstance(results, list):
+        raise ValueError("evaluation trace source has no trained episode results")
+    reset = {
+        "id": "evaluation",
+        "start_level": int(payload.get("curriculum_start_level", 1)),
+        "target_level": payload.get("curriculum_target_level"),
+        "profile": str(payload.get("curriculum_profile", "normal")),
+    }
+    traces: list[SuccessfulActionTrace] = []
+    for index, result in enumerate(results):
+        if not isinstance(result, Mapping):
+            raise ValueError(f"evaluation result {index} must be an object")
+        episode = {
+            "seed": result.get("seed"),
+            "status": result.get("status"),
+            "infrastructure_valid": payload.get("controller_valid") is True,
+            "run_id": result.get("run_id"),
+            "worker_id": result.get("worker_id"),
+            "policy_version": int(payload.get("checkpoint_updates", -1)),
+            "global_step": int(payload.get("checkpoint_global_step", -1)),
+            "turns": result.get("turns"),
+            "furthest_zone": result.get("furthest_zone"),
+            "furthest_floor": result.get("furthest_floor"),
+            "curriculum_reset": reset,
+            "boss_progress": {
+                "boss_type": result.get("boss_type"),
+                "initial_health": result.get("initial_boss_health"),
+                "minimum_health": result.get("minimum_boss_health"),
+                "boss_damage": result.get("boss_damage"),
+                "observed_actor_types": result.get("boss_actor_types", []),
+                "reached": result.get("death_metal_phase4_reached", False),
+            },
+            "event_counts": result.get("event_counts", {}),
+            "successful_action_sequence": result.get("successful_action_sequence"),
+            "natural_prefix": result.get("natural_prefix", {}),
+        }
+        try:
+            trace = SuccessfulActionTrace.from_episode(episode)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"invalid successful evaluation result {index}: {error}") from error
+        if trace is not None:
+            traces.append(trace)
+    return tuple(traces)
+
+
+def load_successful_traces(path: str | Path) -> tuple[SuccessfulActionTrace, ...]:
+    """Load either an append-only training journal or a baseline report."""
+
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return load_successful_episode_traces(source)
+    if isinstance(payload, Mapping) and "trained" in payload:
+        return load_successful_evaluation_traces(source)
+    return load_successful_episode_traces(source)
+
+
 def build_demonstration_bank(paths: Sequence[str | Path]) -> dict[str, Any]:
     """Build a deterministic trace bank with source hashes and duplicate removal."""
 
@@ -200,11 +266,14 @@ def build_demonstration_bank(paths: Sequence[str | Path]) -> dict[str, Any]:
         path = Path(raw_path).resolve()
         if not path.is_file():
             raise FileNotFoundError(f"episode journal does not exist: {path}")
-        traces = load_successful_episode_traces(path)
+        traces = load_successful_traces(path)
         sources.append(
             {
                 "path": str(path),
                 "sha256": _sha256_file(path),
+                "kind": (
+                    "evaluation-report" if path.suffix.lower() == ".json" else "episode-journal"
+                ),
                 "successful_trace_count": len(traces),
             }
         )

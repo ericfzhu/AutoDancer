@@ -10,6 +10,7 @@ from autodancer.training.demonstrations import (
     build_demonstration_bank,
     iter_trace_actions,
     load_successful_episode_traces,
+    load_successful_evaluation_traces,
     validate_demonstration_bank,
     write_demonstration_bank,
 )
@@ -88,6 +89,51 @@ def test_prefixed_success_is_not_misrepresented_as_a_full_reset_trace(tmp_path: 
     prefixed["natural_prefix"] = {"kind": "qualified-live-trace-prefix-v1"}
     write_journal(path, [prefixed])
     assert load_successful_episode_traces(path) == ()
+
+
+def test_extracts_full_reset_success_from_evaluation_report(tmp_path: Path) -> None:
+    path = tmp_path / "report.json"
+    path.write_text(
+        json.dumps(
+            {
+                "controller_valid": True,
+                "checkpoint_updates": 90,
+                "checkpoint_global_step": 92160,
+                "curriculum_start_level": 4,
+                "curriculum_target_level": 5,
+                "curriculum_profile": "player20",
+                "trained": {
+                    "results": [
+                        {
+                            "seed": 92043,
+                            "worker_id": "worker-0002",
+                            "run_id": "92043:1:4",
+                            "status": "curriculum_complete",
+                            "turns": 4,
+                            "furthest_zone": 2,
+                            "furthest_floor": 1,
+                            "boss_type": 2,
+                            "initial_boss_health": 9,
+                            "minimum_boss_health": 0,
+                            "boss_damage": 9,
+                            "boss_actor_types": [1, 2, 3, 4],
+                            "death_metal_phase4_reached": True,
+                            "event_counts": {"enemy_damage": 3, "enemy_kill": 1},
+                            "successful_action_sequence": [0, 1, 4, 5],
+                            "natural_prefix": {},
+                        },
+                        {"seed": 92044, "status": "dead"},
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    traces = load_successful_evaluation_traces(path)
+    assert len(traces) == 1
+    assert traces[0].seed == 92043
+    assert traces[0].source_policy_version == 90
+    assert traces[0].curriculum_reset["profile"] == "player20"
 
 
 def test_bank_hash_and_trace_identity_are_tamper_evident(tmp_path: Path) -> None:

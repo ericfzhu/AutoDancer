@@ -126,6 +126,8 @@ class EpisodeAccumulator:
     initial_boss_health: int | None = None
     minimum_boss_health: int | None = None
     action_counts: list[int] = field(default_factory=lambda: [0] * ACTION_COUNT)
+    actions: list[int] = field(default_factory=list)
+    event_counts: dict[str, int] = field(default_factory=dict)
     unchanged_position_turns: int = 0
     max_unchanged_position_streak: int = 0
     idle_turns: int = 0
@@ -277,6 +279,7 @@ class EpisodeAccumulator:
         self._observe_boss_state(observation)
         if 0 <= action < ACTION_COUNT:
             self.action_counts[action] += 1
+            self.actions.append(int(action))
         position = self._position(observation, info)
         current_floor = position[:2]
         if current_floor != self._floor:
@@ -373,6 +376,8 @@ class EpisodeAccumulator:
             self._pending_stair_turn = self.turns
         for event in events:
             kind = str(event.get("kind", ""))
+            if kind:
+                self.event_counts[kind] = self.event_counts.get(kind, 0) + 1
             amount = int(event.get("amount", 0) or 0)
             data = dict(event.get("data") or {})
             is_boss = bool(data.get("boss", False))
@@ -444,6 +449,12 @@ class EpisodeAccumulator:
             ),
             "player_damage": self.player_damage,
             "action_counts": self.action_counts,
+            "event_counts": self.event_counts,
+            "successful_action_sequence": (
+                list(self.actions)
+                if status in {"curriculum_complete", "victory"} and not self.natural_prefix
+                else None
+            ),
             "wait_actions": self.action_counts[int(Action.WAIT)],
             "unchanged_position_turns": self.unchanged_position_turns,
             "max_unchanged_position_streak": self.max_unchanged_position_streak,
