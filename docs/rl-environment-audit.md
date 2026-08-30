@@ -1673,3 +1673,29 @@ collectable* legal phase boundary with repeatable success, or the full boss with
 a smaller single-variable assistance contraction—not another renewable reward.
 Any such curriculum result remains acquisition evidence; only normal-start,
 unseen-seed Zone 2 entry satisfies promotion.
+
+## Boss survival credit audit
+
+The 216 held-out EXP-0022 episodes distinguish useful mobility from passive
+avoidance. Phase-1 failures averaged 18 unique positions and 24 moves; phase-2
+episodes averaged 28.7 unique positions and 42.5 moves; phase-3 failures averaged
+30.1 unique positions and 44.9 moves. The single legal clear used 43 unique
+positions and 58 moves. It dealt only 13 productive stationary-combat turns,
+below the phase-3 failure mean of 14.6, and finished after taking 16 of its 20
+health rather than merely attacking more often. Every failed episode eventually
+took all 20 damage. This is observational rather than causal evidence, but it
+locates the missing competence more precisely: preserve damage while moving well
+enough to survive the later phase.
+
+That evidence does **not** justify restoring a renewable player-damage penalty.
+EXP-0021 already showed that negative damage/death reward makes zero-contact
+timeouts preferable to unsuccessful practice. If policy retention and stable
+reward feedback still fail, the next reward hypothesis should instead be a
+nonnegative survival-conditioned state potential, for example boss progress
+multiplied by remaining-health fraction. It is zero before any boss progress,
+so pure avoidance and immediate contact failure remain tied; boss damage raises
+it; taking damage after progress lowers it immediately; and death or successful
+level exit terminalizes it. Used only as `gamma*Phi(s')-Phi(s)`, it supplies local
+dodge credit while telescoping out of complete trajectories. The arm must be
+compared against unchanged V5 after the retention correction, and selected only
+by phase depth and Zone 2 entry—not shaped return.
