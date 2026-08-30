@@ -1379,6 +1379,20 @@ decision on the still-running EXP-0022 gate.
    A phase-3 learner may advance only after the guide reaches that boundary
    reliably on disjoint seeds; subsequent stages expand to phase 2, full boss,
    earlier floors, and finally normal All Zones starts.
+5. **Reward is also a recurrent policy input.** Architecture A8 receives the
+   previous scalar reward alongside the previous action. Potential-based reward
+   shaping preserves optimal policies when it transforms the learning reward,
+   but here a reward change also changes the policy's next input and therefore
+   its effective observation process. The classic invariance result does not
+   literally cover that extra coupling. DeathMetalPotentialV5 bounds the first
+   intervention by keeping a boss hit close to V3's `+0.20` immediate signal,
+   introducing only the discount correction between hits, and resetting the
+   input at real episode boundaries. The frozen guide always receives its own
+   checkpoint-defined reward stream. Evaluation must still track whether the
+   learner's contact rate changes immediately at transfer. A future general
+   reward experiment should either version a stable policy-context reward
+   separately from the optimized return or ablate the reward input; it must not
+   claim policy invariance merely from the shaping formula.
 
 The causal prediction is specific: terminal-canceling potential should preserve
 boss contact while removing the return advantage of damage-then-die farming,
