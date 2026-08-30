@@ -2006,6 +2006,9 @@ evaluated without any prefix before health or floor contraction begins.
 A single lucky trajectory is not enough evidence for that curriculum. The
 recoverable search launcher therefore requires fresh-launch-qualified traces from
 at least three distinct disclosed training seeds by default and records both the
-seed list and threshold. Additional predeclared policy streams must be searched if
-the first wave misses that gate. This is a training-data diversity gate, not a
-promotion result; every final claim still comes from new unassisted seeds.
+seed list and threshold. It evaluates up to 32 predeclared stochastic policy
+streams sequentially and stops as soon as three distinct candidate seeds exist,
+then qualifies every retained trace on fresh launches. Exhausting the stream bank
+without that diversity fails rather than silently accepting one lucky seed. This
+is a training-data diversity gate, not a promotion result; every final claim still
+comes from new unassisted seeds.

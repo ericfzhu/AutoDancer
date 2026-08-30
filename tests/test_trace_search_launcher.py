@@ -14,3 +14,6 @@ def test_trace_search_launcher_separates_training_and_excluded_seeds() -> None:
     assert "MinQualifiedDistinctSeeds" in source
     assert "Qualified traces cover only" in source
     assert "qualified_distinct_seeds" in source
+    assert "96001..96032" in source
+    assert "Trace search exhausted" in source
+    assert "if ($candidateDistinctSeeds.Count -ge $MinQualifiedDistinctSeeds)" in source

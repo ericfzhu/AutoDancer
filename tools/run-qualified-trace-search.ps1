@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ExcludedSeedSelection,
     [Parameter(Mandatory = $true)][string]$RunDir,
     [string]$ModDir = "",
-    [int[]]$PolicySeeds = @(96001, 96002, 96003, 96004, 96005, 96006, 96007, 96008),
+    [int[]]$PolicySeeds = (96001..96032),
     [int]$NumInstances = 8,
     [int]$MaxSteps = 500,
     [int]$MinQualifiedDistinctSeeds = 3,
@@ -57,6 +57,25 @@ $traceRoot = Resolve-RepositoryPath $RunDir
 [System.IO.Directory]::CreateDirectory($traceRoot) | Out-Null
 $reports = [System.Collections.Generic.List[string]]::new()
 $seedCsv = $trainingSeeds -join ","
+function Write-TraceBank([System.Collections.Generic.List[string]]$SourceReports, [string]$Output) {
+    $buildArguments = [System.Collections.Generic.List[string]]::new()
+    foreach ($value in @("-m", "autodancer.training.demonstration_replay", "build")) {
+        $buildArguments.Add($value)
+    }
+    foreach ($reportPath in $SourceReports) {
+        $buildArguments.Add("--episodes")
+        $buildArguments.Add($reportPath)
+    }
+    $buildArguments.Add("--output")
+    $buildArguments.Add($Output)
+    & $python @buildArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Demonstration-bank construction failed"
+    }
+}
+
+$bank = Join-Path $traceRoot "demonstration-bank.json"
+$candidateDistinctSeeds = @()
 foreach ($policySeed in $PolicySeeds) {
     $reportDir = Join-Path $traceRoot ("reports\stochastic-{0}" -f $policySeed)
     [System.IO.Directory]::CreateDirectory($reportDir) | Out-Null
@@ -69,51 +88,51 @@ foreach ($policySeed in $PolicySeeds) {
         if (-not ($existing.controller_valid -and $sameSeeds -and $sameCheckpoint -and [int]$existing.policy_seed -eq $policySeed)) {
             throw "Existing trace-search report does not match the requested run: $report"
         }
-        $reports.Add($report)
-        continue
-    }
-    & $python -m autodancer.training.baseline `
-        --game-dir $GameDir `
-        --mod-dir $ModDir `
-        --checkpoint $resolvedCheckpoint `
-        --output $report `
-        --num-instances $NumInstances `
-        --seeds $seedCsv `
-        --max-steps $MaxSteps `
-        --policy-seed $policySeed `
-        --policy-mode stochastic `
-        --reward-config $resolvedReward `
-        --policy-feedback-reward-config $resolvedReward `
-        --trained-only `
-        --device cuda `
-        --action-contract $ActionContract `
-        --curriculum-start-level 4 `
-        --curriculum-target-level 5 `
-        --curriculum-profile player20
-    if ($LASTEXITCODE -ne 0) {
-        throw "Trace-search evaluation failed for policy seed $policySeed"
+    } else {
+        & $python -m autodancer.training.baseline `
+            --game-dir $GameDir `
+            --mod-dir $ModDir `
+            --checkpoint $resolvedCheckpoint `
+            --output $report `
+            --num-instances $NumInstances `
+            --seeds $seedCsv `
+            --max-steps $MaxSteps `
+            --policy-seed $policySeed `
+            --policy-mode stochastic `
+            --reward-config $resolvedReward `
+            --policy-feedback-reward-config $resolvedReward `
+            --trained-only `
+            --device cuda `
+            --action-contract $ActionContract `
+            --curriculum-start-level 4 `
+            --curriculum-target-level 5 `
+            --curriculum-profile player20
+        if ($LASTEXITCODE -ne 0) {
+            throw "Trace-search evaluation failed for policy seed $policySeed"
+        }
     }
     $reports.Add($report)
+    Write-TraceBank $reports $bank
+    $candidateBank = Get-Content -LiteralPath $bank -Raw | ConvertFrom-Json
+    $candidateDistinctSeeds = @(
+        $candidateBank.traces |
+            ForEach-Object { [int]$_.seed } |
+            Sort-Object -Unique
+    )
+    if ($candidateDistinctSeeds.Count -ge $MinQualifiedDistinctSeeds) {
+        break
+    }
 }
 
-$bank = Join-Path $traceRoot "demonstration-bank.json"
-$buildArguments = [System.Collections.Generic.List[string]]::new()
-foreach ($value in @("-m", "autodancer.training.demonstration_replay", "build")) {
-    $buildArguments.Add($value)
-}
-foreach ($report in $reports) {
-    $buildArguments.Add("--episodes")
-    $buildArguments.Add($report)
-}
-$buildArguments.Add("--output")
-$buildArguments.Add($bank)
-& $python @buildArguments
-if ($LASTEXITCODE -ne 0) {
-    throw "Demonstration-bank construction failed"
-}
 $bankPayload = Get-Content -LiteralPath $bank -Raw | ConvertFrom-Json
 if (@($bankPayload.traces).Count -eq 0) {
     throw "No successful full-reset traces were found on the declared training seed bank"
+}
+if ($candidateDistinctSeeds.Count -lt $MinQualifiedDistinctSeeds) {
+    throw (
+        "Trace search exhausted {0} policy streams but found successes on only {1} distinct training seeds; at least {2} are required" -f `
+            $reports.Count, $candidateDistinctSeeds.Count, $MinQualifiedDistinctSeeds
+    )
 }
 
 $qualification = Join-Path $traceRoot "qualification.json"
@@ -148,7 +167,10 @@ $status = [ordered]@{
     checkpoint = $resolvedCheckpoint
     training_seed_selection = $resolvedSeedSelection
     excluded_seed_selection = $resolvedExcludedSelection
-    policy_seeds = @($PolicySeeds)
+    policy_seeds = @($reports | ForEach-Object {
+        [int]((Split-Path (Split-Path $_ -Parent) -Leaf) -replace '^stochastic-', '')
+    })
+    maximum_policy_seeds = @($PolicySeeds)
     reports = @($reports)
     bank = $bank
     bank_sha256 = [string]$bankPayload.bank_sha256
