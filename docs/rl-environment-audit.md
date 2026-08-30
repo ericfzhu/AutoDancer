@@ -2002,3 +2002,10 @@ streams, qualify every resulting success, then start with a short tail whose
 conditional success is inside the 10--90% learning band. Tail length expands only
 after fresh evaluation of the preceding stage; the final full-boss policy is
 evaluated without any prefix before health or floor contraction begins.
+
+A single lucky trajectory is not enough evidence for that curriculum. The
+recoverable search launcher therefore requires fresh-launch-qualified traces from
+at least three distinct disclosed training seeds by default and records both the
+seed list and threshold. Additional predeclared policy streams must be searched if
+the first wave misses that gate. This is a training-data diversity gate, not a
+promotion result; every final claim still comes from new unassisted seeds.

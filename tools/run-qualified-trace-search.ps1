@@ -8,6 +8,7 @@ param(
     [int[]]$PolicySeeds = @(96001, 96002, 96003, 96004, 96005, 96006, 96007, 96008),
     [int]$NumInstances = 8,
     [int]$MaxSteps = 500,
+    [int]$MinQualifiedDistinctSeeds = 3,
     [string]$ActionContract = "map-navigation-prior-v1",
     [string]$RewardConfig = "configs/reward-death-metal-potential-v5.json"
 )
@@ -48,8 +49,8 @@ if ($leaked.Count -ne 0) {
 if ($PolicySeeds.Count -eq 0 -or $PolicySeeds.Count -ne @($PolicySeeds | Select-Object -Unique).Count) {
     throw "Policy seeds must be non-empty and unique"
 }
-if ($NumInstances -le 0 -or $MaxSteps -le 0) {
-    throw "NumInstances and MaxSteps must be positive"
+if ($NumInstances -le 0 -or $MaxSteps -le 0 -or $MinQualifiedDistinctSeeds -le 0) {
+    throw "NumInstances, MaxSteps, and MinQualifiedDistinctSeeds must be positive"
 }
 
 $traceRoot = Resolve-RepositoryPath $RunDir
@@ -126,6 +127,21 @@ if ($LASTEXITCODE -ne 0) {
     throw "Fresh-launch live trace qualification failed"
 }
 $qualificationPayload = Get-Content -LiteralPath $qualification -Raw | ConvertFrom-Json
+$qualifiedDistinctSeeds = @(
+    $qualificationPayload.results |
+        Where-Object { [bool]$_.valid } |
+        ForEach-Object { [int]$_.seed } |
+        Sort-Object -Unique
+)
+if (-not [bool]$qualificationPayload.valid) {
+    throw "Fresh-launch live trace qualification report is invalid"
+}
+if ($qualifiedDistinctSeeds.Count -lt $MinQualifiedDistinctSeeds) {
+    throw (
+        "Qualified traces cover only {0} distinct training seeds; at least {1} are required" -f `
+            $qualifiedDistinctSeeds.Count, $MinQualifiedDistinctSeeds
+    )
+}
 $status = [ordered]@{
     schema_version = 1
     status = "complete"
@@ -139,6 +155,9 @@ $status = [ordered]@{
     trace_count = @($bankPayload.traces).Count
     qualification = $qualification
     qualified_trace_count = [int]$qualificationPayload.qualified_trace_count
+    qualified_distinct_seed_count = $qualifiedDistinctSeeds.Count
+    qualified_distinct_seeds = $qualifiedDistinctSeeds
+    minimum_qualified_distinct_seeds = $MinQualifiedDistinctSeeds
     valid = [bool]$qualificationPayload.valid
 }
 $temporaryStatus = Join-Path $traceRoot ".status.json.tmp"

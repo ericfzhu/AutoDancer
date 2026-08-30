@@ -11,3 +11,6 @@ def test_trace_search_launcher_separates_training_and_excluded_seeds() -> None:
     assert 'autodancer.training.demonstration_replay", "build' in source
     assert "autodancer.training.demonstration_replay qualify" in source
     assert "No successful full-reset traces" in source
+    assert "MinQualifiedDistinctSeeds" in source
+    assert "Qualified traces cover only" in source
+    assert "qualified_distinct_seeds" in source
