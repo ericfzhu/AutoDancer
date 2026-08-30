@@ -585,6 +585,7 @@ class VersionedAsyncRolloutCollector:
                     episodes.append(
                         {
                             "worker_id": worker_id,
+                            "run_id": str(state.info.get("run_id", "")),
                             "seed": int(state.info.get("seed", 0)),
                             "return": 0.0,
                             "extrinsic_return": 0.0,
@@ -593,11 +594,13 @@ class VersionedAsyncRolloutCollector:
                             "zone": state.furthest_zone,
                             "floor": state.furthest_floor,
                             "boss_type": state.boss_type,
+                            "boss_progress": state.boss_progress.snapshot(),
                             "turns": 0,
                             "events": [],
                             "curriculum_reset": state.reset_spec.as_dict(),
                             "curriculum_reset_id": state.reset_spec.id,
                             "natural_prefix": metadata,
+                            "infrastructure_valid": True,
                         }
                     )
                     self.curriculum_schedule.record_outcome(state.reset_spec, "prefix_failed")
