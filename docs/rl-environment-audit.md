@@ -1393,6 +1393,36 @@ decision on the still-running EXP-0022 gate.
    reward experiment should either version a stable policy-context reward
    separately from the optimized return or ablate the reward input; it must not
    claim policy invariance merely from the shaping formula.
+6. **Uniform seed replay is only an isolation baseline.** The first fixed-phase
+   learner should sample its declared training seeds uniformly so its result can
+   be attributed to the reachable handoff and reward change. Once starts span
+   different phases or floors, uniform replay can spend most live transitions on
+   tasks that are already mastered or currently impossible. Reverse Curriculum
+   Generation retains starts in an intermediate-success band, while Prioritized
+   Level Replay prioritizes procedurally generated levels by estimated learning
+   potential and improves held-out generalization
+   ([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html);
+   [Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)).
+   AutoDancer should therefore expand backward with a versioned mixture that
+   always replays mastered downstream starts, admits a harder start only after a
+   held-out success gate, and never removes failed seeds from denominators.
+   Outcome-defined phase success is the initial priority signal; raw shaped
+   return must not control sampling. A small uniform replay probability is
+   retained so prioritization cannot silently narrow the supported seed
+   distribution.
+7. **The closest published NecroDancer result favors temporal context and policy
+   initialization, not more renewable shaping.** CoNBot trained Bard from screen
+   images and reported that four-frame inputs navigated better and became stuck
+   in loops less often than single images. Its behavior-cloned initialization
+   also explored more usefully than training from scratch, although its live-game
+   throughput and pixel-derived gold/floor reward limited the RL result
+   ([Kanne and Bukaty, report](https://bbukaty.github.io/CoNBot/report.pdf)).
+   AutoDancer already provides stronger structured temporal state and exact game
+   events, so this is not evidence to copy its observation or gold reward.
+   It is independent support for preserving a competent inherited actor during
+   specialization. If a phase learner loses contact immediately, compare a
+   predeclared decaying teacher-policy KL arm before scaling the network or
+   inventing another combat bonus.
 
 The causal prediction is specific: terminal-canceling potential should preserve
 boss contact while removing the return advantage of damage-then-die farming,
