@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from math import sqrt
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -15,6 +17,29 @@ import numpy as np
 from autodancer.curriculum import EpisodeResetSpec
 
 SUCCESS_OUTCOMES = frozenset({"curriculum_complete", "victory"})
+
+
+def load_adaptive_curriculum_config(path: str | Path) -> AdaptiveCurriculumConfig:
+    """Load a strict schema-1 adaptive curriculum configuration."""
+
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"could not load adaptive curriculum config {source}: {error}") from error
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        raise ValueError("adaptive curriculum config must be a schema_version 1 object")
+    unknown = set(payload) - {"schema_version", "config"}
+    if unknown:
+        raise ValueError(f"unknown adaptive curriculum config fields: {sorted(unknown)}")
+    config = payload.get("config")
+    if not isinstance(config, dict):
+        raise ValueError("adaptive curriculum config.config must be an object")
+    allowed = set(AdaptiveCurriculumConfig.__dataclass_fields__)
+    unknown_config = set(config) - allowed
+    if unknown_config:
+        raise ValueError(f"unknown adaptive curriculum parameters: {sorted(unknown_config)}")
+    return AdaptiveCurriculumConfig(**config)
 
 
 def wilson_interval(successes: int, samples: int, z: float = 1.96) -> tuple[float, float]:
@@ -144,14 +169,23 @@ class AdaptiveEpisodeCurriculumSchedule:
     def record_outcome(
         self, spec: EpisodeResetSpec, status: str, *, infrastructure_valid: bool = True
     ) -> None:
-        ids = {boundary.id for boundary in self.boundaries}
-        if spec.id not in ids:
+        indices = {boundary.id: index for index, boundary in enumerate(self.boundaries)}
+        if spec.id not in indices:
             raise ValueError(f"reset specification {spec.id!r} is not in this schedule")
         with self._lock:
             if not infrastructure_valid:
                 self._ignored_infrastructure[spec.id] += 1
                 return
             self._windows[spec.id].append(str(status) in SUCCESS_OUTCOMES)
+            index = indices[spec.id]
+            _, samples, _, upper = self._bounds(index)
+            if (
+                index in self._mastered
+                and samples >= self.config.minimum_samples
+                and upper < self.config.demotion_upper_bound
+            ):
+                self._mastered = {value for value in self._mastered if value < index}
+                self._active_index = min(self._active_index, index)
             self._update_active_boundary()
 
     def _bounds(self, index: int) -> tuple[int, int, float, float]:

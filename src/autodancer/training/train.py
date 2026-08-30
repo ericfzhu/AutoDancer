@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from autodancer.adaptive_curriculum import load_adaptive_curriculum_config
 from autodancer.constants import ACTION_COUNT
 from autodancer.curriculum import fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
@@ -502,11 +503,25 @@ def train(arguments: argparse.Namespace) -> None:
             arguments.curriculum_profile,
         )
     )
-    curriculum_distribution = {
-        "schema_version": 1,
-        "mode": "weighted-per-episode-v1",
-        "entries": [entry.as_dict() for entry in curriculum_entries],
-    }
+    adaptive_curriculum_config = (
+        None
+        if getattr(arguments, "adaptive_curriculum_config", None) is None
+        else load_adaptive_curriculum_config(arguments.adaptive_curriculum_config)
+    )
+    curriculum_distribution = (
+        {
+            "schema_version": 1,
+            "mode": "weighted-per-episode-v1",
+            "entries": [entry.as_dict() for entry in curriculum_entries],
+        }
+        if adaptive_curriculum_config is None
+        else {
+            "schema_version": 1,
+            "mode": "adaptive-competence-v1",
+            "boundaries": [entry.spec.as_dict() for entry in curriculum_entries],
+            "config": asdict(adaptive_curriculum_config),
+        }
+    )
     seed_checkpoint_metadata = (
         {
             "training_seed_schedule": "uniform-pool-v1",
@@ -611,6 +626,11 @@ def train(arguments: argparse.Namespace) -> None:
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
                 "curriculum_mixture": curriculum_distribution,
+                "adaptive_curriculum_config": (
+                    None
+                    if adaptive_curriculum_config is None
+                    else asdict(adaptive_curriculum_config)
+                ),
                 "natural_prefix": natural_prefix_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "freeze_base_scope": (
@@ -789,6 +809,7 @@ def train(arguments: argparse.Namespace) -> None:
                     seed_schedule_state=resume_metrics.get("training_seed_schedule_state"),
                     curriculum_entries=curriculum_entries,
                     curriculum_schedule_state=resume_metrics.get("curriculum_schedule_state"),
+                    adaptive_curriculum_config=adaptive_curriculum_config,
                     guide_model=guide_model,
                     natural_prefix=natural_prefix,
                     guide_reward_config=guide_reward,
@@ -877,6 +898,7 @@ def train(arguments: argparse.Namespace) -> None:
                             seed_schedule_state=schedule_state,
                             curriculum_entries=curriculum_entries,
                             curriculum_schedule_state=curriculum_schedule_state,
+                            adaptive_curriculum_config=adaptive_curriculum_config,
                             guide_model=guide_model,
                             natural_prefix=natural_prefix,
                             guide_reward_config=guide_reward,
@@ -943,6 +965,11 @@ def train(arguments: argparse.Namespace) -> None:
                             "curriculum_target_level": arguments.curriculum_target_level,
                             "curriculum_profile": arguments.curriculum_profile,
                             "curriculum_mixture": curriculum_distribution,
+                            "adaptive_curriculum_config": (
+                                None
+                                if adaptive_curriculum_config is None
+                                else asdict(adaptive_curriculum_config)
+                            ),
                             "natural_prefix": natural_prefix_metadata,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "freeze_base_scope": (
@@ -1097,6 +1124,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--adaptive-curriculum-config",
+        type=Path,
+        help=(
+            "schema-1 competence thresholds and acquisition/replay/frontier allocation; "
+            "requires an ordered --curriculum-mixture"
+        ),
+    )
+    parser.add_argument(
         "--natural-prefix-guide",
         type=Path,
         help=(
@@ -1202,6 +1237,8 @@ def main() -> int:
         or arguments.curriculum_profile != "normal"
     ):
         parser.error("--curriculum-mixture is mutually exclusive with fixed curriculum arguments")
+    if arguments.adaptive_curriculum_config is not None and arguments.curriculum_mixture is None:
+        parser.error("--adaptive-curriculum-config requires --curriculum-mixture")
     if arguments.natural_prefix_guide is not None:
         if arguments.curriculum_start_level != 4 or arguments.curriculum_target_level != 5:
             parser.error(

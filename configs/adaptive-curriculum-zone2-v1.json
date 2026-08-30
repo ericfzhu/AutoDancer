@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "config": {
+    "window_size": 100,
+    "minimum_samples": 40,
+    "promotion_lower_bound": 0.6,
+    "demotion_upper_bound": 0.1,
+    "acquisition_probability": 0.65,
+    "mastery_replay_probability": 0.25,
+    "frontier_probe_probability": 0.1,
+    "confidence_z": 1.96
+  }
+}

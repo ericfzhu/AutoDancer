@@ -3,6 +3,7 @@ from __future__ import annotations
 from autodancer.adaptive_curriculum import (
     AdaptiveCurriculumConfig,
     AdaptiveEpisodeCurriculumSchedule,
+    load_adaptive_curriculum_config,
     wilson_interval,
 )
 from autodancer.curriculum import EpisodeResetSpec
@@ -95,3 +96,41 @@ def test_demotes_when_active_boundary_is_confidently_too_hard() -> None:
     diagnostics = schedule.diagnostics()
     assert diagnostics["active_index"] == 0
     assert diagnostics["boundaries"][0]["mastered"] is False
+
+
+def test_mastery_replay_failure_can_restore_a_forgotten_boundary() -> None:
+    strict = AdaptiveCurriculumConfig(
+        window_size=50,
+        minimum_samples=40,
+        promotion_lower_bound=0.60,
+        demotion_upper_bound=0.10,
+    )
+    schedule = AdaptiveEpisodeCurriculumSchedule(7, 1, boundaries(), strict)
+    first, second = boundaries()[:2]
+    for _ in range(40):
+        schedule.record_outcome(first, "curriculum_complete")
+    for _ in range(40):
+        schedule.record_outcome(second, "curriculum_complete")
+    assert schedule.diagnostics()["active_index"] == 2
+    for _ in range(50):
+        schedule.record_outcome(first, "dead")
+    diagnostics = schedule.diagnostics()
+    assert diagnostics["active_index"] == 0
+    assert not any(boundary["mastered"] for boundary in diagnostics["boundaries"])
+
+
+def test_load_adaptive_config_is_strict(tmp_path) -> None:
+    path = tmp_path / "adaptive.json"
+    path.write_text(
+        '{"schema_version": 1, "config": {"minimum_samples": 50}}',
+        encoding="utf-8",
+    )
+    assert load_adaptive_curriculum_config(path).minimum_samples == 50
+    path.write_text(
+        '{"schema_version": 1, "config": {"unknown": 1}}',
+        encoding="utf-8",
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown adaptive curriculum parameters"):
+        load_adaptive_curriculum_config(path)

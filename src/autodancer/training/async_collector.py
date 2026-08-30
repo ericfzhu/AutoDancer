@@ -14,6 +14,10 @@ import torch
 from torch import Tensor
 from torch.distributions import Categorical
 
+from autodancer.adaptive_curriculum import (
+    AdaptiveCurriculumConfig,
+    AdaptiveEpisodeCurriculumSchedule,
+)
 from autodancer.curriculum import (
     EpisodeCurriculumSchedule,
     EpisodeResetSpec,
@@ -231,6 +235,7 @@ class VersionedAsyncRolloutCollector:
         seed_schedule_state: dict[str, Any] | None = None,
         curriculum_entries: tuple[WeightedResetSpec, ...] = (),
         curriculum_schedule_state: dict[str, Any] | None = None,
+        adaptive_curriculum_config: AdaptiveCurriculumConfig | None = None,
         guide_model: PolicyModel | None = None,
         natural_prefix: NaturalPrefixConfig | None = None,
         guide_reward_config: RewardConfig | None = None,
@@ -262,8 +267,15 @@ class VersionedAsyncRolloutCollector:
         if seed_schedule_state is not None:
             self.seed_schedule.load_state_dict(seed_schedule_state)
         selected_entries = curriculum_entries or fixed_reset_spec(1, None, "normal")
-        self.curriculum_schedule = EpisodeCurriculumSchedule(
-            int(seed), environment.num_envs, tuple(selected_entries)
+        self.curriculum_schedule = (
+            EpisodeCurriculumSchedule(int(seed), environment.num_envs, tuple(selected_entries))
+            if adaptive_curriculum_config is None
+            else AdaptiveEpisodeCurriculumSchedule(
+                int(seed),
+                environment.num_envs,
+                tuple(entry.spec for entry in selected_entries),
+                adaptive_curriculum_config,
+            )
         )
         if curriculum_schedule_state is not None:
             self.curriculum_schedule.load_state_dict(curriculum_schedule_state)

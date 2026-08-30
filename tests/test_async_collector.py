@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from autodancer.adaptive_curriculum import AdaptiveCurriculumConfig
 from autodancer.constants import (
     ACTION_COUNT,
     GRID_CHANNELS,
@@ -339,6 +340,66 @@ def test_async_collector_routes_weighted_episode_resets_and_records_outcomes() -
             call_options is not None and "curriculum" in call_options
             for _, call_options in worker.reset_calls
         )
+
+
+def test_async_collector_uses_opt_in_adaptive_curriculum_and_checkpoints_it() -> None:
+    environment = AsyncEnvironment()
+    entries = (
+        WeightedResetSpec(EpisodeResetSpec("easier", 4, 5, "player20"), 1.0),
+        WeightedResetSpec(EpisodeResetSpec("harder", 4, 5, "player10"), 1.0),
+    )
+    for slot, worker_id in enumerate(environment.worker_ids):
+        environment.environments[worker_id].step = (  # type: ignore[method-assign]
+            lambda _action, slot=slot: (
+                observation(slot),
+                1.0,
+                True,
+                False,
+                {"episode_status": "curriculum_complete", "zone": 2, "floor": 1},
+            )
+        )
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    adaptive = AdaptiveCurriculumConfig(
+        window_size=10,
+        minimum_samples=5,
+        promotion_lower_bound=0.20,
+        demotion_upper_bound=0.10,
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=82,
+        curriculum_entries=entries,
+        adaptive_curriculum_config=adaptive,
+    )
+    try:
+        collector.collect(10)
+        state = collector.curriculum_schedule_state()
+        resumed = VersionedAsyncRolloutCollector(
+            AsyncEnvironment(),
+            model,
+            device=torch.device("cpu"),
+            seed=82,
+            curriculum_entries=entries,
+            curriculum_schedule_state=state,
+            adaptive_curriculum_config=adaptive,
+        )
+        resumed.close()
+    finally:
+        collector.close()
+    assert state["mode"] == "adaptive-competence-v1"
+    assert state["active_index"] == 1
+    assert state["mastered_indices"] == [0, 1]
 
 
 def test_versioned_async_collection_has_no_per_step_worker_barrier() -> None:

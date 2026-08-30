@@ -94,6 +94,10 @@ blocks:
       mixed-curriculum-replay-v1: Each worker draws a checkpointed weighted per-episode reset specification, allowing a harder start distribution to retain a declared fraction of mastered starts without actor-timing bias; infrastructure recovery replays the same task and seed.
       prioritized-level-replay-v1: Planned finite-pool replay weighted by measured learning potential; not yet implemented or authorized for an experiment.
       legal-natural-prefix-phase3-v2: A frozen stochastic guide reaches an observed legal Death Metal phase-3 state through ordinary live actions; guide transitions are excluded and PPO collects a contiguous learner fragment from the exact handoff with warmed recurrent state.
+      adaptive-competence-replay-v3:
+        description: Ordered legal boundaries use infrastructure-excluding rolling gameplay outcomes and Wilson confidence bounds to promote or demote difficulty, while deterministic per-worker sampling reserves explicit mass for current acquisition, mastered-boundary replay, and frontier probes; scheduler windows, counters, active boundary, allocation, and RNG streams resume exactly.
+        config: configs/adaptive-curriculum-zone2-v1.json
+        config_sha256: 6e14e4a07ff36130036b1a4140084d58eb18c5b7d6ac237ed971e4fa02302c6f
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.
