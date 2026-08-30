@@ -2085,3 +2085,56 @@ The imitation term should update the actor only, decay toward zero, and be repor
 separately from PPO policy/value/entropy losses. Selection remains frozen live
 Zone 2 entry with the imitation path disabled. This is the predeclared algorithmic
 fallback; another reward revision would not address rare-success forgetting.
+
+## Long-horizon credit is structurally truncated
+
+The normal-start task is not merely sparse; its causal horizon is much longer than
+the learner's effective update horizon. The only observed normal-start Floor 3
+entry took 2,024 turns. With the current `gamma=0.99`, a reward received 2,024
+turns later has a discount multiplier of approximately `1.5e-9`. Even at 500
+turns the multiplier is only about `0.0066`. GAE shortens the practical policy
+credit horizon further: `gamma * lambda = 0.9405`, whose weight falls below one
+percent after about 75 turns. The 32-step recurrent chunks also truncate gradient
+flow through the LSTM, although the carried hidden state and explicit map memory
+can still transport information forward at inference time.
+
+These numbers expose a design flaw if Zone 2 or floor completion is expected to
+teach arbitrary early-floor decisions directly. Making the terminal reward larger
+does not repair the vanishing temporal association, and raising `gamma` alone
+trades the problem for higher-variance value targets. Fixed-length truncated
+backpropagation is also known to introduce gradient bias
+([Aicher et al., UAI 2020](https://proceedings.mlr.press/v115/aicher20a.html)).
+
+The current response is therefore a task decomposition, not another scalar reward
+tweak:
+
+1. learn reproducible local competencies inside the 10--90% success band;
+2. retain rare successful recurrent sequences instead of discarding them after a
+   single PPO update;
+3. move legal live start boundaries backward only after frozen-policy success;
+4. keep floor exit, boss entry, boss clear, and zone entry as outcome-aligned
+   intermediate boundaries; and
+5. evaluate the composed policy from untouched normal starts on disjoint seeds.
+
+This follows the central result of reverse curriculum generation: begin near a
+sparse goal and expand the start distribution as competence improves
+([Florensa et al., CoRL 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+If legal trace tails plus self-imitation still cannot compose across floors, the
+next algorithmic comparison should be explicit temporal abstraction or learned
+return redistribution—not an unbounded search over hand-written reward weights.
+RUDDER, for example, was designed specifically to move delayed return toward the
+state-action events that caused it and reported its largest PPO improvements on
+delayed-reward games
+([Arjona-Medina et al., NeurIPS 2019](https://proceedings.neurips.cc/paper/2019/hash/16105fb9cc614fc29e1bda00dab60d41-Abstract.html)).
+
+### Trace-tail generalization limit
+
+A qualified trace tail is deliberately seed-specific: replaying its prefix must
+recreate the exact live observations before learner control begins. Three distinct
+qualified seeds are enough to test whether a boundary is learnable, but they are
+not evidence that the resulting policy generalizes across procedural layouts.
+The EXP-0025 same-seed frozen gate may authorize an earlier handoff only. Before
+contracting player health or moving the start to Floor 3, the full-boss policy must
+clear fresh Death Metal seeds with the prefix disabled. Training trace seeds,
+qualification replays, and assisted starts can never count toward normal-start
+promotion.
