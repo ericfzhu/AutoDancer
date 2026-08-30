@@ -1743,3 +1743,23 @@ reproduce exactly. This gives a legal, outcome-calibrated phase-3 pool without a
 new game-state mutation. The learner still needs a fresh held-out bank containing
 every seed unconditionally; success on the eight acquisition seeds is not itself
 generalization.
+
+Boundary acquisition alone is not enough: the learner's conditional success
+from that boundary must also lie in a learnable range. Florensa et al. used
+`Rmin=0.1` and `Rmax=0.9` for curriculum starts. Across all 216 EXP-0022 held-out
+episodes, the source reached phase 3 twenty-six times but cleared once, only
+`3.8%` conditional success—still below that band. A legal health-based boundary
+is closer to the goal and does not mutate state: hand off when the guide's real
+actions produce visible Death Metal health at or below three. Historical data
+contains two such trajectories and one clear (`50%`), but they came from
+different checkpoints/action streams and are much too sparse to establish the
+true rate.
+
+The successor calibration should therefore test naturally reached `health<=3`
+and phase-3 boundaries separately, with repeated learner action streams after
+each exact handoff. Choose the farthest boundary whose conditional completion
+confidence is consistent with the declared 10–90% band. If neither qualifies,
+move still closer using a naturally reached low-health boundary; never write boss
+health directly. As competence rises, expand backward through health/phase
+boundaries and then the full boss. This applies reverse curriculum to the
+learner's actual success probability rather than to a semantic phase label.
