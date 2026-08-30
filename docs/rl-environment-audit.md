@@ -1811,3 +1811,28 @@ process or defaults:
 All controls are opt-in, so legacy checkpoints and the already-running EXP-0024
 process retain their original optimizer layout and behavior. The next declared
 arm can therefore isolate retention from reward and start-state changes.
+
+### Previous reward is useful history, but it is also an API contract
+
+Removing previous reward from the recurrent actor is not automatically the
+right correction. Recurrent model-free baselines for POMDPs report that previous
+action and reward can materially improve performance because they help the RNN
+infer hidden state
+([Ni et al., 2022](https://proceedings.mlr.press/v162/ni22a.html)). R2D2-style
+agents likewise commonly include the previous action and reward in the recurrent
+input. In NecroDancer, damage, pickups, and milestone rewards can reveal events
+that are only partially represented by one instantaneous grid.
+
+The flaw is therefore not *having* reward history; it is allowing an experimental
+shaping function to redefine that history silently. Never Give Up explicitly
+conditions its recurrent agent on separate intrinsic and extrinsic rewards and
+notes that behavior encoded through persistent intrinsic reward cannot simply be
+turned off; it trains a distinct exploitative policy for the extrinsic objective
+([Badia et al., 2020](https://openreview.net/forum?id=Sye57xStvB)). AutoDancer's
+analogue is to keep the actor feedback stream stable and semantically named while
+letting the optimizer reward vary independently. A future architecture can
+replace scalar shaping feedback with a fixed vector of observable task events,
+such as damage dealt, damage received, item acquired, and floor transition. That
+would retain useful history without coupling deployment behavior to reward-weight
+experiments. It requires its own architecture comparison; it must not be folded
+into the immediate retention-controlled boss experiment.
