@@ -2031,6 +2031,12 @@ the three-distinct-seed fresh-replay gate and records every rejected candidate.
 This selection sees only the disclosed training bank; promotion remains reserved
 for later frozen-policy evaluation on disjoint seeds.
 
+Recoverable background launchers publish their PID, process start time, and a
+periodic atomic heartbeat while waiting. A dependent stage fails clearly when its
+upstream waiting heartbeat is stale instead of waiting forever. Long active trace
+searches are governed by their own per-report evidence and are not mistaken for a
+waiting launcher heartbeat.
+
 The first consumer is EXP-0025. It trains three independent PPO trials on at most
 the final 16 actions of every qualified trace, with the earlier actions replayed
 only through the live controller. Conditional acquisition must exceed 10% in

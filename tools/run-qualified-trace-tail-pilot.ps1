@@ -32,12 +32,15 @@ $mod = Join-Path $repoRoot "mods\AutoDancer"
 $qualification = Join-Path $repoRoot "runs\controller-qualification-player-health-only-world-ready-memory-controlled\qualification.json"
 $trackingPath = (Join-Path $repoRoot ".runtime\mlflow\mlflow.db").Replace("\", "/")
 $trackingUri = "sqlite:///$trackingPath"
+$pilotStartedAt = (Get-Date).ToUniversalTime().ToString("o")
 [System.IO.Directory]::CreateDirectory($root) | Out-Null
 
 function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorText = "") {
     $payload = [ordered]@{
         schema_version = 1
         experiment_id = "EXP-0025"
+        process_id = $PID
+        process_started_at = $pilotStartedAt
         status = $Status
         trial = $Trial
         error = $ErrorText
@@ -88,10 +91,20 @@ function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
 try {
     Write-PilotStatus "waiting-for-qualified-traces"
     while (-not (Test-Path -LiteralPath $searchStatusPath -PathType Leaf)) {
+        Write-PilotStatus "waiting-for-qualified-traces"
         $handoff = Join-Path $traceRoot "handoff-status.json"
         if (Test-Path -LiteralPath $handoff -PathType Leaf) {
             $handoffPayload = Get-Content -LiteralPath $handoff -Raw | ConvertFrom-Json
             if ([string]$handoffPayload.status -eq "failed") { throw "Trace search failed: $($handoffPayload.error)" }
+            if ([string]$handoffPayload.status -eq "waiting-for-exp0024") {
+                $heartbeatAge = (
+                    [DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse([string]$handoffPayload.updated_at)
+                ).TotalSeconds
+                $heartbeatTimeout = [math]::Max(4 * $PollSeconds, 120)
+                if ($heartbeatAge -gt $heartbeatTimeout) {
+                    throw "Trace-search handoff heartbeat is stale after $([math]::Round($heartbeatAge, 1)) seconds"
+                }
+            }
         }
         Start-Sleep -Seconds $PollSeconds
     }

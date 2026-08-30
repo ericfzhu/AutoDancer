@@ -20,6 +20,7 @@ $traceRoot = Resolve-RepositoryPath $RunDir
 $pipelineStatus = Join-Path $experiment "pipeline-status.json"
 $comparisonPath = Join-Path $experiment "comparison.json"
 $handoffStatus = Join-Path $traceRoot "handoff-status.json"
+$handoffStartedAt = (Get-Date).ToUniversalTime().ToString("o")
 [System.IO.Directory]::CreateDirectory($traceRoot) | Out-Null
 
 function Write-HandoffStatus(
@@ -31,6 +32,8 @@ function Write-HandoffStatus(
 ) {
     $payload = [ordered]@{
         schema_version = 1
+        process_id = $PID
+        process_started_at = $handoffStartedAt
         status = $Status
         selected_trial = $Trial
         selection_reason = $Reason
@@ -57,6 +60,7 @@ try {
         if ([string]$pipeline.status -in @("failed", "error")) {
             throw "EXP-0024 failed: $($pipeline.error)"
         }
+        Write-HandoffStatus "waiting-for-exp0024"
         Start-Sleep -Seconds $PollSeconds
     }
 

@@ -16,3 +16,5 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "autodancer.training.baseline" in source
     assert "stochastic-98001" in source
     assert "frozen final-policy episodes" in source
+    assert "process_started_at" in source
+    assert "Trace-search handoff heartbeat is stale" in source
