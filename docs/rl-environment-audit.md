@@ -1836,3 +1836,13 @@ such as damage dealt, damage received, item acquired, and floor transition. That
 would retain useful history without coupling deployment behavior to reward-weight
 experiments. It requires its own architecture comparison; it must not be folded
 into the immediate retention-controlled boss experiment.
+
+Standalone evaluation now resolves this feedback contract from checkpoint
+metadata by default. Legacy checkpoints implicitly use their recorded training
+reward because optimization and policy feedback were the same stream at the
+time. An explicit override remains available for controlled counterfactuals, but
+the report records both contracts and whether they match. This prevents an
+evaluation reward file from silently changing the deployed recurrent policy.
+EXP-0024 passes V5 explicitly for both source and trained checkpoints, preserving
+its already-declared matched-feedback comparison; the future retention arm can
+instead declare V4 feedback with V5 optimization as a separate causal change.
