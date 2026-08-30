@@ -1969,3 +1969,36 @@ imitation arm adds an optimization objective and must be evaluated separately.
 For either arm, successful traces and training seeds are development data only.
 Promotion still requires unassisted results on a complete unseen-seed bank, and
 normal-start Zone 2 remains the only final acceptance outcome.
+
+### Qualified trace-tail implementation
+
+The lower-risk arm is now executable rather than only proposed:
+
+- training journals and full-reset evaluation reports can produce immutable
+  successful-action banks whose source bytes, policy version, global step, run,
+  worker, seed, terminal outcome, event counts, and action contract are bound by
+  SHA-256 identities;
+- evaluation preserves an action sequence only for an unprefixed genuine success,
+  so a learner tail can never be mislabeled as a complete reset-to-goal trace;
+- `autodancer-demonstrations qualify` replays every complete sequence on a fresh
+  live reset, requires identical terminal gameplay evidence, and records a
+  normalized observation digest after reset and every acknowledged action;
+- `autodancer-train --trace-prefix-bank ... --trace-prefix-qualification ...`
+  rejects stale, restart-contaminated, differently masked, or differently seeded
+  evidence before collection;
+- the collector rechecks every digest and action mask while replaying, warms the
+  current learner's recurrent state and stable feedback stream from actual live
+  observations, rebases reward/turn accounting at the handoff, and places only
+  the declared final tail in PPO; and
+- the bank identity, qualification identity, selected trace per seed, action
+  contract, tail length, handoff digest, and recurrent-state mode are retained in
+  checkpoints and episode evidence. Exact resume cannot change them.
+
+The trace search must run only over a disclosed development/training seed bank.
+EXP-0024's held-out `930xx` seeds remain evaluation-only even if one clears. The
+first trace-tail experiment should search the existing `920xx` training bank with
+the selected full-boss checkpoint and multiple predeclared stochastic policy
+streams, qualify every resulting success, then start with a short tail whose
+conditional success is inside the 10--90% learning band. Tail length expands only
+after fresh evaluation of the preceding stage; the final full-boss policy is
+evaluated without any prefix before health or floor contraction begins.
