@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from autodancer.rewards import load_reward_config
-from autodancer.training.death_metal_aligned_compare import _aggregate
+from autodancer.training.death_metal_aligned_compare import MODES, _aggregate
 
 
 def test_outcome_aligned_guide_changes_only_conflicting_survival_terms() -> None:
@@ -63,6 +63,10 @@ def test_aligned_aggregate_exposes_zero_contact_timeout_and_actions() -> None:
     assert result["boss_damage"] == 8
     assert result["wait_rate"] == 460 / 600
     assert result["movement_rate"] == 140 / 600
+
+
+def test_exp0022_declares_all_reproducible_policy_modes() -> None:
+    assert MODES == ("deterministic", "stochastic-87001", "stochastic-87002")
 
 
 def test_exp0022_contract_and_launcher_pin_aligned_reward() -> None:

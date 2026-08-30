@@ -248,6 +248,9 @@ def compare(root: Path) -> dict[str, Any]:
         for mode in MODES
     ]
     parent = _aggregate(parent_reports)
+    parent["modes"] = {
+        mode: _aggregate([report]) for mode, report in zip(MODES, parent_reports, strict=True)
+    }
     reports_by_trial: dict[str, list[dict[str, Any]]] = {}
     trials: dict[str, dict[str, Any]] = {}
     for trial in TRIALS:
@@ -262,6 +265,9 @@ def compare(root: Path) -> dict[str, Any]:
         ]
         reports_by_trial[trial] = reports
         trials[trial] = _aggregate(reports)
+        trials[trial]["modes"] = {
+            mode: _aggregate([report]) for mode, report in zip(MODES, reports, strict=True)
+        }
     aggregate = _aggregate([report for reports in reports_by_trial.values() for report in reports])
     reproducible_trials = sum(summary["phase4_rate"] >= 0.20 for summary in trials.values())
     all_trials_contact = all(summary["boss_damage"] > 0 for summary in trials.values())
