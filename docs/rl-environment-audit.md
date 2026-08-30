@@ -1699,3 +1699,31 @@ level exit terminalizes it. Used only as `gamma*Phi(s')-Phi(s)`, it supplies loc
 dodge credit while telescoping out of complete trajectories. The arm must be
 compared against unchanged V5 after the retention correction, and selected only
 by phase depth and Zone 2 entry—not shaped return.
+
+## Curriculum seed selection is allowed to use training outcomes
+
+EXP-0024's 48 training seeds were selected outcome-blind by boss identity. That
+protects the held-out comparison from leakage, but it is stricter than a useful
+reverse curriculum requires. From the preceding held-out estimate of one clear
+in 72 episodes, a random 48-seed/action-stream bank has roughly a 51% plug-in
+chance of containing no clear at all. The first EXP-0024 trial empirically saw no
+clear in its first 566 episodes. A terminal-canceling potential preserves the
+task objective, but when every trajectory fails its total shaping return also
+cancels; it cannot manufacture the missing successful task label.
+
+Adaptive curricula are supposed to use performance on a **training calibration
+bank** to find intermediate-success starts. That is not evaluation leakage as
+long as the calibration bank is declared, excluded from every development and
+acceptance report, and the final policy is scored on the complete unseen-seed
+distribution. Outcome-blind selection remains correct for held-out evaluation
+seeds, not for constructing the acquisition curriculum itself.
+
+If EXP-0024 fails, calibrate legal phase-3 acquisition on a fresh disposable seed
+bank using the frozen source, fixed policy sample function, and attempt zero.
+Select only seed/action-stream pairs that reproducibly reach the official phase
+boundary, then train after the exact live handoff. This removes the 98.3% failed
+guide duty cycle observed in EXP-0023 without mutating game state or replaying a
+simulator. Evaluation must retain all seeds in its denominator and report both
+unconditional guide acquisition and conditional learner completion. A passing
+phase-3 skill then moves the handoff to phase 2 and the full boss; it cannot be
+promoted directly to normal-start competence.
