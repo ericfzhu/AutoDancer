@@ -1,0 +1,90 @@
+schema_version: 1
+id: EXP-0023
+title: Legal phase-3 Death Metal successor acquisition
+question: Can an A8 learner, handed the exact live game after a frozen guide legally reaches Death Metal phase 3, learn the remaining boss segment and enter Zone 2 repeatably across unseen seeds?
+hypothesis: EXP-0022 made phase 3 reachable but complete fights too sparse. Starting learner transitions only after an ordinary-action guide reaches phase 3 should supply enough final-segment experience for terminal-canceling boss-health potential and real level rewards to produce repeatable clears without rewarding failed partial damage.
+changed_blocks: [reward, training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-qualified
+  environment-semantics: legal-death-metal-phase3-handoff-v5
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: A8-phase3-successor-fresh-critic-v1
+  training-level-distribution: legal-natural-prefix-phase3-v2
+  runtime: async-native-pipe-v1
+  evaluation: legal-phase3-successor-v11
+invariants:
+  - the exact passed eight-worker one-million-transition controller qualification is required before training
+  - every attempt starts from normal seeded All Zones followed by real-game sequential GOTO to Zone 1 Floor 4
+  - player20 changes only Bard's starting current and maximum health; boss and boss-add state remains untouched
+  - the frozen guide acts through the same eleven-action acknowledged live controller as the learner
+  - a handoff requires observed boss health at or below four and at least three distinct official Death Metal actor phases
+  - visible boss-health loss is authoritative for legal direct and bomb damage; direct damage events remain diagnostic rather than a handoff prerequisite
+  - guide transitions never enter PPO and every learner fragment begins at the exact running post-action state
+  - learner recurrent state is warmed by the complete guide observation/action/reward sequence before handoff
+  - the learner reward rebases boss-health potential to zero at the exact handoff and terminally cancels failed partial progress
+  - direct boss damage and boss kill shaping are zero; only state potential and real floor, zone, or victory events can provide positive objective reward
+  - the 500-turn learner cutoff is a nonterminal bootstrapped collection truncation and receives no reward
+  - failed guide acquisitions remain recorded outcomes and in the unconditional evaluation denominator
+  - the source checkpoint, guide checkpoint, and initializer are the exact EXP-0022 seed-86002 final bytes
+  - source actor, recurrent transition, and logits are preserved while critic, optimizer, episode state, and RNG are fresh
+  - the inherited actor base is frozen for exactly ten PPO updates and then jointly optimized
+  - calibration, training, and evaluation game-seed banks are disjoint and calibration observes boss identity only
+  - exactly eight fixed-capacity workers, one policy version per rollout, and zero natural infrastructure contamination are required
+  - shaped return never selects a checkpoint; acquisition, live boss clear, and Zone 2 entry are the primary evidence
+  - no phase-3 or player20 result constitutes normal-start Zone 2 evidence
+arms:
+  - id: a8-player20-natural-phase3-potential
+    description: Three independent A8 trials initialized from EXP-0022 seed-86002, trained only after the same frozen policy legally reaches phase 3, using terminal-canceling visible-health potential.
+source:
+  checkpoint: runs/legal-death-metal-guide-v3/training/seed-86002/final.pt
+  checkpoint_sha256: 10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89
+  role: frozen natural-prefix guide and function-preserving learner initializer
+  evidence: runs/legal-death-metal-guide-v3/evaluation/seed-86002/stochastic-87001/report.json
+natural_prefix:
+  boss: DEATH_METAL
+  target_phase: 3
+  target_health: 4
+  max_guide_turns_per_attempt: 500
+  max_attempts: 8
+  max_failed_seeds_per_fragment: 16
+  guide_mode: stochastic
+  guide_policy_seed: 87001
+  recurrent_state: warm
+  guide_transitions_in_ppo: false
+  boundary: observed health loss plus three distinct official phase entity types
+calibration:
+  training_candidate_seed_range: 88001-88256
+  training_selection: ascending first 48 seeds whose official boss_type telemetry is DEATH_METAL
+  evaluation_candidate_seed_range: 89001-89256
+  evaluation_selection: ascending first 24 seeds whose official boss_type telemetry is DEATH_METAL
+  disclosure_limit: boss identity only; no guide acquisition, action, damage, survival, phase, or completion outcomes
+training:
+  training_seeds: [90001, 90002, 90003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  initialization: exact A8 actor and recurrent function, fresh critic and optimizer
+  freeze_base_updates: 10
+  transition_budget_per_trial: 122880
+  checkpoint_steps: [30720, 61440, 92160, 122880]
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  learner_max_turns_per_episode: 500
+  reward_config: configs/reward-death-metal-potential-v5.json
+  reward_config_sha256: b630fd1816b032f0e3a4222d61e8ef79529c816dbb440f27647c0cc967172131
+evaluation:
+  heldout_game_seeds: recorded before training from the declared evaluation calibration range
+  workers: 8
+  natural_prefix: exact declared guide and phase-3 handoff
+  learner_max_turns: 500
+  modes: [deterministic, stochastic-91021, stochastic-91022]
+  primary_outcome: unconditional live Zone 2 Floor 1 entry with every selected game seed retained in the denominator
+  secondary_outcomes: [guide phase-3 acquisition, completion conditional on acquisition, distinct completion seeds, death, boss health reduction after handoff, turns]
+  diagnostics: [boundary health and actor types, guide attempts and turns, action distribution, reward components, controller validity, policy version]
+decision_rule: Accept only if aggregate phase-3 acquisition is at least 50 percent, aggregate unconditional Zone 2 entry is at least 15 percent, completion conditional on acquired handoffs is at least 25 percent, at least two trials have at least 10 percent unconditional Zone 2 entry, at least eight distinct held-out game seeds complete across trials, every trial completes at least one seed, and all controller invariants hold. Rank passing trials lexicographically by distinct Zone 2 seeds, unconditional completion rate, conditional completion rate, acquisition rate, death rate, then learner turns. If acquisition fails, move the boundary back to separately declared phase 2; if acquisition succeeds but completion fails, reject V5/final-segment learning before changing architecture. A pass authorizes player-health contraction at the same boundary, then phase 2 and full-boss starts, and finally backward expansion through normal floors; it is not normal-start promotion.

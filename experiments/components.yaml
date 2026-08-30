@@ -56,6 +56,7 @@ blocks:
       assisted-single-boss-curriculum-v2: A tagged training-only real-game boss start which may set the player's starting health and current boss-objective health; assistance applies once at setup, emits no trajectory transition, and completion still requires the live game to enter the next zone.
       mixed-assisted-curriculum-v3: Per-episode live boss starts draw one of several declared assistance profiles from an exact checkpointed distribution, with mastered-start replay and same-task infrastructure recovery.
       player-health-only-boss-curriculum-v4: A tagged training-only real-game boss start may increase Bard's starting health but snapshots and requires exact preservation of every boss and boss-add objective before collection begins.
+      legal-death-metal-phase3-handoff-v5: A frozen policy uses only ordinary acknowledged actions from the player-health-only live boss start; the learner inherits the exact running state only after observed health loss and three distinct official Death Metal phase entities prove a legal phase-3 boundary.
   learner-diagnostics:
     versions:
       critic-health-v2: Explained variance plus value, return, raw-advantage, reward-scale, and pre-clipping gradient diagnostics.
@@ -83,6 +84,7 @@ blocks:
       single-boss-assisted-a2-v1: Warm-start the A2 encoder, recurrent policy, and actor from the corrected promoted checkpoint while resetting critic and optimizer, then train three independent 51,200-transition trials on one assisted boss distribution.
       assistance-reduction-with-replay-v1: First test frozen transfer to reduced player-health assistance; only if it fails, fine-tune three independent trials on the predeclared harder-to-mastered reset mixture with a fresh optimizer.
       A2-to-A8-actor-parity-fresh-critic-v2: Copy the complete A2 actor and recurrent function into zero-projected A8, retain exact initial action logits and recurrent state, initialize a fresh A8 critic and optimizer, freeze only inherited actor/recurrent base parameters for ten updates while training the fresh critic from update zero, then optimize jointly.
+      A8-phase3-successor-fresh-critic-v1: Preserve the exact A8 actor and recurrent function from the legal EXP-0022 guide, reset critic and optimizer for the phase-3 value distribution, freeze inherited actor/recurrent base parameters for ten updates, then optimize jointly.
   training-level-distribution:
     versions:
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
@@ -90,6 +92,7 @@ blocks:
       reverse-curriculum-sequential-goto-v1: Finite-pool training starts at a declared later real-game sequential level, then expands starts backward while final evaluation remains normal-start.
       mixed-curriculum-replay-v1: Each worker draws a checkpointed weighted per-episode reset specification, allowing a harder start distribution to retain a declared fraction of mastered starts without actor-timing bias; infrastructure recovery replays the same task and seed.
       prioritized-level-replay-v1: Planned finite-pool replay weighted by measured learning potential; not yet implemented or authorized for an experiment.
+      legal-natural-prefix-phase3-v2: A frozen stochastic guide reaches an observed legal Death Metal phase-3 state through ordinary live actions; guide transitions are excluded and PPO collects a contiguous learner fragment from the exact handoff with warmed recurrent state.
   runtime:
     versions:
       historical-sync: Earlier synchronous or partially synchronous live collection.
@@ -108,3 +111,4 @@ blocks:
       assistance-transfer-and-retention-v8: Gate reduced-assistance transfer on fresh single-boss seeds, then if optimization is required evaluate both the harder profile and matched-seed mastered-profile retention under deterministic and turn-keyed stochastic control.
       legal-death-metal-guide-v9: On disjoint telemetry-confirmed Death Metal seeds, score authoritative boss phase depth, phase-4 acquisition, damage, deaths, and Zone 2 entry under deterministic and two turn-keyed stochastic modes; acquisition failures remain in the denominator.
       legal-death-metal-guide-v10: V9 evaluation plus zero-contact timeout, wait, movement, and action-distribution diagnostics for the outcome-aligned guide reward.
+      legal-phase3-successor-v11: Evaluate exact-guide phase-3 acquisition and learner Zone 2 entry separately, retain failed acquisitions in the unconditional denominator, and report conditional completion only alongside acquisition and distinct-seed coverage.

@@ -1,6 +1,6 @@
 param(
     [int]$QualificationPid = 0,
-    [ValidateSet("EXP-0021", "EXP-0022")]
+    [ValidateSet("EXP-0021", "EXP-0022", "EXP-0023")]
     [string]$ExperimentId = "EXP-0021"
 )
 
@@ -15,7 +15,25 @@ $guideQualification = Join-Path $guideRepo "runs\controller-qualification-player
 $guideSource = Join-Path $guideRepo "runs\assisted-death-metal\training\seed-68002\final.pt"
 $guideSourceHash = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
 $guideExperimentId = $ExperimentId
-if ($guideExperimentId -eq "EXP-0022") {
+$guideNaturalPrefix = $false
+if ($guideExperimentId -eq "EXP-0023") {
+    $guideSource = Join-Path $guideRepo "runs\legal-death-metal-guide-v3\training\seed-86002\final.pt"
+    $guideSourceHash = "10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89"
+    $guideReward = Join-Path $guideRepo "configs\reward-death-metal-potential-v5.json"
+    $guideRewardHash = "b630fd1816b032f0e3a4222d61e8ef79529c816dbb440f27647c0cc967172131"
+    $guideRewardLineage = "DeathMetalPotentialV5"
+    $guideArm = "a8-player20-natural-phase3-potential"
+    $guideRoot = Join-Path $guideRepo "runs\legal-death-metal-phase3-potential"
+    $guideTrainingCandidateStart = 88001
+    $guideTrainingCandidateEnd = 88256
+    $guideEvaluationCandidateStart = 89001
+    $guideEvaluationCandidateEnd = 89256
+    $guideTrainingSeeds = @(90001, 90002, 90003)
+    $guidePolicySeed1 = 91021
+    $guidePolicySeed2 = 91022
+    $guideComparator = "autodancer.training.death_metal_phase3_compare"
+    $guideNaturalPrefix = $true
+} elseif ($guideExperimentId -eq "EXP-0022") {
     $guideReward = Join-Path $guideRepo "configs\reward-death-metal-guide-v3.json"
     $guideRewardHash = "ed80eade70d8133ada9cd7eff44db3fbff6a1657a6e07e7df72e0bd29891096e"
     $guideRewardLineage = "DeathMetalGuideV3"
@@ -108,7 +126,7 @@ function Test-GuideEvaluationValid {
     if (-not (Test-Path $Path)) { return $false }
     try {
         $report = Get-Content $Path -Raw | ConvertFrom-Json
-        return (
+        $valid = (
             $report.controller_valid -eq $true -and
             [int]$report.worker_restarts -eq 0 -and
             @($report.infrastructure_events).Count -eq 0 -and
@@ -120,6 +138,38 @@ function Test-GuideEvaluationValid {
             [bool]$report.source_reference -eq $SourceReference -and
             (@($report.seeds) -join ",") -eq $Seeds
         )
+        if (-not $valid) { return $false }
+        if ($guideNaturalPrefix) {
+            $prefix = $report.natural_prefix
+            $prefixValid = (
+                $null -ne $prefix -and
+                [int]$prefix.schema_version -eq 2 -and
+                $prefix.kind -eq "death-metal-natural-prefix-v2" -and
+                [int]$prefix.target_phase -eq 3 -and
+                [int]$prefix.target_health -eq 4 -and
+                [int]$prefix.max_guide_turns -eq 500 -and
+                [int]$prefix.max_attempts -eq 8 -and
+                [int]$prefix.max_failed_seeds_per_fragment -eq 16 -and
+                $prefix.deterministic_guide -eq $false -and
+                [int]$prefix.guide_policy_seed -eq 87001 -and
+                $prefix.recurrent_state_mode -eq "warm" -and
+                $prefix.guide_checkpoint_sha256 -eq $guideSourceHash
+            )
+            if (-not $prefixValid) { return $false }
+            if (-not $SourceReference) {
+                $checkpointPrefix = $report.checkpoint_natural_prefix
+                return (
+                    $null -ne $checkpointPrefix -and
+                    [int]$checkpointPrefix.target_phase -eq 3 -and
+                    [int]$checkpointPrefix.target_health -eq 4 -and
+                    [int]$checkpointPrefix.guide_policy_seed -eq 87001 -and
+                    $checkpointPrefix.recurrent_state_mode -eq "warm" -and
+                    $checkpointPrefix.guide_checkpoint_sha256 -eq $guideSourceHash
+                )
+            }
+            return $true
+        }
+        return $null -eq $report.natural_prefix
     } catch {
         return $false
     }
@@ -294,6 +344,18 @@ foreach ($trainingSeed in $guideTrainingSeeds) {
             "--mlflow-tracking-uri", $guideTrackingUri, "--controller-qualification", $guideQualification,
             "--dashboard", "8765"
         )
+        if ($guideNaturalPrefix) {
+            $arguments += @(
+                "--natural-prefix-guide", $guideSource,
+                "--natural-prefix-target-phase", "3",
+                "--natural-prefix-max-turns", "500",
+                "--natural-prefix-max-attempts", "8",
+                "--natural-prefix-max-failed-seeds", "16",
+                "--natural-prefix-guide-mode", "stochastic",
+                "--natural-prefix-policy-seed", "87001",
+                "--natural-prefix-recurrent-state", "warm"
+            )
+        }
         $latest = Join-Path $directory "latest.pt"
         if (Test-Path $latest) { $arguments += @("--resume", $latest) }
         else { $arguments += @("--initialize-from", $guideSource) }
@@ -324,6 +386,18 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
             "--trial-id", "$($checkpointEntry.Key)-$($mode.Name)", "--mlflow-tracking-uri", $guideTrackingUri,
             "--controller-qualification", $guideQualification, "--dashboard", "8765"
         )
+        if ($guideNaturalPrefix) {
+            $evaluationArguments += @(
+                "--natural-prefix-guide", $guideSource,
+                "--natural-prefix-target-phase", "3",
+                "--natural-prefix-max-turns", "500",
+                "--natural-prefix-max-attempts", "8",
+                "--natural-prefix-max-failed-seeds", "16",
+                "--natural-prefix-guide-mode", "stochastic",
+                "--natural-prefix-policy-seed", "87001",
+                "--natural-prefix-recurrent-state", "warm"
+            )
+        }
         if ($sourceReference) { $evaluationArguments += "--source-reference" }
         Invoke-GuideChecked -Stage "evaluation $($checkpointEntry.Key) $($mode.Name)" -Log (Join-Path $directory "console.log") -Arguments $evaluationArguments
         if (-not (Test-GuideEvaluationValid $output $mode.Mode $mode.PolicySeed $heldoutSeedArgument $sourceReference)) {

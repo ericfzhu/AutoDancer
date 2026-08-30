@@ -143,6 +143,13 @@ experiments:
   EXP-0022:
     spec: experiments/EXP-0022/experiment.yaml
     spec_sha256: 5f4b7d1213426284a167b2500da8c5dca7a52334ecab042c70b18c440bb94871
-    status: planned
+    status: rejected
     historical: false
     registered_at: '2026-08-30T03:46:41.2558848+00:00'
+    updated_at: '2026-08-30T09:05:52.8418709+00:00'
+  EXP-0023:
+    spec: experiments/EXP-0023/experiment.yaml
+    spec_sha256: 937f37341f11b7feaf3c40dc294a38a131bccd186f87dbea0a1bb3142178ea3b
+    status: planned
+    historical: false
+    registered_at: '2026-08-30T10:29:33.1288526+00:00'
