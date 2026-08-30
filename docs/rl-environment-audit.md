@@ -2116,6 +2116,16 @@ tweak:
    intermediate boundaries; and
 5. evaluate the composed policy from untouched normal starts on disjoint seeds.
 
+Episode horizons must expand with the start boundary. A 500-turn cap is suitable
+for the isolated boss task, but it is not a valid default for composed Zone 1
+training. In the frozen-A2 normal-start evidence, Floor 2 entries occurred between
+46 and 181 turns, while the only Floor 3 entry occurred at turn 2,024. A Floor 3,
+Floor 2, or Floor 1 curriculum therefore requires a separately declared horizon
+of at least 3,000 turns for development evaluation; otherwise timeout is partly an
+environment-imposed impossibility rather than policy behavior. Horizon truncation
+must bootstrap the value function and remain distinct from death, but an episode
+that times out before its target is still a curriculum failure.
+
 This follows the central result of reverse curriculum generation: begin near a
 sparse goal and expand the start distribution as competence improves
 ([Florensa et al., CoRL 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
