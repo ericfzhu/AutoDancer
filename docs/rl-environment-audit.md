@@ -1727,3 +1727,19 @@ simulator. Evaluation must retain all seeds in its denominator and report both
 unconditional guide acquisition and conditional learner completion. A passing
 phase-3 skill then moves the handoff to phase 2 and the full boss; it cannot be
 promoted directly to normal-start competence.
+
+The existing development reports already expose a better phase-3 acquisition
+contract. For the exact EXP-0024 source checkpoint, deterministic evaluation
+reached phase 3 on 8/24 seeds (`85010`, `85023`, `85065`, `85077`, `85100`,
+`85107`, `85108`, `85130`), stochastic stream `87001` on 4/24, and stream
+`87002` on 1/24. EXP-0023 chose `87001` because it contained the only full clear,
+but guide completion is irrelevant once the learner takes over at phase 3.
+Boundary acquisition reliability is the correct guide-selection metric.
+
+Those disclosed evaluation seeds are development history and may be reused only
+as a future training-calibration bank, never as unseen evidence. Before training,
+replay the deterministic guide on fresh launches and retain only boundaries that
+reproduce exactly. This gives a legal, outcome-calibrated phase-3 pool without a
+new game-state mutation. The learner still needs a fresh held-out bank containing
+every seed unconditionally; success on the eight acquisition seeds is not itself
+generalization.
