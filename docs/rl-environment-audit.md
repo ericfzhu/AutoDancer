@@ -2032,3 +2032,39 @@ The gate uses fresh frozen-final evaluations, not the cumulative training journa
 Each final checkpoint replays the qualified prefix and controls only the tail under
 deterministic and two predeclared stochastic streams. This prevents transient
 early competence followed by PPO forgetting from authorizing a harder boundary.
+
+## Rare-success retention after trace tails
+
+The trace-tail curriculum changes where PPO begins, but it still discards each
+successful on-policy fragment after the normal update epochs. It has no objective
+that explicitly preserves the rare action choices which produced a clear. This is
+a separate failure mode from start-state exploration. [Self-Imitation Learning
+(Oh et al., ICML 2018)](https://research.google/pubs/self-imitation-learning/)
+learns from an agent's own past good trajectories and reports gains when combined
+with PPO. [Demo Augmented Policy Gradient (Rajeswaran et al., RSS
+2018)](https://roboti.us/lab/papers/RajeswaranRSS18.pdf) first behavior-clones
+demonstrations and then retains a decaying demonstration gradient during policy
+optimization. [R2D3 (Paine et al., ICLR
+2020)](https://openreview.net/pdf?id=SygKyeHKDH) likewise shows that a small amount
+of demonstration replay can matter greatly in partially observed, hard-exploration
+tasks, although its recurrent off-policy value-learning algorithm is a much larger
+change than an auxiliary PPO loss.
+
+These results do not justify mixing imitation into EXP-0025: that experiment is
+the causal test of whether a legal start-distribution change alone is sufficient.
+If its frozen-final gate fails despite observing training clears, the next arm
+should test a decaying self-imitation/behavior-cloning loss on the qualified tail
+actions while keeping the environment, reward, PPO returns, and evaluation fixed.
+Because AutoDancer's actor is recurrent, a valid demonstration sample must retain
+the ordered live observations, previous actions, stable previous rewards, action
+masks, and episode boundary needed to reconstruct the hidden state; isolated
+state/action rows are not equivalent. The current bank stores action sequences and
+observation digests, not full learner inputs, so this arm requires a separately
+hash-bound compact observation-sequence artifact produced during fresh replay.
+
+That artifact must remain training-only, must never include the excluded `930xx`
+or later promotion seeds, and must not be counted as new environment transitions.
+The imitation term should update the actor only, decay toward zero, and be reported
+separately from PPO policy/value/entropy losses. Selection remains frozen live
+Zone 2 entry with the imitation path disabled. This is the predeclared algorithmic
+fallback; another reward revision would not address rare-success forgetting.
