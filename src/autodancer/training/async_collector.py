@@ -51,6 +51,7 @@ class ActorState:
     episode_extrinsic_return: float = 0.0
     episode_shaping_return: float = 0.0
     episode_events: list[dict[str, Any]] = field(default_factory=list)
+    episode_actions: list[int] = field(default_factory=list)
     furthest_zone: int = 0
     furthest_floor: int = 0
     boss_type: int = 0
@@ -718,6 +719,7 @@ class VersionedAsyncRolloutCollector:
             state.episode_extrinsic_return += float(info.get("extrinsic_reward", 0.0))
             state.episode_shaping_return += float(info.get("shaping_reward", 0.0))
             state.episode_events.extend(info.get("raw_events", []))
+            state.episode_actions.append(int(action))
             state.furthest_zone, state.furthest_floor = deeper_level(
                 (state.furthest_zone, state.furthest_floor),
                 (int(info.get("zone") or 0), int(info.get("floor") or 0)),
@@ -749,6 +751,7 @@ class VersionedAsyncRolloutCollector:
                         "boss_progress": state.boss_progress.snapshot(),
                         "turns": info.get("turns"),
                         "events": state.episode_events,
+                        "actions": state.episode_actions,
                         "curriculum_reset": state.reset_spec.as_dict(),
                         "curriculum_reset_id": state.reset_spec.id,
                         "natural_prefix": dict(state.prefix_metadata),

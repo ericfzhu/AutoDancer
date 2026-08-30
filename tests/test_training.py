@@ -62,6 +62,7 @@ def test_compact_episode_record_preserves_seed_and_outcome_identity() -> None:
             "boss_type": 2,
             "turns": 61,
             "events": [{"type": "damage"}, {"type": "damage"}, {"type": "kill"}],
+            "actions": [0, 1, 1, 4],
             "curriculum_reset": {"start_level": 4, "target_level": 5},
         },
         global_step=72704,
@@ -71,8 +72,20 @@ def test_compact_episode_record_preserves_seed_and_outcome_identity() -> None:
     assert record["status"] == "curriculum_complete"
     assert (record["furthest_zone"], record["furthest_floor"]) == (2, 1)
     assert record["event_counts"] == {"damage": 2, "kill": 1}
+    assert record["action_counts"] == [1, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0]
+    assert record["successful_action_sequence"] == [0, 1, 1, 4]
     assert record["global_step"] == 72704
     assert record["policy_version"] == 70
+
+
+def test_compact_episode_record_omits_failed_action_sequence() -> None:
+    record = compact_episode_record(
+        {"seed": 1, "status": "dead", "actions": [0, 1, 4]},
+        global_step=1024,
+        policy_version=1,
+    )
+    assert record["successful_action_sequence"] is None
+    assert record["action_counts"] == [1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]
 
 
 def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:

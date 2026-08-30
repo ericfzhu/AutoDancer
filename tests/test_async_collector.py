@@ -332,6 +332,8 @@ def test_async_collector_routes_weighted_episode_resets_and_records_outcomes() -
         "reduced",
         "replay",
     }
+    assert all(len(episode["actions"]) == 1 for episode in collector.completed_episodes)
+    assert all(0 <= episode["actions"][0] < 11 for episode in collector.completed_episodes)
     for worker in environment.environments.values():
         assert all(
             call_options is not None and "curriculum" in call_options

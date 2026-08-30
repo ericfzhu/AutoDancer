@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from autodancer.constants import ACTION_COUNT
 from autodancer.curriculum import fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.bridge import CURRICULUM_PROFILES
@@ -378,6 +379,12 @@ def compact_episode_record(
     for event in episode.get("events", []):
         name = str(event.get("kind") or event.get("type") or event.get("name") or "unknown")
         event_counts[name] = event_counts.get(name, 0) + 1
+    actions = [int(action) for action in episode.get("actions", [])]
+    action_counts = [0] * ACTION_COUNT
+    for action in actions:
+        if 0 <= action < len(action_counts):
+            action_counts[action] += 1
+    status = str(episode.get("status", ""))
     return {
         "schema_version": 1,
         "global_step": int(global_step),
@@ -385,7 +392,7 @@ def compact_episode_record(
         "worker_id": str(episode.get("worker_id", "")),
         "run_id": str(episode.get("run_id", "")),
         "seed": int(episode.get("seed", 0)),
-        "status": str(episode.get("status", "")),
+        "status": status,
         "return": float(episode.get("return", 0.0)),
         "extrinsic_return": float(episode.get("extrinsic_return", 0.0)),
         "shaping_return": float(episode.get("shaping_return", 0.0)),
@@ -395,6 +402,10 @@ def compact_episode_record(
         "boss_progress": dict(episode.get("boss_progress") or {}),
         "turns": int(episode.get("turns") or 0),
         "event_counts": event_counts,
+        "action_counts": action_counts,
+        "successful_action_sequence": (
+            actions if status in {"curriculum_complete", "won"} else None
+        ),
         "curriculum_reset": dict(episode.get("curriculum_reset") or {}),
         "natural_prefix": dict(episode.get("natural_prefix") or {}),
         "infrastructure_valid": bool(episode.get("infrastructure_valid", True)),
