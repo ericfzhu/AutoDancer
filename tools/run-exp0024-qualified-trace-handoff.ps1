@@ -39,6 +39,7 @@ function Write-HandoffStatus(
         selection_reason = $Reason
         selected_checkpoint = $Checkpoint
         error = $ErrorText
+        heartbeat_unix_seconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         updated_at = (Get-Date).ToUniversalTime().ToString("o")
     }
     $temporary = "$handoffStatus.tmp"

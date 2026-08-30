@@ -44,6 +44,7 @@ function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorT
         status = $Status
         trial = $Trial
         error = $ErrorText
+        heartbeat_unix_seconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         updated_at = (Get-Date).ToUniversalTime().ToString("o")
     }
     $temporary = "$pipelineStatusPath.tmp"
@@ -97,9 +98,7 @@ try {
             $handoffPayload = Get-Content -LiteralPath $handoff -Raw | ConvertFrom-Json
             if ([string]$handoffPayload.status -eq "failed") { throw "Trace search failed: $($handoffPayload.error)" }
             if ([string]$handoffPayload.status -eq "waiting-for-exp0024") {
-                $heartbeatAge = (
-                    [DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse([string]$handoffPayload.updated_at)
-                ).TotalSeconds
+                $heartbeatAge = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$handoffPayload.heartbeat_unix_seconds
                 $heartbeatTimeout = [math]::Max(4 * $PollSeconds, 120)
                 if ($heartbeatAge -gt $heartbeatTimeout) {
                     throw "Trace-search handoff heartbeat is stale after $([math]::Round($heartbeatAge, 1)) seconds"

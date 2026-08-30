@@ -18,3 +18,4 @@ def test_exp0024_trace_handoff_waits_selects_and_preserves_seed_split() -> None:
     assert "No successful full-reset traces|Trace search exhausted" in source
     assert "process_started_at" in source
     assert 'Write-HandoffStatus "waiting-for-exp0024"' in source
+    assert "heartbeat_unix_seconds" in source

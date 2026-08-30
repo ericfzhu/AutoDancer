@@ -18,3 +18,5 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "frozen final-policy episodes" in source
     assert "process_started_at" in source
     assert "Trace-search handoff heartbeat is stale" in source
+    assert "ToUnixTimeSeconds" in source
+    assert "DateTimeOffset]::Parse" not in source
