@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0023",
+  "decided_at": "2026-08-30T10:50:14.3561245Z",
+  "outcome": "inconclusive",
+  "selected_arm": null,
+  "evidence": [
+    "experiments/EXP-0023/preflight.json",
+    "runs/legal-death-metal-phase3-potential/training/seed-90001/lineage.json",
+    "runs/legal-death-metal-phase3-potential/calibration/training-candidates.json",
+    "runs/legal-death-metal-phase3-potential/calibration/evaluation-candidates.json"
+  ],
+  "mlflow_run_ids": [
+    "1d0539fa5da84487ab64697f35f7b4fd",
+    "43a19aadb521472c89d061f8acc9d1bd"
+  ],
+  "summary": "The live controller and eight-worker capacity were healthy, but guide acquisition occupied 236 of 240 sampled worker states. The 1.67% learner duty cycle implies roughly 8.0 days for one 122,880-transition trial at the measured 10.64 total transitions/second. The run was deliberately stopped before its first PPO update, so EXP-0023 is operationally inconclusive rather than a rejection of phase-3 learning or Reward V5. The next experiment retains the same source and V5 but trains from the full untouched boss start, making every action an on-policy learner transition."
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "experiment_id": "EXP-0023",
+  "measured_at": "2026-08-30T10:47:00Z",
+  "trial": "seed-90001",
+  "ppo_updates_completed": 0,
+  "accepted_learner_transitions": 0,
+  "dashboard_samples": 240,
+  "guide_samples": 236,
+  "learner_samples": 4,
+  "learner_duty_cycle": 0.016666666666666666,
+  "workers_seen": 8,
+  "fixed_capacity_preserved": true,
+  "natural_controller_failures": 0,
+  "estimated_learner_transitions_per_second_at_10_64_total_tps": 0.17733333333333334,
+  "estimated_days_per_122880_transition_trial": 8.020050125313283,
+  "termination": "owned run deliberately stopped before first PPO update after exact PID and process-command verification",
+  "scientific_interpretation": "operational infeasibility only; no reward, policy, or phase-learning conclusion"
+}

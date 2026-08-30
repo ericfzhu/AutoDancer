@@ -1,6 +1,6 @@
 param(
     [int]$QualificationPid = 0,
-    [ValidateSet("EXP-0021", "EXP-0022", "EXP-0023")]
+    [ValidateSet("EXP-0021", "EXP-0022", "EXP-0023", "EXP-0024")]
     [string]$ExperimentId = "EXP-0021"
 )
 
@@ -16,7 +16,23 @@ $guideSource = Join-Path $guideRepo "runs\assisted-death-metal\training\seed-680
 $guideSourceHash = "bdc7d2e2d381cf7ab873d20ff10eafd6e1d15294988c9450d95f253cd3c3dda5"
 $guideExperimentId = $ExperimentId
 $guideNaturalPrefix = $false
-if ($guideExperimentId -eq "EXP-0023") {
+if ($guideExperimentId -eq "EXP-0024") {
+    $guideSource = Join-Path $guideRepo "runs\legal-death-metal-guide-v3\training\seed-86002\final.pt"
+    $guideSourceHash = "10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89"
+    $guideReward = Join-Path $guideRepo "configs\reward-death-metal-potential-v5.json"
+    $guideRewardHash = "b630fd1816b032f0e3a4222d61e8ef79529c816dbb440f27647c0cc967172131"
+    $guideRewardLineage = "DeathMetalPotentialV5"
+    $guideArm = "a8-player20-full-boss-potential"
+    $guideRoot = Join-Path $guideRepo "runs\legal-death-metal-full-boss-potential"
+    $guideTrainingCandidateStart = 92001
+    $guideTrainingCandidateEnd = 92256
+    $guideEvaluationCandidateStart = 93001
+    $guideEvaluationCandidateEnd = 93256
+    $guideTrainingSeeds = @(94001, 94002, 94003)
+    $guidePolicySeed1 = 95001
+    $guidePolicySeed2 = 95002
+    $guideComparator = "autodancer.training.death_metal_full_boss_compare"
+} elseif ($guideExperimentId -eq "EXP-0023") {
     $guideSource = Join-Path $guideRepo "runs\legal-death-metal-guide-v3\training\seed-86002\final.pt"
     $guideSourceHash = "10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89"
     $guideReward = Join-Path $guideRepo "configs\reward-death-metal-potential-v5.json"

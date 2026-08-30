@@ -1,0 +1,75 @@
+schema_version: 1
+id: EXP-0024
+title: Full-boss terminal-canceling Death Metal acquisition
+question: Can the best EXP-0022 A8 policy learn repeatable untouched Death Metal clears when all full-boss actions are on-policy learner transitions and failed partial boss progress has zero discounted shaping return?
+hypothesis: EXP-0022 already supplies contact, phase-3 behavior, and one legal clear, while EXP-0023 proves guide-gated collection is operationally unusable. Warm-starting that policy on full player20 Death Metal under visible-health PBRS should preserve its local competence, remove the return incentive for damage-then-die farming, and increase held-out Zone 2 entries without discarding guide actions.
+changed_blocks: [reward, optimization-schedule, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-qualified
+  environment-semantics: player-health-only-boss-curriculum-v4
+  learner-diagnostics: boss-objective-v3
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v1-corrected-truncation
+  optimization-schedule: A8-full-boss-v5-fresh-critic-v1
+  training-level-distribution: reverse-curriculum-sequential-goto-v1
+  runtime: async-native-pipe-v1
+  evaluation: legal-full-boss-potential-v12
+invariants:
+  - the exact passed eight-worker one-million-transition controller qualification is required before training
+  - Bard begins from normal seeded All Zones followed by real-game sequential GOTO to Zone 1 Floor 4
+  - player20 changes only Bard's current and maximum health; boss and boss-add state remains untouched
+  - every game action after reset is selected by the frozen rollout version of the learner and enters its contiguous on-policy fragment
+  - no guide, demonstration, snapshot restoration, fabricated state, or direct boss mutation is used
+  - visible boss-health reduction from the real full-health start defines the bounded state potential and credits direct weapons and bombs equally
+  - direct boss damage, boss kill, ordinary enemy, survival, and death shaping are zero
+  - failed partial progress is terminally canceled; a client time limit retains potential and bootstraps because it is not an MDP terminal
+  - real floor and zone completion remain task reward and shaped return never selects a checkpoint
+  - source actor, recurrent transition, and logits are preserved while critic, optimizer, episode state, and RNG are fresh
+  - the inherited actor base is frozen for exactly ten PPO updates and then jointly optimized
+  - calibration, training, and evaluation banks are disjoint and calibration observes boss identity only
+  - every selected seed is telemetry-confirmed Death Metal and every held-out seed remains in the denominator
+  - exactly eight fixed-capacity workers, one policy version per rollout, and zero natural infrastructure contamination are required
+  - player20 full-boss success is downstream acquisition evidence only and does not count as normal-start Zone 2
+arms:
+  - id: a8-player20-full-boss-potential
+    description: Three A8 trials warm-started from EXP-0022 seed-86002 and trained from the untouched full Death Metal start under terminal-canceling visible-health potential.
+source:
+  checkpoint: runs/legal-death-metal-guide-v3/training/seed-86002/final.pt
+  checkpoint_sha256: 10c1be7bd9e76e4fe3ec7265cc6f712170a3fa1c07b851014c40d2ab111e3b89
+  evidence: runs/legal-death-metal-guide-v3/evaluation/seed-86002/stochastic-87001/report.json
+calibration:
+  training_candidate_seed_range: 92001-92256
+  training_selection: ascending first 48 seeds whose official boss_type telemetry is DEATH_METAL
+  evaluation_candidate_seed_range: 93001-93256
+  evaluation_selection: ascending first 24 seeds whose official boss_type telemetry is DEATH_METAL
+  disclosure_limit: boss identity only; no action, damage, phase, survival, or completion outcomes
+training:
+  training_seeds: [94001, 94002, 94003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  initialization: exact A8 actor and recurrent function, fresh critic and optimizer
+  freeze_base_updates: 10
+  transition_budget_per_trial: 122880
+  checkpoint_steps: [30720, 61440, 92160, 122880]
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns_per_episode: 500
+  reward_config: configs/reward-death-metal-potential-v5.json
+  reward_config_sha256: b630fd1816b032f0e3a4222d61e8ef79529c816dbb440f27647c0cc967172131
+evaluation:
+  heldout_game_seeds: recorded before training from the declared evaluation calibration range
+  workers: 8
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  max_turns: 500
+  modes: [deterministic, stochastic-95001, stochastic-95002]
+  primary_outcome: unconditional live Zone 2 Floor 1 entry
+  secondary_outcomes: [distinct completion seeds, phase depth, observed boss-health reduction, boss kills, death, timeout, learner turns]
+  diagnostics: [action distribution, reward components, boss actor types, initial and minimum boss health, entropy, KL, clipping, gradients, controller validity]
+decision_rule: Accept only if the three-final aggregate live Zone 2 entry rate is at least 10 percent, at least two trials enter Zone 2 on at least 5 percent of held-out episodes, at least six distinct held-out game seeds complete across trials, every trial completes at least one seed, aggregate mean phase depth and completion rate both improve over the matched source, and all controller invariants hold. Rank passing trials lexicographically by distinct Zone 2 seeds, completion rate, mean phase depth, death rate, then turns. A pass authorizes a separately declared player-health contraction with mastered full-boss replay; a failure rejects full-boss V5 at this source and requires a more sample-efficient skill-learning mechanism rather than more shaping. No result is normal-start promotion.
