@@ -13,7 +13,11 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from autodancer.training.model import PolicyModel, current_representation_gradient_norms
+from autodancer.training.model import (
+    PolicyModel,
+    actor_and_critic_parameters,
+    current_representation_gradient_norms,
+)
 
 
 def _checkpoint_sha256(path: Path) -> str:
@@ -32,6 +36,9 @@ class PPOConfig:
     gae_lambda: float = 0.95
     clip_range: float = 0.2
     learning_rate: float = 3.0e-4
+    actor_learning_rate: float | None = None
+    critic_learning_rate: float | None = None
+    target_kl: float | None = None
     entropy_coef: float = 0.01
     value_coef: float = 0.5
     max_grad_norm: float = 0.5
@@ -47,6 +54,14 @@ class PPOConfig:
             raise ValueError("gamma must be in (0, 1]")
         if not 0.0 <= self.gae_lambda <= 1.0:
             raise ValueError("gae_lambda must be in [0, 1]")
+        if self.learning_rate <= 0.0:
+            raise ValueError("learning_rate must be positive")
+        if self.actor_learning_rate is not None and self.actor_learning_rate <= 0.0:
+            raise ValueError("actor_learning_rate must be positive when configured")
+        if self.critic_learning_rate is not None and self.critic_learning_rate <= 0.0:
+            raise ValueError("critic_learning_rate must be positive when configured")
+        if self.target_kl is not None and self.target_kl <= 0.0:
+            raise ValueError("target_kl must be positive when configured")
 
 
 @dataclass(slots=True)
@@ -112,7 +127,25 @@ class RecurrentPPO:
         self.model = model.to(device)
         self.config = config
         self.device = device
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.learning_rate)
+        if config.actor_learning_rate is None and config.critic_learning_rate is None:
+            # Preserve the optimizer layout in all existing checkpoints.
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.learning_rate)
+        else:
+            actor_parameters, critic_parameters = actor_and_critic_parameters(self.model)
+            self.optimizer = torch.optim.Adam(
+                [
+                    {
+                        "params": actor_parameters,
+                        "lr": config.actor_learning_rate or config.learning_rate,
+                        "group_name": "actor",
+                    },
+                    {
+                        "params": critic_parameters,
+                        "lr": config.critic_learning_rate or config.learning_rate,
+                        "group_name": "critic",
+                    },
+                ]
+            )
         self.checkpoint_metadata = dict(checkpoint_metadata or {})
         self.global_step = 0
         self.updates = 0
@@ -130,9 +163,12 @@ class RecurrentPPO:
             gae_lambda=config.gae_lambda,
         )
         raw_advantages = advantages
-        advantages = (raw_advantages - raw_advantages.mean()) / (
-            raw_advantages.std() + 1.0e-8
+        advantage_std = (
+            raw_advantages.std()
+            if raw_advantages.numel() > 1
+            else raw_advantages.std(unbiased=False)
         )
+        advantages = (raw_advantages - raw_advantages.mean()) / (advantage_std + 1.0e-8)
         time_steps, workers = rollout.actions.shape
         chunks = [
             (worker, start)
@@ -149,6 +185,9 @@ class RecurrentPPO:
         }
         representation_gradients: dict[str, float] | None = None
         self.model.train()
+        optimizer_steps = 0
+        completed_epochs = 0
+        kl_early_stop = False
         for _ in range(config.update_epochs):
             random.shuffle(chunks)
             for batch_start in range(0, len(chunks), config.minibatch_chunks):
@@ -180,6 +219,14 @@ class RecurrentPPO:
                 )
                 log_ratio = log_probs - old_log_probs
                 ratio = log_ratio.exp()
+                approximate_kl = float(((ratio - 1) - log_ratio).mean().detach())
+                if config.target_kl is not None and approximate_kl > config.target_kl:
+                    metrics["approx_kl"].append(approximate_kl)
+                    metrics["clip_fraction"].append(
+                        float((torch.abs(ratio - 1) > config.clip_range).float().mean().detach())
+                    )
+                    kl_early_stop = True
+                    break
                 unclipped = ratio * batch_advantages
                 clipped = ratio.clamp(1 - config.clip_range, 1 + config.clip_range)
                 policy_loss = -torch.minimum(unclipped, clipped * batch_advantages).mean()
@@ -198,18 +245,31 @@ class RecurrentPPO:
                     self.model.parameters(), config.max_grad_norm
                 )
                 self.optimizer.step()
+                optimizer_steps += 1
                 with torch.no_grad():
                     metrics["policy_loss"].append(float(policy_loss))
                     metrics["value_loss"].append(float(value_loss))
                     metrics["entropy"].append(float(entropy_mean))
-                    metrics["approx_kl"].append(float(((ratio - 1) - log_ratio).mean()))
+                    metrics["approx_kl"].append(approximate_kl)
                     metrics["clip_fraction"].append(
                         float((torch.abs(ratio - 1) > config.clip_range).float().mean())
                     )
                     metrics["gradient_norm_preclip"].append(float(gradient_norm))
+            if kl_early_stop:
+                break
+            completed_epochs += 1
         self.global_step += time_steps * workers
         self.updates += 1
-        result = {name: float(np.mean(values)) for name, values in metrics.items()}
+        result = {
+            name: (float(np.mean(values)) if values else 0.0) for name, values in metrics.items()
+        }
+        result.update(
+            {
+                "optimizer_steps": float(optimizer_steps),
+                "update_epochs_completed": float(completed_epochs),
+                "kl_early_stop": float(kl_early_stop),
+            }
+        )
         with torch.no_grad():
             target_variance = returns.var(unbiased=False)
             explained_variance = torch.where(
@@ -234,10 +294,7 @@ class RecurrentPPO:
             }
         result.update({name: float(value) for name, value in diagnostics.items()})
         result.update(
-            {
-                f"gradient_{name}": value
-                for name, value in (representation_gradients or {}).items()
-            }
+            {f"gradient_{name}": value for name, value in (representation_gradients or {}).items()}
         )
         return result
 
@@ -275,7 +332,12 @@ class RecurrentPPO:
         saved_metadata = dict(payload.get("checkpoint_metadata", {}))
         if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
             raise ValueError("Checkpoint training metadata does not match the current run")
-        if payload.get("config") != asdict(self.config):
+        saved_config = dict(payload.get("config", {}))
+        # Optional retention controls were added after the first schema-9
+        # checkpoints. Their disabled values reproduce the original behavior.
+        for key in ("actor_learning_rate", "critic_learning_rate", "target_kl"):
+            saved_config.setdefault(key, None)
+        if saved_config != asdict(self.config):
             raise ValueError("Checkpoint PPO configuration does not match the current run")
         self.model.load_state_dict(payload["model"])
         self.checkpoint_metadata = saved_metadata
@@ -327,9 +389,7 @@ class RecurrentPPO:
             allowed_missing = {
                 name
                 for name in target
-                if name.startswith(
-                    ("base.critic.", "adapter.", "adapter_projection.")
-                )
+                if name.startswith(("base.critic.", "adapter.", "adapter_projection."))
             }
             if unexpected or set(missing) != allowed_missing:
                 raise ValueError(
@@ -368,9 +428,7 @@ class RecurrentPPO:
             transferred = {f"base.{name}": value for name, value in source.items()}
             missing, unexpected = self.model.load_state_dict(transferred, strict=False)
             allowed_missing = {
-                name
-                for name in target
-                if name == "adapter_gate" or name.startswith("adapter.")
+                name for name in target if name == "adapter_gate" or name.startswith("adapter.")
             }
             if unexpected or set(missing) != allowed_missing:
                 raise ValueError("Architecture-2 checkpoint did not exactly populate A7 base")
@@ -513,9 +571,7 @@ class RecurrentPPO:
             transferred = {f"base.{name}": value for name, value in payload["model"].items()}
             missing, unexpected = self.model.load_state_dict(transferred, strict=False)
             allowed_missing = {
-                name
-                for name in target
-                if name.startswith(("adapter.", "adapter_projection."))
+                name for name in target if name.startswith(("adapter.", "adapter_projection."))
             }
             if unexpected or set(missing) != allowed_missing:
                 raise ValueError("Architecture-2 checkpoint did not exactly populate A8 base")

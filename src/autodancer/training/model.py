@@ -303,7 +303,7 @@ class RecurrentActorCritic(nn.Module):
                     torch.stack(
                         (
                             self._scale(grid[..., int(GridChannel.PRICE_AMOUNT)]),
-                self._scale(grid[..., int(GridChannel.PRICE_HEALTH_COST)]),
+                            self._scale(grid[..., int(GridChannel.PRICE_HEALTH_COST)]),
                             self._scale(grid[..., int(GridChannel.TRAP_ACTIVATION_DS)]),
                             self._scale(grid[..., int(GridChannel.TRAP_FAILURE_DS)]),
                             self._scale(grid[..., int(GridChannel.TELL_ANIMATION_DS)]),
@@ -695,6 +695,32 @@ class ProjectedAdapterActorCritic(nn.Module):
 PolicyModel = RecurrentActorCritic | AdapterActorCritic | ProjectedAdapterActorCritic
 
 
+def is_critic_parameter(name: str) -> bool:
+    """Return whether a named policy parameter belongs exclusively to the critic."""
+    return name.startswith("critic.") or name.startswith("base.critic.")
+
+
+def set_actor_trainable(model: PolicyModel, trainable: bool) -> None:
+    """Freeze or restore the complete actor while leaving the critic trainable.
+
+    An A8 actor includes its inherited A2 path, adapter, and adapter projection;
+    freezing only ``model.base`` does not preserve the transferred policy.
+    """
+    for name, parameter in model.named_parameters():
+        parameter.requires_grad_(trainable or is_critic_parameter(name))
+
+
+def actor_and_critic_parameters(
+    model: PolicyModel,
+) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
+    """Partition every model parameter into disjoint actor and critic groups."""
+    actor: list[nn.Parameter] = []
+    critic: list[nn.Parameter] = []
+    for name, parameter in model.named_parameters():
+        (critic if is_critic_parameter(name) else actor).append(parameter)
+    return actor, critic
+
+
 def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, ...]]:
     """Return group-specific parameter prefixes, excluding shared downstream layers."""
     adapted = isinstance(model, (AdapterActorCritic, ProjectedAdapterActorCritic))
@@ -703,9 +729,7 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
         "local_terrain": tuple(
             prefix + name for name in ("terrain_class.", "terrain_type.", "visibility.")
         ),
-        "local_actors": tuple(
-            prefix + name for name in ("actor_class.", "actor_type.", "status.")
-        ),
+        "local_actors": tuple(prefix + name for name in ("actor_class.", "actor_type.", "status.")),
         "local_items_traps": tuple(
             prefix + name for name in ("item_class.", "item_type.", "trap.")
         ),

@@ -1791,3 +1791,23 @@ compact per-episode records containing worker, seed, run ID, policy version,
 status, turns, phase depth, minimum boss health, task return, and infrastructure
 validity. Aggregate metrics remain useful for dashboards but are insufficient
 for curriculum replay or lineage evidence.
+
+### Retention-control implementation
+
+The follow-up controls are now executable without changing EXP-0024's running
+process or defaults:
+
+- optimization reward and the actor's previous-reward feedback can use separate,
+  versioned `RewardConfig` streams in collection, natural-prefix warm-up,
+  periodic evaluation, and standalone evaluation;
+- `freeze_actor_updates` freezes every non-critic parameter, including the A8
+  adapter and projection, while leaving the fresh critic trainable;
+- actor and critic learning rates can be declared independently, and PPO records
+  actual optimizer steps while halting remaining minibatches above a target KL;
+- training appends compact `episodes.jsonl` records with exact seed, worker,
+  policy version, outcome, boss phase evidence, returns, and event counts before
+  update aggregates are cleared.
+
+All controls are opt-in, so legacy checkpoints and the already-running EXP-0024
+process retain their original optimizer layout and behavior. The next declared
+arm can therefore isolate retention from reward and start-state changes.

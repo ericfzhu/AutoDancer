@@ -29,6 +29,9 @@ from autodancer.training.model import (
     ModelConfig,
     ProjectedAdapterActorCritic,
     RecurrentActorCritic,
+    actor_and_critic_parameters,
+    is_critic_parameter,
+    set_actor_trainable,
 )
 from autodancer.training.natural_prefix import NaturalPrefixConfig
 from autodancer.training.ppo import (
@@ -39,9 +42,37 @@ from autodancer.training.ppo import (
 )
 from autodancer.training.train import (
     RolloutCollector,
+    compact_episode_record,
     evaluate_policy,
     require_reward_lineage_version,
 )
+
+
+def test_compact_episode_record_preserves_seed_and_outcome_identity() -> None:
+    record = compact_episode_record(
+        {
+            "worker_id": "worker-0003",
+            "seed": 92043,
+            "status": "curriculum_complete",
+            "return": 14.2,
+            "extrinsic_return": 15.0,
+            "shaping_return": -0.8,
+            "zone": 2,
+            "floor": 1,
+            "boss_type": 2,
+            "turns": 61,
+            "events": [{"type": "damage"}, {"type": "damage"}, {"type": "kill"}],
+            "curriculum_reset": {"start_level": 4, "target_level": 5},
+        },
+        global_step=72704,
+        policy_version=70,
+    )
+    assert record["seed"] == 92043
+    assert record["status"] == "curriculum_complete"
+    assert (record["furthest_zone"], record["furthest_floor"]) == (2, 1)
+    assert record["event_counts"] == {"damage": 2, "kill": 1}
+    assert record["global_step"] == 72704
+    assert record["policy_version"] == 70
 
 
 def observations(time_steps: int, workers: int) -> dict[str, torch.Tensor]:
@@ -555,6 +586,99 @@ def test_architecture_eight_base_freeze_keeps_fresh_critic_trainable() -> None:
 
     model.set_base_trainable(True)
     assert all(parameter.requires_grad for parameter in model.base.parameters())
+
+
+@pytest.mark.parametrize(
+    "model",
+    (
+        pytest.param(small_model(), id="a2"),
+        pytest.param(
+            ProjectedAdapterActorCritic(
+                AdapterConfig(
+                    cell_size=32,
+                    spatial_size=64,
+                    hidden_size=32,
+                    entity_limit=16,
+                    attention_layers=1,
+                    attention_heads=4,
+                    tactical_size=16,
+                    map_size=16,
+                    player_size=8,
+                    inventory_size=8,
+                )
+            ),
+            id="a8",
+        ),
+    ),
+)
+def test_complete_actor_freeze_preserves_only_critic_training(model) -> None:
+    set_actor_trainable(model, False)
+    assert all(
+        parameter.requires_grad == is_critic_parameter(name)
+        for name, parameter in model.named_parameters()
+    )
+    set_actor_trainable(model, True)
+    assert all(parameter.requires_grad for parameter in model.parameters())
+
+
+def test_separate_actor_and_critic_learning_rates_cover_model_once() -> None:
+    model = small_model()
+    actor, critic = actor_and_critic_parameters(model)
+    assert actor and critic
+    assert not ({id(parameter) for parameter in actor} & {id(parameter) for parameter in critic})
+    assert {id(parameter) for parameter in actor + critic} == {
+        id(parameter) for parameter in model.parameters()
+    }
+    algorithm = RecurrentPPO(
+        model,
+        PPOConfig(
+            rollout_length=1,
+            sequence_length=1,
+            actor_learning_rate=1.0e-5,
+            critic_learning_rate=1.0e-3,
+            target_kl=0.01,
+        ),
+        device=torch.device("cpu"),
+    )
+    assert [group["group_name"] for group in algorithm.optimizer.param_groups] == [
+        "actor",
+        "critic",
+    ]
+    assert [group["lr"] for group in algorithm.optimizer.param_groups] == [1.0e-5, 1.0e-3]
+
+
+def test_target_kl_stops_before_an_out_of_region_optimizer_step() -> None:
+    model = small_model()
+    algorithm = RecurrentPPO(
+        model,
+        PPOConfig(
+            rollout_length=1,
+            sequence_length=1,
+            update_epochs=4,
+            minibatch_chunks=1,
+            target_kl=0.01,
+        ),
+        device=torch.device("cpu"),
+    )
+    before = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    rollout = RolloutBatch(
+        observations=observations(1, 1),
+        actions=torch.zeros(1, 1, dtype=torch.long),
+        old_log_probs=torch.full((1, 1), -20.0),
+        rewards=torch.ones(1, 1),
+        dones=torch.zeros(1, 1, dtype=torch.bool),
+        terminations=torch.zeros(1, 1, dtype=torch.bool),
+        truncation_values=torch.zeros(1, 1),
+        episode_starts=torch.ones(1, 1, dtype=torch.bool),
+        values=torch.zeros(1, 1),
+        hiddens=model.initial_state(1).reshape(1, 1, 2, model.hidden_size),
+        next_value=torch.zeros(1),
+    )
+    metrics = algorithm.update(rollout)
+    assert metrics["kl_early_stop"] == 1.0
+    assert metrics["optimizer_steps"] == 0.0
+    assert all(torch.equal(value, before[name]) for name, value in model.state_dict().items())
+    assert all(np.isfinite(value) for value in metrics.values())
 
 
 def test_architecture_four_checkpoint_can_initialize_interaction_policy(

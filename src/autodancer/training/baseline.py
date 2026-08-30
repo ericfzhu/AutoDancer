@@ -767,6 +767,7 @@ def evaluate_live_policy(
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
+    policy_feedback_config: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -789,6 +790,7 @@ def evaluate_live_policy(
             guide_model=guide_model,
             natural_prefix=natural_prefix,
             guide_reward=guide_reward,
+            policy_feedback_config=policy_feedback_config,
         )
     if natural_prefix is not None or guide_model is not None:
         raise ValueError("natural-prefix evaluation requires a trained learner model")
@@ -935,7 +937,8 @@ def _evaluation_natural_prefix(
     contract_memory: ActionContractMemory,
     dashboard_state: DashboardState | None,
     guide_reward: RewardConfig,
-) -> tuple[dict[str, np.ndarray], dict[str, Any], Tensor, int, float]:
+    policy_feedback_config: RewardConfig | None,
+) -> tuple[dict[str, np.ndarray], dict[str, Any], Tensor, int, float, RewardTracker | None]:
     """Acquire the same legal guide boundary used by PPO collection."""
 
     total_turns = 0
@@ -953,6 +956,11 @@ def _evaluation_natural_prefix(
         last_learner_reward = 0.0
         guide_reward_tracker = RewardTracker(guide_reward)
         guide_reward_tracker.reset(observation, info)
+        learner_feedback_tracker = (
+            None if policy_feedback_config is None else RewardTracker(policy_feedback_config)
+        )
+        if learner_feedback_tracker is not None:
+            learner_feedback_tracker.reset(observation, info)
         for guide_turn in range(config.max_guide_turns):
             sample = natural_prefix_policy_sample(
                 config.guide_policy_seed,
@@ -998,6 +1006,15 @@ def _evaluation_natural_prefix(
                 terminated=bool(terminated),
                 truncated=bool(truncated),
             )
+            learner_step_reward = float(reward)
+            if learner_feedback_tracker is not None:
+                learner_step_reward, _ = learner_feedback_tracker.score(
+                    next_observation,
+                    next_info,
+                    next_info.get("raw_events", ()),
+                    terminated=bool(terminated),
+                    truncated=bool(truncated),
+                )
             if dashboard_state is not None:
                 dashboard_state.update_worker(
                     slot,
@@ -1008,7 +1025,7 @@ def _evaluation_natural_prefix(
                     reward=float(reward),
                 )
             last_action = action
-            last_learner_reward = float(reward)
+            last_learner_reward = float(learner_step_reward)
             if tracker.reached and not terminated and not truncated:
                 metadata = {
                     **config.specification(),
@@ -1034,6 +1051,7 @@ def _evaluation_natural_prefix(
                         next_learner_hidden,
                         last_action,
                         last_learner_reward,
+                        learner_feedback_tracker,
                     )
                 effective = contract_memory.reset_slot(slot, handed_observation)
                 return (
@@ -1042,6 +1060,7 @@ def _evaluation_natural_prefix(
                     learner_model.initial_state(1, device=device),
                     START_ACTION,
                     0.0,
+                    learner_feedback_tracker,
                 )
             observation = next_observation
             info = next_info
@@ -1049,7 +1068,7 @@ def _evaluation_natural_prefix(
             learner_hidden = next_learner_hidden
             previous_action = action
             guide_previous_reward = float(guide_step_reward)
-            learner_previous_reward = float(reward)
+            learner_previous_reward = float(learner_step_reward)
             if terminated or truncated:
                 break
         failures.append(
@@ -1087,6 +1106,7 @@ def _evaluate_model_async(
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
+    policy_feedback_config: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
     if recurrent_state_mode not in RECURRENT_STATE_MODES:
@@ -1143,6 +1163,11 @@ def _evaluate_model_async(
             hidden = model.initial_state(1, device=device)
             previous_action = START_ACTION
             previous_reward = 0.0
+            feedback_tracker = (
+                None if policy_feedback_config is None else RewardTracker(policy_feedback_config)
+            )
+            if feedback_tracker is not None:
+                feedback_tracker.reset(observation, info)
             attempts = 0
             while True:
                 if (
@@ -1151,24 +1176,30 @@ def _evaluate_model_async(
                     and guide_scheduler is not None
                 ):
                     try:
-                        observation, info, hidden, previous_action, previous_reward = (
-                            _evaluation_natural_prefix(
-                                worker=environment.environments[worker_id],
-                                worker_id=worker_id,
-                                slot=index,
-                                seed=seed,
-                                observation=observation,
-                                info=info,
-                                guide_model=guide_model,
-                                learner_model=model,
-                                guide_scheduler=guide_scheduler,
-                                learner_scheduler=scheduler,
-                                config=natural_prefix,
-                                device=device,
-                                contract_memory=contract_memory,
-                                dashboard_state=dashboard_state,
-                                guide_reward=guide_reward,
-                            )
+                        (
+                            observation,
+                            info,
+                            hidden,
+                            previous_action,
+                            previous_reward,
+                            feedback_tracker,
+                        ) = _evaluation_natural_prefix(
+                            worker=environment.environments[worker_id],
+                            worker_id=worker_id,
+                            slot=index,
+                            seed=seed,
+                            observation=observation,
+                            info=info,
+                            guide_model=guide_model,
+                            learner_model=model,
+                            guide_scheduler=guide_scheduler,
+                            learner_scheduler=scheduler,
+                            config=natural_prefix,
+                            device=device,
+                            contract_memory=contract_memory,
+                            dashboard_state=dashboard_state,
+                            guide_reward=guide_reward,
+                            policy_feedback_config=policy_feedback_config,
                         )
                     except (TimeoutError, NativePipeError, ProtocolError) as error:
                         attempts += 1
@@ -1184,6 +1215,9 @@ def _evaluate_model_async(
                         hidden = model.initial_state(1, device=device)
                         previous_action = START_ACTION
                         previous_reward = 0.0
+                        if feedback_tracker is not None:
+                            feedback_tracker = RewardTracker(policy_feedback_config)
+                            feedback_tracker.reset(observation, info)
                         continue
                     except NaturalPrefixError as error:
                         accumulator = EpisodeAccumulator(
@@ -1267,6 +1301,15 @@ def _evaluate_model_async(
                                 reward=float(reward),
                             )
                         accumulator.observe(next_observation, float(reward), step_info, int(action))
+                        policy_feedback = float(reward)
+                        if feedback_tracker is not None:
+                            policy_feedback, _ = feedback_tracker.score(
+                                next_observation,
+                                step_info,
+                                step_info.get("raw_events", ()),
+                                terminated=bool(terminated),
+                                truncated=bool(truncated),
+                            )
                         observation = next_observation
                         info = step_info
                         hidden = recurrent_state_after_transition(
@@ -1278,7 +1321,7 @@ def _evaluate_model_async(
                             device=device,
                         )
                         previous_action = action
-                        previous_reward = float(reward)
+                        previous_reward = float(policy_feedback)
                         if terminated or truncated:
                             return accumulator.finish(
                                 str(step_info.get("episode_status", "aborted"))
@@ -1301,6 +1344,9 @@ def _evaluate_model_async(
                     hidden = model.initial_state(1, device=device)
                     previous_action = START_ACTION
                     previous_reward = 0.0
+                    if policy_feedback_config is not None:
+                        feedback_tracker = RewardTracker(policy_feedback_config)
+                        feedback_tracker.reset(observation, info)
 
         try:
             with ThreadPoolExecutor(max_workers=max(len(wave_seeds), 1)) as executor:
@@ -1334,6 +1380,7 @@ def _evaluate_deterministic_async(
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
+    policy_feedback_config: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Compatibility entry point used by the controller qualification suite."""
     return _evaluate_model_async(
@@ -1349,6 +1396,7 @@ def _evaluate_deterministic_async(
         guide_model=guide_model,
         natural_prefix=natural_prefix,
         guide_reward=guide_reward,
+        policy_feedback_config=policy_feedback_config,
     )
 
 
@@ -1416,6 +1464,11 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         guide_model.load_state_dict(guide_payload["model"])
         guide_model.eval()
     reward_config = load_reward_config(arguments.reward_config)
+    policy_feedback_config = (
+        None
+        if arguments.policy_feedback_reward_config is None
+        else load_reward_config(arguments.policy_feedback_reward_config)
+    )
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -1480,6 +1533,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     guide_model=guide_model,
                     natural_prefix=natural_prefix,
                     guide_reward=guide_reward,
+                    policy_feedback_config=policy_feedback_config,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -1521,6 +1575,9 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_freeze_base_scope": checkpoint_metadata.get("freeze_base_scope"),
         "checkpoint_initialization": checkpoint_metadata.get("initialization"),
         "evaluation_reward": reward_config.specification(),
+        "policy_feedback_reward": (
+            None if policy_feedback_config is None else policy_feedback_config.specification()
+        ),
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
@@ -1597,6 +1654,14 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     None if arguments.reward_config is None else str(arguments.reward_config)
                 ),
                 "reward_config_sha256": sha256_file(arguments.reward_config),
+                "policy_feedback_reward_config": (
+                    None
+                    if arguments.policy_feedback_reward_config is None
+                    else str(arguments.policy_feedback_reward_config)
+                ),
+                "policy_feedback_reward_config_sha256": sha256_file(
+                    arguments.policy_feedback_reward_config
+                ),
             },
             source_checkpoint=arguments.checkpoint,
         )
@@ -1682,6 +1747,11 @@ def main() -> int:
         help="take argmax actions or reproducibly sample the checkpoint policy",
     )
     parser.add_argument("--reward-config", type=Path)
+    parser.add_argument(
+        "--policy-feedback-reward-config",
+        type=Path,
+        help="stable reward stream used only for the checkpoint's previous-reward input",
+    )
     parser.add_argument(
         "--reward-lineage-version",
         help="component catalog label such as V2 or V4A (required for tracked runs)",

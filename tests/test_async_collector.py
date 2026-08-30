@@ -403,6 +403,70 @@ def test_async_collector_publishes_each_worker_turn_live() -> None:
     assert all(action is not None and reward is not None for _, action, reward in updates[2:])
 
 
+def test_async_collector_separates_policy_feedback_from_ppo_reward() -> None:
+    environment = AsyncEnvironment()
+    for slot, worker_id in enumerate(environment.worker_ids):
+        environment.environments[worker_id].step = (  # type: ignore[method-assign]
+            lambda _action, slot=slot: (
+                observation(slot),
+                10.0,
+                False,
+                False,
+                {
+                    "episode_status": "running",
+                    "zone": 1,
+                    "floor": 4,
+                    "raw_events": [
+                        {
+                            "kind": "enemy_damage",
+                            "amount": 1,
+                            "data": {"boss": True},
+                        }
+                    ],
+                },
+            )
+        )
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    feedback = RewardConfig(
+        new_position=0.0,
+        new_tile=0.0,
+        enemy_damage=0.2,
+        max_combat_reward_per_floor=5.0,
+        combat_reward_scope="boss_only",
+        player_damage=0.0,
+        new_item_type=0.0,
+        stair_potential_max=0.0,
+        floor_complete=0.0,
+        zone_complete=0.0,
+        victory=0.0,
+        death=0.0,
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=107,
+        policy_feedback_config=feedback,
+    )
+    try:
+        rollout = collector.collect(2)
+    finally:
+        collector.close()
+
+    assert torch.allclose(rollout.rewards, torch.full((2, 2), 10.0))
+    assert torch.allclose(rollout.observations["previous_reward"][0], torch.zeros(2))
+    assert torch.allclose(rollout.observations["previous_reward"][1], torch.full((2,), 0.2))
+
+
 def test_async_collector_applies_episode_local_known_wall_memory() -> None:
     environment = AsyncEnvironment()
 
@@ -823,6 +887,70 @@ def test_natural_prefix_guide_receives_its_own_reward_stream() -> None:
     assert any(value == pytest.approx(0.03) for value in guide.previous_rewards)
 
 
+def test_natural_prefix_warms_learner_with_stable_policy_feedback() -> None:
+    class RecordingLearner(RecurrentActorCritic):
+        def __init__(self, config: ModelConfig) -> None:
+            super().__init__(config)
+            self.previous_rewards: list[float] = []
+
+        def step(self, observation, state):
+            self.previous_rewards.extend(
+                float(value) for value in observation["previous_reward"].cpu()
+            )
+            return super().step(observation, state)
+
+    environment = PrefixEnvironment()
+    config = ModelConfig(
+        cell_size=16,
+        spatial_size=32,
+        hidden_size=16,
+        entity_limit=8,
+        attention_layers=1,
+        attention_heads=4,
+    )
+    learner = RecordingLearner(config)
+    guide = RecurrentActorCritic(config)
+    feedback = RewardConfig(
+        new_position=0.0,
+        new_tile=0.0,
+        enemy_damage=0.2,
+        max_combat_reward_per_floor=5.0,
+        combat_reward_scope="boss_only",
+        player_damage=0.0,
+        new_item_type=0.0,
+        stair_potential_max=0.0,
+        floor_complete=0.0,
+        zone_complete=0.0,
+        victory=0.0,
+        death=0.0,
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=108,
+        guide_model=guide,
+        guide_reward_config=RewardConfig(),
+        policy_feedback_config=feedback,
+        natural_prefix=NaturalPrefixConfig(
+            target_phase=4,
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+            recurrent_state_mode="warm",
+        ),
+    )
+    try:
+        rollout = collector.collect(1)
+    finally:
+        collector.close()
+
+    assert torch.allclose(rollout.rewards, torch.full((1, 2), 0.25))
+    assert max(learner.previous_rewards) < 1.0
+    assert any(value == pytest.approx(0.6) for value in learner.previous_rewards)
+    assert any(value == pytest.approx(0.4) for value in learner.previous_rewards)
+
+
 def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> None:
     environment = PrefixEnvironment()
     learner = RecurrentActorCritic(
@@ -1095,6 +1223,56 @@ def test_natural_prefix_evaluation_uses_checkpoint_guide_rewards() -> None:
 
     assert max(guide.previous_rewards) < 1.0
     assert any(value == pytest.approx(0.03) for value in guide.previous_rewards)
+
+
+def test_natural_prefix_evaluation_uses_stable_learner_policy_feedback() -> None:
+    class RecordingLearner(RecurrentActorCritic):
+        def __init__(self, config: ModelConfig) -> None:
+            super().__init__(config)
+            self.previous_rewards: list[float] = []
+
+        def step(self, observation, state):
+            self.previous_rewards.extend(
+                float(value) for value in observation["previous_reward"].cpu()
+            )
+            return super().step(observation, state)
+
+    environment = PrefixEnvironment()
+    config = ModelConfig(
+        cell_size=16,
+        spatial_size=32,
+        hidden_size=16,
+        entity_limit=8,
+        attention_layers=1,
+        attention_heads=4,
+    )
+    learner = RecordingLearner(config)
+    guide = RecurrentActorCritic(config)
+    _evaluate_model_async(
+        environment,
+        learner,
+        seeds=[9005],
+        max_steps=2,
+        policy_seed=21,
+        device=torch.device("cpu"),
+        dashboard_state=None,
+        action_contract="current",
+        deterministic=True,
+        guide_model=guide,
+        guide_reward=RewardConfig(),
+        policy_feedback_config=RewardConfig(),
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+            recurrent_state_mode="warm",
+        ),
+    )
+
+    assert learner.previous_rewards
+    assert not any(value == pytest.approx(10.0) for value in learner.previous_rewards)
+    assert not any(value == pytest.approx(0.25) for value in learner.previous_rewards)
+    assert any(value == pytest.approx(0.02) for value in learner.previous_rewards)
 
 
 def test_natural_prefix_evaluation_uses_declared_stateful_action_contract() -> None:

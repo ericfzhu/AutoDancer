@@ -34,6 +34,7 @@ from autodancer.training.model import (
     ProjectedAdapterActorCritic,
     RecurrentActorCritic,
     model_from_spec,
+    set_actor_trainable,
 )
 from autodancer.training.natural_prefix import (
     NATURAL_PREFIX_RECURRENT_MODES,
@@ -369,6 +370,37 @@ def episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def compact_episode_record(
+    episode: dict[str, Any], *, global_step: int, policy_version: int
+) -> dict[str, Any]:
+    """Keep outcome identity without duplicating bulky raw event payloads."""
+    event_counts: dict[str, int] = {}
+    for event in episode.get("events", []):
+        name = str(event.get("kind") or event.get("type") or event.get("name") or "unknown")
+        event_counts[name] = event_counts.get(name, 0) + 1
+    return {
+        "schema_version": 1,
+        "global_step": int(global_step),
+        "policy_version": int(policy_version),
+        "worker_id": str(episode.get("worker_id", "")),
+        "run_id": str(episode.get("run_id", "")),
+        "seed": int(episode.get("seed", 0)),
+        "status": str(episode.get("status", "")),
+        "return": float(episode.get("return", 0.0)),
+        "extrinsic_return": float(episode.get("extrinsic_return", 0.0)),
+        "shaping_return": float(episode.get("shaping_return", 0.0)),
+        "furthest_zone": int(episode.get("zone", 0)),
+        "furthest_floor": int(episode.get("floor", 0)),
+        "boss_type": int(episode.get("boss_type", 0)),
+        "boss_progress": dict(episode.get("boss_progress") or {}),
+        "turns": int(episode.get("turns") or 0),
+        "event_counts": event_counts,
+        "curriculum_reset": dict(episode.get("curriculum_reset") or {}),
+        "natural_prefix": dict(episode.get("natural_prefix") or {}),
+        "infrastructure_valid": bool(episode.get("infrastructure_valid", True)),
+    }
+
+
 def evaluate_policy(
     environment: AutoDancerVectorEnv,
     model: PolicyModel,
@@ -380,6 +412,7 @@ def evaluate_policy(
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
     guide_reward: RewardConfig | None = None,
+    policy_feedback_config: RewardConfig | None = None,
 ) -> dict[str, float]:
     """Evaluate deterministically on every worker, leaving all workers reset."""
     from autodancer.training.baseline import _evaluate_deterministic_async
@@ -396,6 +429,7 @@ def evaluate_policy(
         guide_model=guide_model,
         natural_prefix=natural_prefix,
         guide_reward=guide_reward,
+        policy_feedback_config=policy_feedback_config,
     )
     scores = [float(episode["episode_return"]) for episode in episodes]
     return {
@@ -414,8 +448,17 @@ def train(arguments: argparse.Namespace) -> None:
         sequence_length=arguments.sequence_length,
         gamma=arguments.gamma,
         gae_lambda=arguments.gae_lambda,
+        learning_rate=arguments.learning_rate,
+        actor_learning_rate=arguments.actor_learning_rate,
+        critic_learning_rate=arguments.critic_learning_rate,
+        target_kl=arguments.target_kl,
     )
     reward_config = load_reward_config(arguments.reward_config)
+    policy_feedback_config = (
+        None
+        if arguments.policy_feedback_reward_config is None
+        else load_reward_config(arguments.policy_feedback_reward_config)
+    )
     natural_prefix = (
         None
         if arguments.natural_prefix_guide is None
@@ -497,6 +540,8 @@ def train(arguments: argparse.Namespace) -> None:
     )
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = arguments.run_dir / "metrics.jsonl"
+    episodes_path = arguments.run_dir / "episodes.jsonl"
+    episodes_path.touch(exist_ok=True)
     tracker: Any | None = None
     experiment_id = getattr(arguments, "experiment_id", None)
     if experiment_id is not None:
@@ -533,6 +578,19 @@ def train(arguments: argparse.Namespace) -> None:
                     None if arguments.reward_config is None else str(arguments.reward_config)
                 ),
                 "reward_config_sha256": sha256_file(arguments.reward_config),
+                "policy_feedback_reward": (
+                    None
+                    if policy_feedback_config is None
+                    else policy_feedback_config.specification()
+                ),
+                "policy_feedback_reward_config": (
+                    None
+                    if arguments.policy_feedback_reward_config is None
+                    else str(arguments.policy_feedback_reward_config)
+                ),
+                "policy_feedback_reward_config_sha256": sha256_file(
+                    arguments.policy_feedback_reward_config
+                ),
                 "action_contract": arguments.action_contract,
                 "training_seed_schedule": (
                     "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
@@ -546,6 +604,10 @@ def train(arguments: argparse.Namespace) -> None:
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "freeze_base_scope": (
                     "inherited-actor-base-only-v1" if arguments.freeze_base_updates else None
+                ),
+                "freeze_actor_updates": arguments.freeze_actor_updates,
+                "freeze_actor_scope": (
+                    "complete-actor-only-v1" if arguments.freeze_actor_updates else None
                 ),
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -635,6 +697,11 @@ def train(arguments: argparse.Namespace) -> None:
                     device=device,
                     checkpoint_metadata={
                         "reward": reward_config.specification(),
+                        "policy_feedback_reward": (
+                            None
+                            if policy_feedback_config is None
+                            else policy_feedback_config.specification()
+                        ),
                         "action_contract": arguments.action_contract,
                         "max_turns": arguments.max_turns,
                         **seed_checkpoint_metadata,
@@ -649,6 +716,10 @@ def train(arguments: argparse.Namespace) -> None:
                             "inherited-actor-base-only-v1"
                             if arguments.freeze_base_updates
                             else None
+                        ),
+                        "freeze_actor_updates": arguments.freeze_actor_updates,
+                        "freeze_actor_scope": (
+                            "complete-actor-only-v1" if arguments.freeze_actor_updates else None
                         ),
                     },
                 )
@@ -710,6 +781,7 @@ def train(arguments: argparse.Namespace) -> None:
                     guide_model=guide_model,
                     natural_prefix=natural_prefix,
                     guide_reward_config=guide_reward,
+                    policy_feedback_config=policy_feedback_config,
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -725,7 +797,12 @@ def train(arguments: argparse.Namespace) -> None:
                 while algorithm.global_step < arguments.total_steps:
                     rollout = collector.collect(ppo_config.rollout_length)
                     base_frozen = False
-                    if isinstance(model, ProjectedAdapterActorCritic):
+                    actor_frozen = algorithm.updates < arguments.freeze_actor_updates
+                    set_actor_trainable(model, not actor_frozen)
+                    if (
+                        isinstance(model, ProjectedAdapterActorCritic)
+                        and arguments.freeze_base_updates
+                    ):
                         base_frozen = algorithm.updates < arguments.freeze_base_updates
                         model.set_base_trainable(not base_frozen)
                     update_metrics = algorithm.update(rollout)
@@ -734,6 +811,7 @@ def train(arguments: argparse.Namespace) -> None:
                         "global_step": algorithm.global_step,
                         "updates": algorithm.updates,
                         "base_frozen": float(base_frozen),
+                        "actor_frozen": float(actor_frozen),
                         "steps_per_second": (algorithm.global_step - process_start_step) / elapsed,
                         **update_metrics,
                         **collector.last_runtime_metrics,
@@ -767,6 +845,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 guide_model=guide_model,
                                 natural_prefix=natural_prefix,
                                 guide_reward=guide_reward,
+                                policy_feedback_config=policy_feedback_config,
                             )
                         )
                         if dashboard_state is not None:
@@ -790,10 +869,25 @@ def train(arguments: argparse.Namespace) -> None:
                             guide_model=guide_model,
                             natural_prefix=natural_prefix,
                             guide_reward_config=guide_reward,
+                            policy_feedback_config=policy_feedback_config,
                         )
                         metrics["training_seed_schedule_state"] = collector.seed_schedule_state()
                         metrics["curriculum_schedule_state"] = collector.curriculum_schedule_state()
                         next_evaluation += arguments.evaluation_interval
+                    if collector.completed_episodes:
+                        with episodes_path.open("a", encoding="utf-8") as handle:
+                            for episode in collector.completed_episodes:
+                                handle.write(
+                                    json.dumps(
+                                        compact_episode_record(
+                                            episode,
+                                            global_step=algorithm.global_step,
+                                            policy_version=collector.policy_version,
+                                        ),
+                                        sort_keys=True,
+                                    )
+                                    + "\n"
+                                )
                     collector.completed_episodes.clear()
                     if dashboard_state is not None:
                         dashboard_state.update_health(supervisor.health())
@@ -822,6 +916,11 @@ def train(arguments: argparse.Namespace) -> None:
                             "ppo": asdict(ppo_config),
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
+                            "policy_feedback_reward": (
+                                None
+                                if policy_feedback_config is None
+                                else policy_feedback_config.specification()
+                            ),
                             "initialized_from": algorithm.checkpoint_metadata.get("initialization"),
                             "action_contract": arguments.action_contract,
                             "max_turns": arguments.max_turns,
@@ -839,6 +938,10 @@ def train(arguments: argparse.Namespace) -> None:
                                 "inherited-actor-base-only-v1"
                                 if arguments.freeze_base_updates
                                 else None
+                            ),
+                            "freeze_actor_updates": arguments.freeze_actor_updates,
+                            "freeze_actor_scope": (
+                                "complete-actor-only-v1" if arguments.freeze_actor_updates else None
                             ),
                             "supervisor": {
                                 "num_instances": arguments.num_instances,
@@ -878,6 +981,7 @@ def train(arguments: argparse.Namespace) -> None:
                         [
                             arguments.run_dir / "config.json",
                             metrics_path,
+                            episodes_path,
                             arguments.run_dir / "final.pt",
                         ],
                         summary=metrics,
@@ -932,6 +1036,14 @@ def main() -> int:
         help="discount factor; must match the reward profile's potential discount",
     )
     parser.add_argument("--gae-lambda", type=float, default=0.95)
+    parser.add_argument("--learning-rate", type=float, default=3.0e-4)
+    parser.add_argument("--actor-learning-rate", type=float)
+    parser.add_argument("--critic-learning-rate", type=float)
+    parser.add_argument(
+        "--target-kl",
+        type=float,
+        help="stop remaining PPO minibatches once approximate KL exceeds this value",
+    )
     parser.add_argument("--checkpoint-interval", type=int, default=10000)
     parser.add_argument("--evaluation-interval", type=int, default=50000)
     parser.add_argument("--evaluation-steps", type=int, default=512)
@@ -1003,9 +1115,23 @@ def main() -> int:
     )
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
+        "--freeze-actor-updates",
+        type=int,
+        default=0,
+        help="freeze the complete actor (including adapters) while warming the critic",
+    )
+    parser.add_argument(
         "--reward-config",
         type=Path,
         help="JSON object overriding the versioned default reward weights",
+    )
+    parser.add_argument(
+        "--policy-feedback-reward-config",
+        type=Path,
+        help=(
+            "optional stable reward stream supplied only as the policy's previous-reward "
+            "input; PPO returns continue to use --reward-config"
+        ),
     )
     parser.add_argument(
         "--reward-lineage-version",
@@ -1044,6 +1170,10 @@ def main() -> int:
         parser.error("--inference-batch-delay-ms cannot be negative")
     if arguments.freeze_base_updates < 0:
         parser.error("--freeze-base-updates cannot be negative")
+    if arguments.freeze_actor_updates < 0:
+        parser.error("--freeze-actor-updates cannot be negative")
+    if arguments.freeze_actor_updates and arguments.freeze_base_updates:
+        parser.error("--freeze-actor-updates and --freeze-base-updates are mutually exclusive")
     if arguments.freeze_base_updates and arguments.architecture != 8:
         parser.error("--freeze-base-updates is only valid for Architecture 8")
     if arguments.curriculum_start_level <= 0:

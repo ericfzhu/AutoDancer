@@ -54,6 +54,9 @@ class ActorState:
     furthest_zone: int = 0
     furthest_floor: int = 0
     boss_type: int = 0
+    boss_progress: DeathMetalPhaseTracker = field(
+        default_factory=lambda: DeathMetalPhaseTracker(NaturalPrefixConfig())
+    )
     prefix_pending: bool = False
     prefix_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -63,6 +66,7 @@ class ActorState:
             (int(self.info.get("zone") or 0), int(self.info.get("floor") or 0)),
         )
         self.boss_type = max(self.boss_type, int(self.info.get("boss_type") or 0))
+        self.boss_progress.observe(self.observation, self.info)
 
 
 @dataclass(slots=True)
@@ -229,6 +233,7 @@ class VersionedAsyncRolloutCollector:
         guide_model: PolicyModel | None = None,
         natural_prefix: NaturalPrefixConfig | None = None,
         guide_reward_config: RewardConfig | None = None,
+        policy_feedback_config: RewardConfig | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -246,6 +251,7 @@ class VersionedAsyncRolloutCollector:
         self.guide_model = guide_model
         self.natural_prefix = natural_prefix
         self.guide_reward_config = guide_reward_config
+        self.policy_feedback_config = policy_feedback_config
         self.action_contract = action_contract
         self.contract_memory = ActionContractMemory(action_contract, environment.num_envs)
         self.base_seed = int(seed)
@@ -277,6 +283,10 @@ class VersionedAsyncRolloutCollector:
                 prefix_pending=self.natural_prefix is not None,
             )
             for index in range(environment.num_envs)
+        ]
+        self._policy_feedback_trackers = [
+            self._new_policy_feedback_tracker(state.observation, state.info)
+            for state in self.states
         ]
         self.completed_episodes: list[dict[str, Any]] = []
         self.last_reward_components: dict[str, float] = {}
@@ -317,6 +327,47 @@ class VersionedAsyncRolloutCollector:
 
     def _next_reset(self, index: int) -> tuple[int, EpisodeResetSpec]:
         return self._seed(index), self.curriculum_schedule.next(index)
+
+    def _new_policy_feedback_tracker(
+        self,
+        observation: dict[str, np.ndarray],
+        info: dict[str, Any],
+    ) -> RewardTracker | None:
+        if self.policy_feedback_config is None:
+            return None
+        tracker = RewardTracker(self.policy_feedback_config)
+        tracker.reset(observation, info)
+        return tracker
+
+    def _reset_policy_feedback(
+        self,
+        index: int,
+        observation: dict[str, np.ndarray],
+        info: dict[str, Any],
+    ) -> None:
+        self._policy_feedback_trackers[index] = self._new_policy_feedback_tracker(observation, info)
+
+    def _policy_feedback(
+        self,
+        index: int,
+        observation: dict[str, np.ndarray],
+        info: dict[str, Any],
+        *,
+        terminated: bool,
+        truncated: bool,
+        fallback: float,
+    ) -> float:
+        tracker = self._policy_feedback_trackers[index]
+        if tracker is None:
+            return float(fallback)
+        feedback, _ = tracker.score(
+            observation,
+            info,
+            info.get("raw_events", ()),
+            terminated=terminated,
+            truncated=truncated,
+        )
+        return float(feedback)
 
     def seed_schedule_state(self) -> dict[str, Any]:
         return self.seed_schedule.state_dict()
@@ -482,6 +533,7 @@ class VersionedAsyncRolloutCollector:
                     state.reset_spec,
                     prefix_pending=self.natural_prefix is not None,
                 )
+                self._reset_policy_feedback(index, observation, info)
                 self._publish_telemetry(index, observation, info, None, None)
 
     def _collect_slot_once(
@@ -637,6 +689,14 @@ class VersionedAsyncRolloutCollector:
                 )
             done = bool(terminated or truncated)
             reward = float(reward)
+            policy_feedback = self._policy_feedback(
+                index,
+                next_observation,
+                info,
+                terminated=bool(terminated),
+                truncated=bool(truncated),
+                fallback=reward,
+            )
             truncation_value = torch.tensor(0.0, dtype=torch.float32)
             if truncated and not terminated:
                 # A client time limit is not an MDP terminal. Bootstrap the
@@ -645,7 +705,7 @@ class VersionedAsyncRolloutCollector:
                 _, _, terminal_value, _ = scheduler.infer(
                     next_observation,
                     action,
-                    reward,
+                    policy_feedback,
                     next_hidden,
                     0.5,
                 )
@@ -660,6 +720,7 @@ class VersionedAsyncRolloutCollector:
                 (int(info.get("zone") or 0), int(info.get("floor") or 0)),
             )
             state.boss_type = max(state.boss_type, int(info.get("boss_type") or 0))
+            state.boss_progress.observe(next_observation, info)
             for name, component in info.get("reward_components", {}).items():
                 components[name] = components.get(name, 0.0) + float(component)
             actions.append(torch.tensor(action, dtype=torch.long))
@@ -673,6 +734,7 @@ class VersionedAsyncRolloutCollector:
                 episodes.append(
                     {
                         "worker_id": worker_id,
+                        "run_id": str(info.get("run_id", state.info.get("run_id", ""))),
                         "seed": int(info.get("seed", state.info.get("seed", 0))),
                         "return": state.episode_return,
                         "extrinsic_return": state.episode_extrinsic_return,
@@ -681,11 +743,13 @@ class VersionedAsyncRolloutCollector:
                         "zone": state.furthest_zone,
                         "floor": state.furthest_floor,
                         "boss_type": state.boss_type,
+                        "boss_progress": state.boss_progress.snapshot(),
                         "turns": info.get("turns"),
                         "events": state.episode_events,
                         "curriculum_reset": state.reset_spec.as_dict(),
                         "curriculum_reset_id": state.reset_spec.id,
                         "natural_prefix": dict(state.prefix_metadata),
+                        "infrastructure_valid": True,
                     }
                 )
                 self.curriculum_schedule.record_outcome(
@@ -705,12 +769,13 @@ class VersionedAsyncRolloutCollector:
                     next_spec,
                     prefix_pending=self.natural_prefix is not None,
                 )
+                self._reset_policy_feedback(index, next_observation, next_info)
             else:
                 state.observation = next_observation
                 state.info = info
                 state.hidden = next_hidden
                 state.previous_action = action
-                state.previous_reward = reward
+                state.previous_reward = policy_feedback
                 state.episode_start = False
         self.states[index] = state
         return ActorFragment(
@@ -776,6 +841,7 @@ class VersionedAsyncRolloutCollector:
                 raise RuntimeError("Natural-prefix guide reward contract is missing")
             guide_reward_tracker = RewardTracker(self.guide_reward_config)
             guide_reward_tracker.reset(observation, info)
+            learner_feedback_tracker = self._new_policy_feedback_tracker(observation, info)
 
             for guide_turn in range(config.max_guide_turns):
                 sample = natural_prefix_policy_sample(
@@ -822,9 +888,19 @@ class VersionedAsyncRolloutCollector:
                     terminated=bool(terminated),
                     truncated=bool(truncated),
                 )
+                if learner_feedback_tracker is None:
+                    learner_feedback = float(reward)
+                else:
+                    learner_feedback, _ = learner_feedback_tracker.score(
+                        next_observation,
+                        next_info,
+                        next_info.get("raw_events", ()),
+                        terminated=bool(terminated),
+                        truncated=bool(truncated),
+                    )
                 self._publish_telemetry(index, next_observation, next_info, action, float(reward))
                 last_guide_action = action
-                last_learner_reward = float(reward)
+                last_learner_reward = float(learner_feedback)
 
                 if tracker.reached and not terminated and not truncated:
                     metadata = {
@@ -849,6 +925,7 @@ class VersionedAsyncRolloutCollector:
                         if warm
                         else self.contract_memory.reset_slot(index, handed_observation)
                     )
+                    self._policy_feedback_trackers[index] = learner_feedback_tracker
                     return ActorState(
                         effective_observation,
                         handed_info,
@@ -871,7 +948,7 @@ class VersionedAsyncRolloutCollector:
                 learner_hidden = next_learner_hidden
                 previous_action = action
                 guide_previous_reward = float(guide_reward)
-                learner_previous_reward = float(reward)
+                learner_previous_reward = float(learner_feedback)
                 if terminated or truncated:
                     break
 
