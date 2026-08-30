@@ -51,7 +51,12 @@ def test_aligned_aggregate_exposes_zero_contact_timeout_and_actions() -> None:
 
     result = _aggregate([report])
 
+    assert result["phase2_rate"] == 0.5
+    assert result["phase3_rate"] == 0.5
     assert result["phase4_rate"] == 0.5
+    assert result["distinct_phase2_seeds"] == [2]
+    assert result["distinct_phase3_seeds"] == [2]
+    assert result["distinct_phase4_seeds"] == [2]
     assert result["zero_contact_timeout_rate"] == 0.5
     assert result["step_limit_rate"] == 0.5
     assert result["death_rate"] == 0.5

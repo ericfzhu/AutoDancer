@@ -183,6 +183,8 @@ def _load_report(
 
 def _aggregate(reports: list[dict[str, Any]]) -> dict[str, Any]:
     episodes = [episode for report in reports for episode in report["trained"]["results"]]
+    phase2 = [episode for episode in episodes if int(episode.get("boss_phase_depth", 0)) >= 2]
+    phase3 = [episode for episode in episodes if int(episode.get("boss_phase_depth", 0)) >= 3]
     phase4 = [episode for episode in episodes if episode.get("death_metal_phase4_reached")]
     completions = [
         episode for episode in episodes if episode.get("status") == "curriculum_complete"
@@ -199,6 +201,12 @@ def _aggregate(reports: list[dict[str, Any]]) -> dict[str, Any]:
     actions = max(sum(action_counts), 1)
     return {
         "episodes": len(episodes),
+        "phase2_count": len(phase2),
+        "phase2_rate": len(phase2) / max(len(episodes), 1),
+        "distinct_phase2_seeds": sorted({int(episode["seed"]) for episode in phase2}),
+        "phase3_count": len(phase3),
+        "phase3_rate": len(phase3) / max(len(episodes), 1),
+        "distinct_phase3_seeds": sorted({int(episode["seed"]) for episode in phase3}),
         "phase4_count": len(phase4),
         "phase4_rate": len(phase4) / max(len(episodes), 1),
         "distinct_phase4_seeds": sorted({int(episode["seed"]) for episode in phase4}),
