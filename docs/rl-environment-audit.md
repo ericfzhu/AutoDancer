@@ -1846,3 +1846,77 @@ evaluation reward file from silently changing the deployed recurrent policy.
 EXP-0024 passes V5 explicitly for both source and trained checkpoints, preserving
 its already-declared matched-feedback comparison; the future retention arm can
 instead declare V4 feedback with V5 optimization as a separate causal change.
+
+## The curriculum scheduler records competence but does not control difficulty
+
+`EpisodeCurriculumSchedule` is currently a deterministic fixed-weight sampler.
+It records selections and terminal outcomes, but its probabilities are immutable
+and do not depend on those outcomes. That is sufficient for a controlled arm,
+but it is not an automatic curriculum. In particular, it cannot:
+
+- keep the active boundary inside a learnable intermediate-success region;
+- promote the learner backward after competence improves;
+- demote it after forgetting or an overly difficult promotion;
+- reserve replay mass for already mastered downstream skills; or
+- prioritize training seeds that still have learning potential.
+
+This matters directly for the Zone 2 objective. A fixed full-boss start can learn
+a boss skill, but no amount of sampling from that distribution teaches the route
+through Floors 1--3. Conversely, changing all episodes to Floor 3 as soon as the
+boss is first cleared risks catastrophic loss of a rare boss skill before the
+longer composition succeeds.
+
+Reverse Curriculum Generation samples starts whose current success probability
+is neither nearly zero nor nearly one, then expands the start distribution away
+from the goal as competence rises
+([Florensa et al., 2017](https://proceedings.mlr.press/v78/florensa17a.html)).
+Prioritized Level Replay treats procedural levels as a training distribution and
+mixes unseen levels with replay selected for estimated learning potential rather
+than uniformly replaying a small fixed bank
+([Jiang et al., 2021](https://proceedings.mlr.press/v139/jiang21b.html)).
+Go-Explore independently identifies detachment from previously discovered states
+as a hard-exploration failure mode and separates returning to promising states
+from exploring onward
+([Ecoffet et al., 2019](https://arxiv.org/abs/1901.10995)). AutoDancer cannot
+restore arbitrary emulator states, but legal level starts, health contraction,
+exact successful action traces, and downstream replay provide the same useful
+curriculum structure without fabricating game state.
+
+The next scheduler must therefore make competence an explicit state variable.
+For each ordered legal boundary it should retain a checkpointable rolling window
+of valid gameplay outcomes, Wilson confidence bounds, selection counts, and
+infrastructure exclusions. The active acquisition boundary is the farthest one
+from Zone 2 whose success estimate is compatible with the declared `10--90%`
+learning band. A promotion requires a minimum sample count and a lower confidence
+bound above the promotion threshold; a demotion requires the upper confidence
+bound to fall below the acquisition threshold. Natural infrastructure failures
+never update competence.
+
+Episode allocation should preserve three distinct purposes:
+
+1. **Acquisition:** most episodes train the current hardest learnable boundary.
+2. **Mastery replay:** a nonzero floor replays every mastered downstream boundary,
+   including the full boss, so composition cannot silently forget it.
+3. **Frontier probing:** a bounded minority tests the next harder boundary and
+   supplies the evidence needed for promotion.
+
+Training-game seeds are eligible for outcome-based prioritization, because they
+are optimization data. Held-out seeds remain a complete, outcome-blind denominator
+and can never enter scheduler state. Seed priority must combine recent uncertainty
+or learning progress with an explicit uniform floor and periodic fresh-seed draws;
+otherwise the policy can memorize a few solvable layouts and produce a misleading
+training completion rate.
+
+The legal backward sequence after repeatable full-boss acquisition is:
+
+1. contract boss-start health from `player20` through `player10`, `player8`,
+   `player6`, and finally the normal profile, while replaying mastered easier
+   health profiles;
+2. acquire Floor 3 to boss entry while replaying the normal-health boss;
+3. compose Floor 3 through Zone 2, then expand to Floor 2 and Floor 1;
+4. keep all downstream boundaries in replay and widen the training seed bank at
+   every promotion; and
+5. accept only normal-start Zone 2 entries on multiple unseen seeds.
+
+This sequence does not make assisted clears count as final success. It turns them
+into reusable subskills while preserving the normal-start held-out criterion.
