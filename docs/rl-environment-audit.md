@@ -1763,3 +1763,31 @@ move still closer using a naturally reached low-health boundary; never write bos
 health directly. As competence rises, expand backward through health/phase
 boundaries and then the full boss. This applies reverse curriculum to the
 learner's actual success probability rather than to a semantic phase label.
+
+### EXP-0024 update-60 evidence
+
+The first trial produced one full-boss training clear at update 56 after 927
+preceding completed episodes without one. The update contained 24 episodes, one
+boss kill, one Zone 2 curriculum completion, and 23 deaths. Through update 60 the
+total was 1/928 completions, 924 deaths, three timeouts, and zero controller
+restarts. This disproves the strongest claim that V5 collection is completely
+sterile, but it remains far outside a 10–90% acquisition region and does not
+predict the held-out gate.
+
+The same checkpoint strengthens the retention concern. Damage per death fell
+from `3.333` in frozen-base updates 1–10, to `3.189` in updates 11–30, to `2.424`
+in updates 31–60; mean approximate KL over those segments was `0.0068`, `0.0284`,
+and `0.0362`. Relative to the exact source, update 60 parameter deltas were
+`3.84%` of source norm for the base actor, `9.10%` for the sensory adapter, and
+`120%` for the adapter projection. One rare on-policy success is valuable, but
+it does not erase evidence that the policy is moving rapidly while its ordinary
+combat efficiency declines.
+
+The success also exposes a diagnostics gap: training metrics retain only the
+set of episode seeds completed during an update, not a seed-to-outcome record.
+The successful seed is consequently one of seventeen listed in update 56 but
+cannot be identified authoritatively. Future collectors must atomically persist
+compact per-episode records containing worker, seed, run ID, policy version,
+status, turns, phase depth, minimum boss health, task return, and infrastructure
+validity. Aggregate metrics remain useful for dashboards but are insufficient
+for curriculum replay or lineage evidence.
