@@ -44,9 +44,7 @@ _PLAYER_CONTROL_CHANNELS = (
 )
 
 
-def _state_signature(
-    observation: dict[str, np.ndarray], action: Action
-) -> tuple[int, ...]:
+def _state_signature(observation: dict[str, np.ndarray], action: Action) -> tuple[int, ...]:
     """Describe everything observed that could make one wall action change meaning."""
     if action not in DIRECTION_DELTAS:
         raise ValueError("Only directional actions have wall-state signatures")
@@ -111,24 +109,18 @@ class ActionContractMemory:
         self._hazards[slot].clear()
         self._hazard_levels[slot] = None
 
-    def reset_slot(
-        self, slot: int, observation: dict[str, np.ndarray]
-    ) -> dict[str, np.ndarray]:
+    def reset_slot(self, slot: int, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         self.clear(slot)
         return self.apply_slot(slot, observation)
 
-    def reset_batch(
-        self, observation: dict[str, np.ndarray]
-    ) -> dict[str, np.ndarray]:
+    def reset_batch(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         if int(observation["action_mask"].shape[0]) != self.slots:
             raise ValueError("Batched action-mask capacity does not match contract slots")
         for slot in range(self.slots):
-            self._blocked[slot].clear()
+            self.clear(slot)
         return self.apply_batch(observation)
 
-    def masked_directions(
-        self, slot: int, observation: dict[str, np.ndarray]
-    ) -> tuple[int, ...]:
+    def masked_directions(self, slot: int, observation: dict[str, np.ndarray]) -> tuple[int, ...]:
         self._check_slot(slot)
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return ()
@@ -140,18 +132,14 @@ class ActionContractMemory:
             and _state_signature(observation, action) in self._blocked[slot]
         )
 
-    def apply_slot(
-        self, slot: int, observation: dict[str, np.ndarray]
-    ) -> dict[str, np.ndarray]:
+    def apply_slot(self, slot: int, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         self._check_slot(slot)
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return apply_action_contract(observation, self.contract)
         self._update_hazards(slot, observation)
         wall_masked = self.masked_directions(slot, observation)
         if self.contract == "map-navigation-prior-v1":
-            navigation_preferred = _navigation_preferred_directions(
-                observation, wall_masked
-            )
+            navigation_preferred = _navigation_preferred_directions(observation, wall_masked)
         elif self.contract == "map-navigation-prior-v2":
             navigation_preferred = _navigation_preferred_directions_v2(
                 observation, wall_masked, self._hazards[slot]
@@ -177,17 +165,15 @@ class ActionContractMemory:
         result["action_mask"] = action_mask
         return result
 
-    def apply_batch(
-        self, observation: dict[str, np.ndarray]
-    ) -> dict[str, np.ndarray]:
+    def apply_batch(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return apply_action_contract(observation, self.contract)
         if int(observation["action_mask"].shape[0]) != self.slots:
             raise ValueError("Batched action-mask capacity does not match contract slots")
         effective_masks = [
-            self.apply_slot(
-                slot, {key: value[slot] for key, value in observation.items()}
-            )["action_mask"]
+            self.apply_slot(slot, {key: value[slot] for key, value in observation.items()})[
+                "action_mask"
+            ]
             for slot in range(self.slots)
         ]
         if all(
@@ -255,9 +241,7 @@ class ActionContractMemory:
             "navigation_masked_directions": list(navigation_masked),
         }
 
-    def _update_hazards(
-        self, slot: int, observation: dict[str, np.ndarray]
-    ) -> None:
+    def _update_hazards(self, slot: int, observation: dict[str, np.ndarray]) -> None:
         if self.contract != "map-navigation-prior-v2":
             return
         grid = observation["grid"]
@@ -290,9 +274,7 @@ def _visible_enemy(observation: dict[str, np.ndarray]) -> bool:
     return bool(np.any(actors > int(ActorKind.PLAYER)))
 
 
-def _direction_targets_wall(
-    observation: dict[str, np.ndarray], action_value: int
-) -> bool:
+def _direction_targets_wall(observation: dict[str, np.ndarray], action_value: int) -> bool:
     action = Action(action_value)
     dx, dy = DIRECTION_DELTAS[action]
     return bool(
@@ -312,8 +294,7 @@ def _stairs_first_steps(observation: dict[str, np.ndarray]) -> tuple[int, ...]:
     centre = memory.shape[0] // 2
     terrain = memory[..., MapChannel.TERRAIN_CLASS]
     targets = {
-        tuple(int(value) for value in cell)
-        for cell in np.argwhere(terrain == Terrain.STAIRS)
+        tuple(int(value) for value in cell) for cell in np.argwhere(terrain == Terrain.STAIRS)
     }
     if not targets or (centre, centre) in targets:
         return ()
@@ -334,10 +315,7 @@ def _stairs_first_steps(observation: dict[str, np.ndarray]) -> tuple[int, ...]:
             continue
         for action, (dx, dy) in DIRECTION_DELTAS.items():
             next_row, next_column = row + dy, column + dx
-            if not (
-                0 <= next_row < terrain.shape[0]
-                and 0 <= next_column < terrain.shape[1]
-            ):
+            if not (0 <= next_row < terrain.shape[0] and 0 <= next_column < terrain.shape[1]):
                 continue
             position = (next_row, next_column)
             if position in visited:
@@ -446,8 +424,7 @@ def _planned_map_steps(
             if any(
                 0 <= row_value + dy < terrain.shape[0]
                 and 0 <= column_value + dx < terrain.shape[1]
-                and int(terrain[row_value + dy, column_value + dx])
-                == int(Terrain.UNKNOWN)
+                and int(terrain[row_value + dy, column_value + dx]) == int(Terrain.UNKNOWN)
                 for dx, dy in DIRECTION_DELTAS.values()
             ):
                 frontiers.add((row_value, column_value))
@@ -472,10 +449,7 @@ def _planned_map_steps(
             continue
         for action, (dx, dy) in DIRECTION_DELTAS.items():
             next_row, next_column = row + dy, column + dx
-            if not (
-                0 <= next_row < terrain.shape[0]
-                and 0 <= next_column < terrain.shape[1]
-            ):
+            if not (0 <= next_row < terrain.shape[0] and 0 <= next_column < terrain.shape[1]):
                 continue
             position = next_row, next_column
             if position in visited or hazardous(next_row, next_column):
@@ -504,15 +478,12 @@ def _navigation_preferred_directions_v2(
     candidates = tuple(
         int(action)
         for action in DIRECTION_DELTAS
-        if bool(observation["action_mask"][int(action)])
-        and int(action) not in wall_masked
+        if bool(observation["action_mask"][int(action)]) and int(action) not in wall_masked
     )
     if not candidates:
         return ()
     planned = tuple(
-        action
-        for action in _planned_map_steps(observation, hazards)
-        if action in candidates
+        action for action in _planned_map_steps(observation, hazards) if action in candidates
     )
     if planned:
         return planned

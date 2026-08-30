@@ -31,7 +31,7 @@ from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level, level_progress
-from autodancer.rewards import RewardConfig, load_reward_config
+from autodancer.rewards import RewardConfig, RewardTracker, load_reward_config
 from autodancer.training.action_contract import (
     ACTION_CONTRACTS,
     ActionContractMemory,
@@ -44,6 +44,7 @@ from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
     NaturalPrefixError,
+    guide_reward_config,
     natural_prefix_policy_sample,
     validate_guide_action_contract,
 )
@@ -60,9 +61,7 @@ RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step
 def validate_checkpoint_reward_schema(
     checkpoint: dict[str, Any], evaluation_reward: RewardConfig
 ) -> None:
-    checkpoint_version = (
-        checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
-    )
+    checkpoint_version = checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
     if checkpoint_version != evaluation_reward.profile_version:
         raise ValueError("Evaluation reward schema disagrees with the checkpoint")
 
@@ -767,6 +766,7 @@ def evaluate_live_policy(
     recurrent_state_mode: str = "carry",
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
+    guide_reward: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     if not seeds:
         raise ValueError("At least one evaluation seed is required")
@@ -788,6 +788,7 @@ def evaluate_live_policy(
             recurrent_state_mode=recurrent_state_mode,
             guide_model=guide_model,
             natural_prefix=natural_prefix,
+            guide_reward=guide_reward,
         )
     if natural_prefix is not None or guide_model is not None:
         raise ValueError("natural-prefix evaluation requires a trained learner model")
@@ -933,6 +934,7 @@ def _evaluation_natural_prefix(
     device: torch.device,
     contract_memory: ActionContractMemory,
     dashboard_state: DashboardState | None,
+    guide_reward: RewardConfig,
 ) -> tuple[dict[str, np.ndarray], dict[str, Any], Tensor, int, float]:
     """Acquire the same legal guide boundary used by PPO collection."""
 
@@ -945,9 +947,12 @@ def _evaluation_natural_prefix(
         guide_hidden = guide_model.initial_state(1, device=device)
         learner_hidden = learner_model.initial_state(1, device=device)
         previous_action = START_ACTION
-        previous_reward = 0.0
+        guide_previous_reward = 0.0
+        learner_previous_reward = 0.0
         last_action = START_ACTION
-        last_reward = 0.0
+        last_learner_reward = 0.0
+        guide_reward_tracker = RewardTracker(guide_reward)
+        guide_reward_tracker.reset(observation, info)
         for guide_turn in range(config.max_guide_turns):
             sample = natural_prefix_policy_sample(
                 config.guide_policy_seed,
@@ -958,7 +963,7 @@ def _evaluation_natural_prefix(
             action, _, _, next_guide_hidden = guide_scheduler.infer(
                 observation,
                 previous_action,
-                previous_reward,
+                guide_previous_reward,
                 guide_hidden,
                 sample,
             )
@@ -967,7 +972,7 @@ def _evaluation_natural_prefix(
                 _, _, _, next_learner_hidden = learner_scheduler.infer(
                     observation,
                     previous_action,
-                    previous_reward,
+                    learner_previous_reward,
                     learner_hidden,
                     0.5,
                 )
@@ -986,6 +991,13 @@ def _evaluation_natural_prefix(
             )
             next_observation = contract_memory.apply_slot(slot, raw_next_observation)
             tracker.observe(next_observation, next_info)
+            guide_step_reward, _ = guide_reward_tracker.score(
+                next_observation,
+                next_info,
+                next_info.get("raw_events", ()),
+                terminated=bool(terminated),
+                truncated=bool(truncated),
+            )
             if dashboard_state is not None:
                 dashboard_state.update_worker(
                     slot,
@@ -996,7 +1008,7 @@ def _evaluation_natural_prefix(
                     reward=float(reward),
                 )
             last_action = action
-            last_reward = float(reward)
+            last_learner_reward = float(reward)
             if tracker.reached and not terminated and not truncated:
                 metadata = {
                     **config.specification(),
@@ -1008,14 +1020,22 @@ def _evaluation_natural_prefix(
                     "handoff_run_id": str(next_info.get("run_id", "")),
                     "handoff_seed": int(next_info.get("seed", seed)),
                     "boundary": tracker.snapshot(),
+                    "guide_reward": guide_reward.specification(),
                 }
                 handed_observation, handed_info = worker.begin_learning_segment(
                     next_info,
                     metadata=metadata,
                 )
-                effective = contract_memory.reset_slot(slot, handed_observation)
                 if config.recurrent_state_mode == "warm":
-                    return effective, handed_info, next_learner_hidden, last_action, last_reward
+                    effective = contract_memory.apply_slot(slot, handed_observation)
+                    return (
+                        effective,
+                        handed_info,
+                        next_learner_hidden,
+                        last_action,
+                        last_learner_reward,
+                    )
+                effective = contract_memory.reset_slot(slot, handed_observation)
                 return (
                     effective,
                     handed_info,
@@ -1028,7 +1048,8 @@ def _evaluation_natural_prefix(
             guide_hidden = next_guide_hidden
             learner_hidden = next_learner_hidden
             previous_action = action
-            previous_reward = float(reward)
+            guide_previous_reward = float(guide_step_reward)
+            learner_previous_reward = float(reward)
             if terminated or truncated:
                 break
         failures.append(
@@ -1065,12 +1086,17 @@ def _evaluate_model_async(
     recurrent_state_mode: str = "carry",
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
+    guide_reward: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Evaluate model slots without a barrier or timing-dependent action samples."""
     if recurrent_state_mode not in RECURRENT_STATE_MODES:
         raise ValueError(f"Unknown recurrent-state mode: {recurrent_state_mode}")
-    if (guide_model is None) != (natural_prefix is None):
-        raise ValueError("guide_model and natural_prefix must be supplied together")
+    prefix_parts = (guide_model, natural_prefix, guide_reward)
+    if not (
+        all(value is None for value in prefix_parts)
+        or all(value is not None for value in prefix_parts)
+    ):
+        raise ValueError("guide_model, natural_prefix, and guide_reward must be supplied together")
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -1141,6 +1167,7 @@ def _evaluate_model_async(
                                 device=device,
                                 contract_memory=contract_memory,
                                 dashboard_state=dashboard_state,
+                                guide_reward=guide_reward,
                             )
                         )
                     except (TimeoutError, NativePipeError, ProtocolError) as error:
@@ -1306,6 +1333,7 @@ def _evaluate_deterministic_async(
     action_contract: str,
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
+    guide_reward: RewardConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Compatibility entry point used by the controller qualification suite."""
     return _evaluate_model_async(
@@ -1320,6 +1348,7 @@ def _evaluate_deterministic_async(
         deterministic=True,
         guide_model=guide_model,
         natural_prefix=natural_prefix,
+        guide_reward=guide_reward,
     )
 
 
@@ -1372,6 +1401,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         )
     )
     guide_model: PolicyModel | None = None
+    guide_reward: RewardConfig | None = None
     if arguments.natural_prefix_guide is not None:
         guide_payload = torch.load(
             arguments.natural_prefix_guide,
@@ -1379,6 +1409,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             weights_only=False,
         )
         validate_guide_action_contract(guide_payload, arguments.action_contract)
+        guide_reward = guide_reward_config(guide_payload)
         guide_model = model_from_spec(guide_payload.get("architecture", {}), initialize=False).to(
             device
         )
@@ -1448,6 +1479,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
                     recurrent_state_mode=arguments.recurrent_state_mode,
                     guide_model=guide_model,
                     natural_prefix=natural_prefix,
+                    guide_reward=guide_reward,
                 )
                 restarts = sum(handle.restart_count for handle in supervisor.workers.values())
                 infrastructure_events = list(environment.infrastructure_events)
@@ -1481,9 +1513,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_updates": int(payload.get("updates", 0)),
         "reward": checkpoint_metadata.get("reward"),
         "checkpoint_action_contract": checkpoint_metadata.get("action_contract"),
-        "checkpoint_training_seed_schedule": checkpoint_metadata.get(
-            "training_seed_schedule"
-        ),
+        "checkpoint_training_seed_schedule": checkpoint_metadata.get("training_seed_schedule"),
         "checkpoint_training_seed_pool": checkpoint_metadata.get("training_seed_pool"),
         "checkpoint_curriculum": checkpoint_metadata.get("curriculum"),
         "checkpoint_freeze_base_updates": checkpoint_metadata.get("freeze_base_updates"),

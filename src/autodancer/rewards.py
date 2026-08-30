@@ -36,6 +36,8 @@ class RewardConfig:
     player_damage: float = -0.15
     new_item_type: float = 0.10
     max_item_reward_per_floor: float = 0.50
+    boss_progress_potential_per_damage: float = 0.0
+    max_boss_progress_damage: int = 9
     currency: float = 0.0
     max_currency_per_turn: int = 25
     container_opened: float = 0.0
@@ -58,6 +60,7 @@ class RewardConfig:
             "max_currency_per_turn",
             "max_stair_distance_delta",
             "stair_potential_distance",
+            "max_boss_progress_damage",
         ):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} cannot be negative")
@@ -66,19 +69,20 @@ class RewardConfig:
             "max_combat_reward_per_floor",
             "max_item_reward_per_floor",
             "stair_potential_max",
+            "boss_progress_potential_per_damage",
         ):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} cannot be negative")
         if not 0 <= self.discount <= 1:
             raise ValueError("discount must be in [0, 1]")
-        if self.profile_version not in (2, 4):
-            raise ValueError("profile_version must be 2 or 4")
+        if self.profile_version not in (2, 4, 5):
+            raise ValueError("profile_version must be 2, 4, or 5")
         if self.profile_version == 2 and self.stair_potential_max:
             raise ValueError("Reward V2 cannot enable stair potential shaping")
+        if self.profile_version != 5 and self.boss_progress_potential_per_damage:
+            raise ValueError("Boss progress potential requires Reward V5")
         if self.combat_reward_scope not in ("all", "boss_and_adds", "boss_only"):
-            raise ValueError(
-                "combat_reward_scope must be one of: all, boss_and_adds, boss_only"
-            )
+            raise ValueError("combat_reward_scope must be one of: all, boss_and_adds, boss_only")
 
     def specification(self) -> dict[str, Any]:
         weights = asdict(self)
@@ -96,6 +100,10 @@ class RewardConfig:
         else:
             for name in ("stairs_discovered", "stair_progress", "max_stair_distance_delta"):
                 weights.pop(name)
+        if self.profile_version in (2, 4):
+            # Preserve the exact metadata contract of every historical profile.
+            weights.pop("boss_progress_potential_per_damage")
+            weights.pop("max_boss_progress_damage")
         # Preserve byte-for-byte-compatible metadata for every historical reward
         # profile.  Only scoped profiles need to declare this newer field.
         if self.combat_reward_scope == "all":
@@ -119,6 +127,8 @@ class RewardTracker:
         self.exploration_reward = 0.0
         self.combat_reward = 0.0
         self.item_reward = 0.0
+        self.boss_progress_damage = 0
+        self.boss_progress_potential = 0.0
         self.zone = 0
         self.floor = 0
 
@@ -209,6 +219,8 @@ class RewardTracker:
         self.exploration_reward = 0.0
         self.combat_reward = 0.0
         self.item_reward = 0.0
+        self.boss_progress_damage = 0
+        self.boss_progress_potential = 0.0
         self.rewarded_kills.clear()
         self.rewarded_damage.clear()
 
@@ -222,6 +234,7 @@ class RewardTracker:
         truncated: bool,
     ) -> tuple[float, dict[str, float]]:
         config = self.config
+        event_list = [dict(event) for event in events]
         components: dict[str, float] = {}
         if config.turn:
             components["turn"] = config.turn
@@ -291,13 +304,9 @@ class RewardTracker:
             else:
                 new_stairs = observed_stairs - self.known_stairs
                 if new_stairs:
-                    components["stairs_discovered"] = (
-                        config.stairs_discovered * len(new_stairs)
-                    )
+                    components["stairs_discovered"] = config.stairs_discovered * len(new_stairs)
                     self.known_stairs.update(new_stairs)
-                distance = self._nearest_stair_distance(
-                    (x, y), self.known_stairs, zone, floor
-                )
+                distance = self._nearest_stair_distance((x, y), self.known_stairs, zone, floor)
                 if not new_stairs and distance is not None and self.stair_distance is not None:
                     delta = self.stair_distance - distance
                     credited = max(
@@ -330,8 +339,36 @@ class RewardTracker:
             components["floor_complete"] = config.floor_complete * (floor - self.floor)
         self.zone, self.floor = zone, floor
 
-        for event in events:
+        for event in event_list:
             self._score_event(event, components)
+
+        if config.boss_progress_potential_per_damage:
+            boss_damage = sum(
+                max(int(event.get("amount", 0) or 0), 0)
+                for event in event_list
+                if event.get("kind") == "enemy_damage"
+                and isinstance(event.get("data"), Mapping)
+                and event["data"].get("boss") is True
+            )
+            self.boss_progress_damage = min(
+                self.boss_progress_damage + boss_damage,
+                config.max_boss_progress_damage,
+            )
+            # A real terminal or level transition ends this boss objective. A
+            # client time limit is only a collection truncation and therefore
+            # retains its potential for value bootstrapping.
+            objective_ended = terminated or not same_floor
+            next_boss_potential = (
+                0.0
+                if objective_ended
+                else config.boss_progress_potential_per_damage * self.boss_progress_damage
+            )
+            potential_reward = config.discount * next_boss_potential - self.boss_progress_potential
+            if potential_reward:
+                components["boss_progress_potential"] = potential_reward
+            self.boss_progress_potential = next_boss_potential
+            if objective_ended:
+                self.boss_progress_damage = 0
 
         status = str(info.get("episode_status", "running"))
         if terminated and status == "won":
@@ -392,9 +429,7 @@ class RewardTracker:
                 )
             if credit:
                 component = (
-                    "boss_kill"
-                    if config.combat_reward_scope == "boss_only"
-                    else "enemy_kill"
+                    "boss_kill" if config.combat_reward_scope == "boss_only" else "enemy_kill"
                 )
                 components[component] = components.get(component, 0.0) + credit
                 self.combat_reward += credit
@@ -424,6 +459,29 @@ def load_reward_config(path: str | Path | None) -> RewardConfig:
     if unknown:
         raise ValueError(f"Unknown reward configuration fields: {sorted(unknown)}")
     return RewardConfig(**payload)
+
+
+def reward_config_from_specification(specification: Mapping[str, Any]) -> RewardConfig:
+    """Reconstruct and exactly validate a checkpoint's reward contract."""
+
+    if not isinstance(specification, Mapping):
+        raise ValueError("Checkpoint reward specification must be an object")
+    version = int(specification.get("version", 0) or 0)
+    weights = specification.get("weights")
+    if not isinstance(weights, Mapping):
+        raise ValueError("Checkpoint reward specification has no weights object")
+    payload: dict[str, Any] = {"profile_version": version, **dict(weights)}
+    # V2 metadata predates potential shaping and intentionally omits fields
+    # whose modern defaults are nonzero.
+    if version == 2:
+        payload.setdefault("stair_potential_max", 0.0)
+    unknown = set(payload) - set(asdict(RewardConfig()))
+    if unknown:
+        raise ValueError(f"Unknown checkpoint reward fields: {sorted(unknown)}")
+    config = RewardConfig(**payload)
+    if config.specification() != dict(specification):
+        raise ValueError("Checkpoint reward specification is not canonical")
+    return config
 
 
 def reward_from_event_dicts(

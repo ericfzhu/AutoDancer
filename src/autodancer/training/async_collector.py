@@ -23,6 +23,7 @@ from autodancer.curriculum import (
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
 from autodancer.progress import deeper_level
+from autodancer.rewards import RewardConfig, RewardTracker
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.model import START_ACTION, PolicyModel
 from autodancer.training.natural_prefix import (
@@ -227,16 +228,24 @@ class VersionedAsyncRolloutCollector:
         curriculum_schedule_state: dict[str, Any] | None = None,
         guide_model: PolicyModel | None = None,
         natural_prefix: NaturalPrefixConfig | None = None,
+        guide_reward_config: RewardConfig | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
         self.device = device
         self.batch_delay = batch_delay
         self.telemetry_callback = telemetry_callback
-        if (guide_model is None) != (natural_prefix is None):
-            raise ValueError("guide_model and natural_prefix must be supplied together")
+        prefix_parts = (guide_model, natural_prefix, guide_reward_config)
+        if not (
+            all(value is None for value in prefix_parts)
+            or all(value is not None for value in prefix_parts)
+        ):
+            raise ValueError(
+                "guide_model, natural_prefix, and guide_reward_config must be supplied together"
+            )
         self.guide_model = guide_model
         self.natural_prefix = natural_prefix
+        self.guide_reward_config = guide_reward_config
         self.action_contract = action_contract
         self.contract_memory = ActionContractMemory(action_contract, environment.num_envs)
         self.base_seed = int(seed)
@@ -540,10 +549,7 @@ class VersionedAsyncRolloutCollector:
                         }
                     )
                     self.curriculum_schedule.record_outcome(state.reset_spec, "prefix_failed")
-                    if (
-                        natural_prefix_failures
-                        >= error.config.max_failed_seeds_per_fragment
-                    ):
+                    if natural_prefix_failures >= error.config.max_failed_seeds_per_fragment:
                         raise NaturalPrefixError(
                             worker_id,
                             error.config,
@@ -762,9 +768,14 @@ class VersionedAsyncRolloutCollector:
             guide_hidden = self.guide_model.initial_state(1, device=self.device)
             learner_hidden = self.model.initial_state(1, device=self.device)
             previous_action = START_ACTION
-            previous_reward = 0.0
+            guide_previous_reward = 0.0
+            learner_previous_reward = 0.0
             last_guide_action = START_ACTION
-            last_guide_reward = 0.0
+            last_learner_reward = 0.0
+            if self.guide_reward_config is None:
+                raise RuntimeError("Natural-prefix guide reward contract is missing")
+            guide_reward_tracker = RewardTracker(self.guide_reward_config)
+            guide_reward_tracker.reset(observation, info)
 
             for guide_turn in range(config.max_guide_turns):
                 sample = natural_prefix_policy_sample(
@@ -776,7 +787,7 @@ class VersionedAsyncRolloutCollector:
                 action, _, _, next_guide_hidden = guide_scheduler.infer(
                     observation,
                     previous_action,
-                    previous_reward,
+                    guide_previous_reward,
                     guide_hidden,
                     sample,
                 )
@@ -785,7 +796,7 @@ class VersionedAsyncRolloutCollector:
                     _, _, _, next_learner_hidden = learner_scheduler.infer(
                         observation,
                         previous_action,
-                        previous_reward,
+                        learner_previous_reward,
                         learner_hidden,
                         0.5,
                     )
@@ -802,13 +813,18 @@ class VersionedAsyncRolloutCollector:
                     raw_next_observation,
                     next_info,
                 )
-                next_observation = self.contract_memory.apply_slot(
-                    index, raw_next_observation
-                )
+                next_observation = self.contract_memory.apply_slot(index, raw_next_observation)
                 tracker.observe(next_observation, next_info)
+                guide_reward, _ = guide_reward_tracker.score(
+                    next_observation,
+                    next_info,
+                    next_info.get("raw_events", ()),
+                    terminated=bool(terminated),
+                    truncated=bool(truncated),
+                )
                 self._publish_telemetry(index, next_observation, next_info, action, float(reward))
                 last_guide_action = action
-                last_guide_reward = float(reward)
+                last_learner_reward = float(reward)
 
                 if tracker.reached and not terminated and not truncated:
                     metadata = {
@@ -821,15 +837,18 @@ class VersionedAsyncRolloutCollector:
                         "handoff_run_id": str(next_info.get("run_id", "")),
                         "handoff_seed": int(next_info.get("seed", seed)),
                         "boundary": tracker.snapshot(),
+                        "guide_reward": self.guide_reward_config.specification(),
                     }
                     handed_observation, handed_info = worker.begin_learning_segment(
                         next_info,
                         metadata=metadata,
                     )
-                    effective_observation = self.contract_memory.reset_slot(
-                        index, handed_observation
-                    )
                     warm = config.recurrent_state_mode == "warm"
+                    effective_observation = (
+                        self.contract_memory.apply_slot(index, handed_observation)
+                        if warm
+                        else self.contract_memory.reset_slot(index, handed_observation)
+                    )
                     return ActorState(
                         effective_observation,
                         handed_info,
@@ -840,7 +859,7 @@ class VersionedAsyncRolloutCollector:
                         ),
                         state.reset_spec,
                         previous_action=last_guide_action if warm else START_ACTION,
-                        previous_reward=last_guide_reward if warm else 0.0,
+                        previous_reward=last_learner_reward if warm else 0.0,
                         episode_start=not warm,
                         prefix_pending=False,
                         prefix_metadata=metadata,
@@ -851,7 +870,8 @@ class VersionedAsyncRolloutCollector:
                 guide_hidden = next_guide_hidden
                 learner_hidden = next_learner_hidden
                 previous_action = action
-                previous_reward = float(reward)
+                guide_previous_reward = float(guide_reward)
+                learner_previous_reward = float(reward)
                 if terminated or truncated:
                     break
 

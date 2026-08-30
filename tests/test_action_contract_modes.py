@@ -33,9 +33,7 @@ def _observation(*, x: int = 4, y: int = 7) -> dict[str, np.ndarray]:
         "grid": grid,
         "map_memory": np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16),
         "player": player,
-        "inventory": np.zeros(
-            (INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16
-        ),
+        "inventory": np.zeros((INVENTORY_SLOTS, INVENTORY_FEATURES), dtype=np.int16),
         "action_mask": np.ones(ACTION_COUNT, dtype=np.int8),
     }
 
@@ -56,9 +54,7 @@ def test_current_contract_returns_live_observation_unchanged() -> None:
 def test_known_invalid_wall_masks_only_after_authoritative_no_op() -> None:
     memory = ActionContractMemory("known-invalid-wall-v1", 1)
     live = _observation()
-    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = (
-        Terrain.WALL
-    )
+    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = Terrain.WALL
     effective = memory.reset_slot(0, live)
     assert effective["action_mask"][Action.RIGHT] == 1
 
@@ -103,9 +99,7 @@ def test_known_invalid_wall_reopens_when_target_actor_or_inventory_changes() -> 
 def test_known_invalid_wall_never_learns_dig_or_combat() -> None:
     memory = ActionContractMemory("known-invalid-wall-v1", 1)
     live = _observation()
-    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = (
-        Terrain.WALL
-    )
+    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = Terrain.WALL
     memory.reset_slot(0, live)
     for category in ("dig", "combat", "combat_attempt"):
         diagnostic = memory.observe(
@@ -122,9 +116,7 @@ def test_known_invalid_wall_never_learns_dig_or_combat() -> None:
 def test_known_invalid_wall_memory_is_slot_local_and_clears_on_reset() -> None:
     memory = ActionContractMemory("known-invalid-wall-v1", 2)
     live = _observation()
-    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = (
-        Terrain.WALL
-    )
+    live["grid"][GRID_SIZE // 2, GRID_SIZE // 2 + 1, GridChannel.TERRAIN_CLASS] = Terrain.WALL
     batch = {key: np.stack([value, value]) for key, value in live.items()}
     memory.reset_batch(batch)
     memory.observe(
@@ -157,17 +149,14 @@ def test_map_navigation_prior_selects_least_visited_direction_and_masks_wait() -
             Action.DOWN: (0, 1),
             Action.LEFT: (-1, 0),
         }[action]
-        live["map_memory"][centre + dy, centre + dx, MapChannel.TERRAIN_CLASS] = (
-            Terrain.FLOOR
-        )
+        live["map_memory"][centre + dy, centre + dx, MapChannel.TERRAIN_CLASS] = Terrain.FLOOR
         live["map_memory"][centre + dy, centre + dx, MapChannel.VISIT_COUNT] = count
 
     effective = memory.reset_slot(0, live)
 
     assert effective["action_mask"][Action.UP] == 1
     assert np.all(
-        effective["action_mask"][[Action.RIGHT, Action.DOWN, Action.LEFT, Action.WAIT]]
-        == 0
+        effective["action_mask"][[Action.RIGHT, Action.DOWN, Action.LEFT, Action.WAIT]] == 0
     )
 
 
@@ -191,10 +180,7 @@ def test_map_navigation_prior_routes_toward_known_stairs() -> None:
     effective = memory.reset_slot(0, live)
 
     assert effective["action_mask"][Action.RIGHT] == 1
-    assert np.all(
-        effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]]
-        == 0
-    )
+    assert np.all(effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]] == 0)
 
 
 def test_map_navigation_prior_never_suppresses_possible_dig() -> None:
@@ -216,10 +202,7 @@ def test_map_navigation_prior_applies_independently_to_batched_slots() -> None:
     centre = MAP_SIZE // 2
     first["map_memory"][centre, centre + 1, MapChannel.VISIT_COUNT] = 3
     second["map_memory"][centre - 1, centre, MapChannel.VISIT_COUNT] = 3
-    batch = {
-        key: np.stack([first[key], second[key]])
-        for key in first
-    }
+    batch = {key: np.stack([first[key], second[key]]) for key in first}
 
     effective = memory.reset_batch(batch)
 
@@ -238,24 +221,17 @@ def test_navigation_v2_routes_to_frontier_despite_far_visible_enemy() -> None:
     live["map_memory"][map_centre, map_centre : map_centre + 4, MapChannel.TERRAIN_CLASS] = (
         Terrain.FLOOR
     )
-    live["map_memory"][map_centre - 1, map_centre, MapChannel.TERRAIN_CLASS] = (
-        Terrain.FLOOR
-    )
+    live["map_memory"][map_centre - 1, map_centre, MapChannel.TERRAIN_CLASS] = Terrain.FLOOR
     live["map_memory"][map_centre - 1, map_centre, MapChannel.VISIT_COUNT] = 0
     live["map_memory"][map_centre, map_centre + 1, MapChannel.VISIT_COUNT] = 9
-    live["map_memory"][
-        map_centre, map_centre + 4, MapChannel.TERRAIN_CLASS
-    ] = Terrain.UNKNOWN
+    live["map_memory"][map_centre, map_centre + 4, MapChannel.TERRAIN_CLASS] = Terrain.UNKNOWN
     live["grid"][grid_centre - 5, grid_centre, GridChannel.ACTOR_CLASS] = ActorKind.SKELETON
     live["player"][PlayerFeature.VISIBLE_ENEMIES] = 1
 
     effective = memory.reset_slot(0, live)
 
     assert effective["action_mask"][Action.RIGHT] == 1
-    assert np.all(
-        effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]]
-        == 0
-    )
+    assert np.all(effective["action_mask"][[Action.UP, Action.DOWN, Action.LEFT, Action.WAIT]] == 0)
 
 
 def test_navigation_v2_yields_to_nearby_enemy_and_boss_floor() -> None:
@@ -284,12 +260,10 @@ def test_navigation_v2_remembers_visible_trap_and_routes_around_it() -> None:
         (1, 0),
     )
     for dx, dy in path:
-        live["map_memory"][
-            map_centre + dy, map_centre + dx, MapChannel.TERRAIN_CLASS
-        ] = Terrain.FLOOR
-    live["map_memory"][
-        map_centre, map_centre + 2, MapChannel.TERRAIN_CLASS
-    ] = Terrain.STAIRS
+        live["map_memory"][map_centre + dy, map_centre + dx, MapChannel.TERRAIN_CLASS] = (
+            Terrain.FLOOR
+        )
+    live["map_memory"][map_centre, map_centre + 2, MapChannel.TERRAIN_CLASS] = Terrain.STAIRS
     live["grid"][grid_centre, grid_centre + 1, GridChannel.VISIBILITY] = 2
     live["grid"][grid_centre, grid_centre + 1, GridChannel.TRAP] = 1
 
@@ -343,6 +317,38 @@ def test_navigation_v2_warned_hazard_is_slot_local_and_clears_on_reset() -> None
     assert cleared["remembered_hazards"] == 0
 
 
+def test_navigation_v2_batched_reset_clears_hazards_between_seed_waves() -> None:
+    memory = ActionContractMemory("map-navigation-prior-v2", 1)
+    trap = _observation()
+    centre = GRID_SIZE // 2
+    trap["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
+    trap["grid"][centre, centre + 1, GridChannel.TRAP] = 1
+    memory.reset_slot(0, trap)
+    assert (
+        memory.observe(
+            0,
+            trap,
+            Action.UP,
+            trap,
+            {"action_outcome": {"category": "move"}},
+        )["remembered_hazards"]
+        == 1
+    )
+
+    fresh = _observation(x=40, y=40)
+    memory.reset_batch({key: np.expand_dims(value, 0) for key, value in fresh.items()})
+    assert (
+        memory.observe(
+            0,
+            fresh,
+            Action.UP,
+            fresh,
+            {"action_outcome": {"category": "move"}},
+        )["remembered_hazards"]
+        == 0
+    )
+
+
 def test_navigation_v2_clears_hazards_on_natural_floor_transition() -> None:
     memory = ActionContractMemory("map-navigation-prior-v2", 1)
     trap = _observation(x=12, y=15)
@@ -350,13 +356,16 @@ def test_navigation_v2_clears_hazards_on_natural_floor_transition() -> None:
     trap["grid"][centre, centre + 1, GridChannel.VISIBILITY] = 2
     trap["grid"][centre, centre + 1, GridChannel.TRAP] = 1
     memory.reset_slot(0, trap)
-    assert memory.observe(
-        0,
-        trap,
-        Action.UP,
-        trap,
-        {"action_outcome": {"category": "move"}},
-    )["remembered_hazards"] == 1
+    assert (
+        memory.observe(
+            0,
+            trap,
+            Action.UP,
+            trap,
+            {"action_outcome": {"category": "move"}},
+        )["remembered_hazards"]
+        == 1
+    )
 
     next_floor = _observation(x=12, y=15)
     next_floor["player"][PlayerFeature.FLOOR] = 2

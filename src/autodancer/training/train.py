@@ -22,7 +22,7 @@ from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level, level_progress
-from autodancer.rewards import load_reward_config
+from autodancer.rewards import RewardConfig, load_reward_config
 from autodancer.training.action_contract import ACTION_CONTRACTS
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
@@ -38,6 +38,7 @@ from autodancer.training.model import (
 from autodancer.training.natural_prefix import (
     NATURAL_PREFIX_RECURRENT_MODES,
     NaturalPrefixConfig,
+    guide_reward_config,
     natural_prefix_identity,
     validate_guide_action_contract,
 )
@@ -378,6 +379,7 @@ def evaluate_policy(
     action_contract: str = "current",
     guide_model: PolicyModel | None = None,
     natural_prefix: NaturalPrefixConfig | None = None,
+    guide_reward: RewardConfig | None = None,
 ) -> dict[str, float]:
     """Evaluate deterministically on every worker, leaving all workers reset."""
     from autodancer.training.baseline import _evaluate_deterministic_async
@@ -393,6 +395,7 @@ def evaluate_policy(
         action_contract=action_contract,
         guide_model=guide_model,
         natural_prefix=natural_prefix,
+        guide_reward_config=guide_reward,
     )
     scores = [float(episode["episode_return"]) for episode in episodes]
     return {
@@ -542,9 +545,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "natural_prefix": natural_prefix_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "freeze_base_scope": (
-                    "inherited-actor-base-only-v1"
-                    if arguments.freeze_base_updates
-                    else None
+                    "inherited-actor-base-only-v1" if arguments.freeze_base_updates else None
                 ),
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
@@ -657,15 +658,15 @@ def train(arguments: argparse.Namespace) -> None:
                 elif arguments.fine_tune_from:
                     algorithm.initialize_for_finetune(arguments.fine_tune_from)
                 guide_model: PolicyModel | None = None
+                guide_reward: RewardConfig | None = None
                 if arguments.natural_prefix_guide is not None:
                     guide_payload = torch.load(
                         arguments.natural_prefix_guide,
                         map_location=device,
                         weights_only=False,
                     )
-                    validate_guide_action_contract(
-                        guide_payload, arguments.action_contract
-                    )
+                    validate_guide_action_contract(guide_payload, arguments.action_contract)
+                    guide_reward = guide_reward_config(guide_payload)
                     guide_model = model_from_spec(
                         guide_payload.get("architecture", {}), initialize=False
                     ).to(device)
@@ -706,6 +707,7 @@ def train(arguments: argparse.Namespace) -> None:
                     curriculum_schedule_state=resume_metrics.get("curriculum_schedule_state"),
                     guide_model=guide_model,
                     natural_prefix=natural_prefix,
+                    guide_reward_config=guide_reward,
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -762,6 +764,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 action_contract=arguments.action_contract,
                                 guide_model=guide_model,
                                 natural_prefix=natural_prefix,
+                                guide_reward=guide_reward,
                             )
                         )
                         if dashboard_state is not None:
@@ -784,6 +787,7 @@ def train(arguments: argparse.Namespace) -> None:
                             curriculum_schedule_state=curriculum_schedule_state,
                             guide_model=guide_model,
                             natural_prefix=natural_prefix,
+                            guide_reward_config=guide_reward,
                         )
                         metrics["training_seed_schedule_state"] = collector.seed_schedule_state()
                         metrics["curriculum_schedule_state"] = collector.curriculum_schedule_state()

@@ -25,6 +25,7 @@ from autodancer.constants import (
     Terrain,
 )
 from autodancer.curriculum import EpisodeResetSpec, WeightedResetSpec
+from autodancer.rewards import RewardConfig
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.baseline import _evaluate_model_async
 from autodancer.training.model import ModelConfig, RecurrentActorCritic
@@ -746,6 +747,7 @@ def test_natural_prefix_uses_legal_guide_steps_but_excludes_them_from_rollout() 
         device=torch.device("cpu"),
         seed=100,
         guide_model=guide,
+        guide_reward_config=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             target_phase=4,
             max_guide_turns=8,
@@ -772,6 +774,55 @@ def test_natural_prefix_uses_legal_guide_steps_but_excludes_them_from_rollout() 
     assert torch.allclose(rollout.rewards, torch.full((2, 2), 0.25))
 
 
+def test_natural_prefix_guide_receives_its_own_reward_stream() -> None:
+    class RecordingGuide(RecurrentActorCritic):
+        def __init__(self, config: ModelConfig) -> None:
+            super().__init__(config)
+            self.previous_rewards: list[float] = []
+
+        def step(self, observation, state):
+            self.previous_rewards.extend(
+                float(value) for value in observation["previous_reward"].cpu()
+            )
+            return super().step(observation, state)
+
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecordingGuide(learner.config)
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=105,
+        guide_model=guide,
+        guide_reward_config=RewardConfig(),
+        natural_prefix=NaturalPrefixConfig(
+            target_phase=4,
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+        ),
+    )
+    try:
+        collector.collect(1)
+    finally:
+        collector.close()
+
+    # PrefixWorker returns learner rewards of 10.0, while the checkpoint reward
+    # contract scores the authoritative 3/2-point boss-damage events as .03/.02.
+    assert max(guide.previous_rewards) < 1.0
+    assert any(value == pytest.approx(0.03) for value in guide.previous_rewards)
+
+
 def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> None:
     environment = PrefixEnvironment()
     learner = RecurrentActorCritic(
@@ -791,6 +842,7 @@ def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> No
         device=torch.device("cpu"),
         seed=101,
         guide_model=guide,
+        guide_reward_config=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             max_guide_turns=8,
             max_attempts=1,
@@ -803,6 +855,45 @@ def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> No
         collector.close()
     assert not torch.any(rollout.episode_starts[0])
     assert torch.any(rollout.hiddens[0] != 0)
+
+
+def test_natural_prefix_warm_handoff_preserves_action_contract_memory() -> None:
+    environment = PrefixEnvironment()
+    learner = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    guide = RecurrentActorCritic(learner.config)
+    with torch.no_grad():
+        for parameter in guide.parameters():
+            parameter.zero_()
+        guide.actor[-1].bias[int(Action.UP)] = 20.0
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        learner,
+        device=torch.device("cpu"),
+        seed=106,
+        guide_model=guide,
+        guide_reward_config=RewardConfig(),
+        natural_prefix=NaturalPrefixConfig(
+            max_guide_turns=8,
+            max_attempts=1,
+            deterministic_guide=True,
+            recurrent_state_mode="warm",
+        ),
+        action_contract="known-invalid-wall-v1",
+    )
+    try:
+        collector.collect(1)
+        assert all(collector.contract_memory._blocked[index] for index in range(2))
+    finally:
+        collector.close()
 
 
 def test_natural_prefix_guide_uses_declared_stateful_action_contract() -> None:
@@ -828,6 +919,7 @@ def test_natural_prefix_guide_uses_declared_stateful_action_contract() -> None:
         device=torch.device("cpu"),
         seed=104,
         guide_model=guide,
+        guide_reward_config=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
         action_contract="known-invalid-wall-v1",
     )
@@ -860,6 +952,7 @@ def test_natural_prefix_rejects_direct_boss_health_mutation() -> None:
         device=torch.device("cpu"),
         seed=102,
         guide_model=guide,
+        guide_reward_config=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             max_guide_turns=3,
             max_attempts=1,
@@ -892,6 +985,7 @@ def test_natural_prefix_training_records_failed_seed_without_fabricating_transit
         device=torch.device("cpu"),
         seed=103,
         guide_model=guide,
+        guide_reward_config=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             max_guide_turns=3,
             max_attempts=1,
@@ -907,9 +1001,7 @@ def test_natural_prefix_training_records_failed_seed_without_fabricating_transit
     assert rollout.actions.shape == (1, 2)
     assert torch.allclose(rollout.rewards, torch.full((1, 2), 0.25))
     failures = [
-        episode
-        for episode in collector.completed_episodes
-        if episode["status"] == "prefix_failed"
+        episode for episode in collector.completed_episodes if episode["status"] == "prefix_failed"
     ]
     assert [episode["seed"] for episode in failures] == initial_seeds
     assert all(episode["turns"] == 0 for episode in failures)
@@ -945,6 +1037,7 @@ def test_natural_prefix_evaluation_uses_same_reachable_handoff() -> None:
         action_contract="current",
         deterministic=True,
         guide_model=guide,
+        guide_reward=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             max_guide_turns=8,
             max_attempts=1,
@@ -985,6 +1078,7 @@ def test_natural_prefix_evaluation_uses_declared_stateful_action_contract() -> N
         action_contract="known-invalid-wall-v1",
         deterministic=True,
         guide_model=guide,
+        guide_reward=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(
             max_guide_turns=3,
             max_attempts=1,
@@ -1020,6 +1114,7 @@ def test_natural_prefix_evaluation_reports_guide_failure_as_gameplay_outcome() -
         action_contract="current",
         deterministic=True,
         guide_model=guide,
+        guide_reward=RewardConfig(),
         natural_prefix=NaturalPrefixConfig(max_guide_turns=3, max_attempts=1),
     )
     assert len(results) == 1

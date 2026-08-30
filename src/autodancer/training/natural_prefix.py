@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from autodancer.constants import ActorKind, BossType, GridChannel, PlayerFeature
+from autodancer.rewards import RewardConfig, reward_config_from_specification
 
 NATURAL_PREFIX_RECURRENT_MODES = ("fresh", "warm")
 
@@ -39,9 +40,16 @@ def validate_guide_action_contract(payload: Mapping[str, Any], expected: str) ->
 
     actual = (payload.get("checkpoint_metadata") or {}).get("action_contract")
     if actual != expected:
-        raise ValueError(
-            f"Guide action contract mismatch: checkpoint={actual!r}, run={expected!r}"
-        )
+        raise ValueError(f"Guide action contract mismatch: checkpoint={actual!r}, run={expected!r}")
+
+
+def guide_reward_config(payload: Mapping[str, Any]) -> RewardConfig:
+    """Return the exact reward contract that conditioned a frozen guide."""
+
+    metadata = payload.get("checkpoint_metadata")
+    if not isinstance(metadata, Mapping) or "reward" not in metadata:
+        raise ValueError("Guide checkpoint has no reward contract")
+    return reward_config_from_specification(metadata["reward"])
 
 
 class NaturalPrefixError(RuntimeError):

@@ -20,9 +20,11 @@ from autodancer.constants import (
     GridChannel,
     PlayerFeature,
 )
+from autodancer.rewards import RewardConfig
 from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
+    guide_reward_config,
     natural_prefix_identity,
     natural_prefix_policy_sample,
     validate_guide_action_contract,
@@ -117,6 +119,14 @@ def test_guide_action_contract_must_match_checkpoint() -> None:
     validate_guide_action_contract(payload, "map-navigation-prior-v1")
     with pytest.raises(ValueError, match="Guide action contract mismatch"):
         validate_guide_action_contract(payload, "current")
+
+
+def test_guide_reward_contract_is_loaded_exactly_from_checkpoint() -> None:
+    expected = RewardConfig(player_damage=0, death=0)
+    payload = {"checkpoint_metadata": {"reward": expected.specification()}}
+    assert guide_reward_config(payload) == expected
+    with pytest.raises(ValueError, match="no reward contract"):
+        guide_reward_config({"checkpoint_metadata": {}})
 
 
 def test_natural_prefix_identity_binds_exact_guide_bytes(tmp_path: Path) -> None:

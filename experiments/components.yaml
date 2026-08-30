@@ -28,6 +28,10 @@ blocks:
         description: Outcome-aligned boss-only guide that removes player-damage and death penalties after EXP-0021 demonstrated that they made zero-contact timeout preferable to unsuccessful boss practice.
         config: configs/reward-death-metal-guide-v3.json
         config_sha256: ed80eade70d8133ada9cd7eff44db3fbff6a1657a6e07e7df72e0bd29891096e
+      DeathMetalPotentialV5:
+        description: Candidate phase-curriculum reward using terminal-canceling authoritative boss-progress potential; direct damage and kill bonuses are zero, so repeated damage followed by death has zero discounted shaping return.
+        config: configs/reward-death-metal-potential-v5.json
+        config_sha256: 0fbf1fd9566b4a0a3f72d3c3ec0cf891f3c55944941a3d3cd7090bfe6cf9f2ad
   architecture:
     versions:
       A2: Entity-attention recurrent actor-critic baseline.

@@ -14,7 +14,12 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
-from autodancer.rewards import RewardConfig, RewardTracker, load_reward_config
+from autodancer.rewards import (
+    RewardConfig,
+    RewardTracker,
+    load_reward_config,
+    reward_config_from_specification,
+)
 
 
 def observation(*, x: int = 0, y: int = 0) -> dict[str, np.ndarray]:
@@ -424,3 +429,114 @@ def test_combat_scope_validation_and_legacy_metadata_compatibility() -> None:
     with pytest.raises(ValueError, match="combat_reward_scope"):
         RewardConfig(combat_reward_scope="anything")
     assert "combat_reward_scope" not in RewardConfig().specification()["weights"]
+
+
+def _boss_potential_config() -> RewardConfig:
+    return RewardConfig(
+        profile_version=5,
+        new_position=0,
+        new_tile=0,
+        enemy_damage=0,
+        enemy_kill=0,
+        player_damage=0,
+        new_item_type=0,
+        stair_potential_max=0,
+        floor_complete=0,
+        zone_complete=0,
+        victory=0,
+        death=0,
+        aborted=0,
+        boss_progress_potential_per_damage=0.2,
+        max_boss_progress_damage=9,
+    )
+
+
+def test_death_metal_potential_profile_has_no_direct_renewable_combat_credit() -> None:
+    config = load_reward_config("configs/reward-death-metal-potential-v5.json")
+    assert config.profile_version == 5
+    assert config.enemy_damage == config.enemy_kill == 0
+    assert config.boss_progress_potential_per_damage == pytest.approx(0.2)
+    assert config.max_boss_progress_damage == 9
+    assert config.boss_progress_potential_per_damage * 9 < config.floor_complete
+
+
+def _boss_damage(amount: int = 1) -> list[dict]:
+    return [{"kind": "enemy_damage", "amount": amount, "data": {"boss": True}}]
+
+
+def test_boss_progress_potential_cancels_partial_progress_on_death() -> None:
+    tracker = RewardTracker(_boss_potential_config())
+    value = observation()
+    tracker.reset(value, {"zone": 1, "floor": 4})
+    first, _ = tracker.score(
+        value,
+        {"zone": 1, "floor": 4, "episode_status": "running"},
+        _boss_damage(),
+        terminated=False,
+        truncated=False,
+    )
+    second, _ = tracker.score(
+        value,
+        {"zone": 1, "floor": 4, "episode_status": "running"},
+        _boss_damage(),
+        terminated=False,
+        truncated=False,
+    )
+    death, parts = tracker.score(
+        value,
+        {"zone": 1, "floor": 4, "episode_status": "dead"},
+        [],
+        terminated=True,
+        truncated=False,
+    )
+    assert first + 0.99 * second + 0.99**2 * death == pytest.approx(0.0)
+    assert parts["boss_progress_potential"] == pytest.approx(-0.4)
+
+
+def test_boss_progress_potential_survives_time_limit_but_ends_on_level_change() -> None:
+    tracker = RewardTracker(_boss_potential_config())
+    value = observation()
+    tracker.reset(value, {"zone": 1, "floor": 4})
+    tracker.score(
+        value,
+        {"zone": 1, "floor": 4, "episode_status": "running"},
+        _boss_damage(),
+        terminated=False,
+        truncated=False,
+    )
+    truncated, _ = tracker.score(
+        value,
+        {"zone": 1, "floor": 4, "episode_status": "time_limit"},
+        [],
+        terminated=False,
+        truncated=True,
+    )
+    assert truncated == pytest.approx(-0.002)
+    assert tracker.boss_progress_potential == pytest.approx(0.2)
+
+    changed, parts = tracker.score(
+        value,
+        {"zone": 2, "floor": 1, "episode_status": "running"},
+        [],
+        terminated=False,
+        truncated=False,
+    )
+    assert changed == pytest.approx(-0.2)
+    assert parts["boss_progress_potential"] == pytest.approx(-0.2)
+    assert parts["floor_complete"] == parts["zone_complete"] == 0
+    assert tracker.boss_progress_potential == 0
+
+
+def test_checkpoint_reward_contract_round_trips_v4_and_v5_exactly() -> None:
+    for config in (RewardConfig(), _boss_potential_config()):
+        specification = config.specification()
+        restored = reward_config_from_specification(specification)
+        assert restored == config
+        assert restored.specification() == specification
+
+    malformed = RewardConfig().specification()
+    malformed["weights"]["combat_reward_scope"] = "all"
+    with pytest.raises(ValueError, match="not canonical"):
+        reward_config_from_specification(malformed)
+    with pytest.raises(ValueError, match="requires Reward V5"):
+        RewardConfig(profile_version=4, boss_progress_potential_per_damage=0.2)
