@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -25,12 +26,51 @@ from autodancer.training.baseline import (
     masked_random_actions,
     recurrent_state_after_transition,
     recurrent_state_for_action,
+    resolve_policy_feedback_config,
     stochastic_policy_sample,
     summarize_episodes,
     validate_checkpoint_reward_schema,
     validate_declared_source_reference,
     zero_hidden_rows,
 )
+
+
+def test_policy_feedback_defaults_to_legacy_checkpoint_reward() -> None:
+    trained = RewardConfig(profile_version=4, enemy_damage=0.123)
+    evaluation = RewardConfig(
+        profile_version=5,
+        enemy_damage=0.0,
+        boss_progress_potential_per_damage=0.2,
+    )
+    resolved, source, matches, checkpoint_spec = resolve_policy_feedback_config(
+        {"checkpoint_metadata": {"reward": trained.specification()}},
+        evaluation,
+        None,
+    )
+    assert resolved == trained
+    assert source == "checkpoint"
+    assert matches is True
+    assert checkpoint_spec == trained.specification()
+
+
+def test_explicit_policy_feedback_override_is_reported_as_mismatch(tmp_path: Path) -> None:
+    trained = RewardConfig(profile_version=4, enemy_damage=0.123)
+    override = tmp_path / "feedback.json"
+    override.write_text('{"profile_version": 4, "enemy_damage": 0.5}', encoding="utf-8")
+    resolved, source, matches, checkpoint_spec = resolve_policy_feedback_config(
+        {
+            "checkpoint_metadata": {
+                "reward": RewardConfig(profile_version=5).specification(),
+                "policy_feedback_reward": trained.specification(),
+            }
+        },
+        RewardConfig(profile_version=5),
+        override,
+    )
+    assert resolved.enemy_damage == 0.5
+    assert source == "explicit-override"
+    assert matches is False
+    assert checkpoint_spec == trained.specification()
 
 
 def test_source_reference_requires_declared_path_and_hash(tmp_path) -> None:
@@ -161,9 +201,12 @@ def test_recurrent_state_ablation_uses_a_fresh_state_for_every_action() -> None:
 
     model = FakeModel()
     carried = torch.ones(1, 3)
-    assert recurrent_state_for_action(  # type: ignore[arg-type]
-        model, carried, "carry", device=torch.device("cpu")
-    ) is carried
+    assert (
+        recurrent_state_for_action(  # type: ignore[arg-type]
+            model, carried, "carry", device=torch.device("cpu")
+        )
+        is carried
+    )
     first = recurrent_state_for_action(  # type: ignore[arg-type]
         model, carried, "reset-every-step", device=torch.device("cpu")
     )
@@ -334,12 +377,8 @@ def test_episode_diagnostics_separate_productive_and_repeated_stationary_turns()
         {"zone": 1, "floor": 1, "raw_events": [{"kind": "enemy_damage", "amount": 1}]},
         int(Action.RIGHT),
     )
-    accumulator.observe(
-        value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT)
-    )
-    accumulator.observe(
-        value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT)
-    )
+    accumulator.observe(value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT))
+    accumulator.observe(value, 0.0, {"zone": 1, "floor": 1, "raw_events": []}, int(Action.LEFT))
     result = accumulator.finish("running")
     assert result["productive_stationary_combat_turns"] == 1
     assert result["unchanged_direction_turns"] == 2
@@ -411,9 +450,7 @@ def test_death_metal_phase4_requires_authoritative_damage_and_four_phase_types()
                 "zone": 1,
                 "floor": 4,
                 "boss_type": int(BossType.DEATH_METAL),
-                "raw_events": [
-                    {"kind": "enemy_damage", "amount": damage, "data": {"boss": True}}
-                ],
+                "raw_events": [{"kind": "enemy_damage", "amount": damage, "data": {"boss": True}}],
             },
             int(Action.RIGHT),
         )
@@ -443,9 +480,7 @@ def test_direct_health_drop_does_not_count_as_death_metal_phase_progression() ->
             "zone": 1,
             "floor": 4,
             "boss_type": int(BossType.DEATH_METAL),
-            "raw_events": [
-                {"kind": "enemy_damage", "amount": 7, "data": {"boss": True}}
-            ],
+            "raw_events": [{"kind": "enemy_damage", "amount": 7, "data": {"boss": True}}],
         },
         int(Action.RIGHT),
     )

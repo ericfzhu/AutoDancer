@@ -31,7 +31,12 @@ from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level, level_progress
-from autodancer.rewards import RewardConfig, RewardTracker, load_reward_config
+from autodancer.rewards import (
+    RewardConfig,
+    RewardTracker,
+    load_reward_config,
+    reward_config_from_specification,
+)
 from autodancer.training.action_contract import (
     ACTION_CONTRACTS,
     ActionContractMemory,
@@ -64,6 +69,32 @@ def validate_checkpoint_reward_schema(
     checkpoint_version = checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
     if checkpoint_version != evaluation_reward.profile_version:
         raise ValueError("Evaluation reward schema disagrees with the checkpoint")
+
+
+def resolve_policy_feedback_config(
+    checkpoint: dict[str, Any],
+    evaluation_reward: RewardConfig,
+    override_path: Path | None,
+) -> tuple[RewardConfig, str, bool, dict[str, Any] | None]:
+    """Resolve recurrent feedback independently from evaluation scoring."""
+    metadata = dict(checkpoint.get("checkpoint_metadata", {}))
+    checkpoint_spec = metadata.get("policy_feedback_reward")
+    if checkpoint_spec is None:
+        # Before feedback and optimization rewards were separated, the actor
+        # necessarily received the checkpoint's optimization reward.
+        checkpoint_spec = metadata.get("reward")
+    if override_path is None:
+        resolved = (
+            evaluation_reward
+            if checkpoint_spec is None
+            else reward_config_from_specification(checkpoint_spec)
+        )
+        source = "checkpoint"
+    else:
+        resolved = load_reward_config(override_path)
+        source = "explicit-override"
+    matches = bool(checkpoint_spec is None or resolved.specification() == checkpoint_spec)
+    return resolved, source, matches, checkpoint_spec
 
 
 @dataclass(slots=True)
@@ -1464,11 +1495,17 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         guide_model.load_state_dict(guide_payload["model"])
         guide_model.eval()
     reward_config = load_reward_config(arguments.reward_config)
-    policy_feedback_config = (
-        None
-        if arguments.policy_feedback_reward_config is None
-        else load_reward_config(arguments.policy_feedback_reward_config)
+    (
+        policy_feedback_config,
+        policy_feedback_source,
+        policy_feedback_matches_checkpoint,
+        checkpoint_feedback_spec,
+    ) = resolve_policy_feedback_config(
+        payload,
+        reward_config,
+        arguments.policy_feedback_reward_config,
     )
+    checkpoint_metadata = dict(payload.get("checkpoint_metadata", {}))
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
@@ -1549,7 +1586,6 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         None if arguments.trained_only else summarize_episodes(random_results, "masked_random")
     )
     trained = summarize_episodes(trained_results, f"checkpoint_{arguments.policy_mode}")
-    checkpoint_metadata = dict(payload.get("checkpoint_metadata", {}))
     report = {
         "schema_version": 2,
         "created_at": datetime.now(UTC).isoformat(),
@@ -1575,9 +1611,10 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_freeze_base_scope": checkpoint_metadata.get("freeze_base_scope"),
         "checkpoint_initialization": checkpoint_metadata.get("initialization"),
         "evaluation_reward": reward_config.specification(),
-        "policy_feedback_reward": (
-            None if policy_feedback_config is None else policy_feedback_config.specification()
-        ),
+        "policy_feedback_reward": (policy_feedback_config.specification()),
+        "checkpoint_policy_feedback_reward": checkpoint_feedback_spec,
+        "policy_feedback_source": policy_feedback_source,
+        "policy_feedback_matches_checkpoint": policy_feedback_matches_checkpoint,
         "num_instances": arguments.num_instances,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
