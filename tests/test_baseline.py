@@ -106,6 +106,16 @@ def test_custom_reward_label_still_checks_checkpoint_schema() -> None:
         )
 
 
+def test_source_reference_can_use_common_evaluation_reward() -> None:
+    checkpoint = {"checkpoint_metadata": {"reward": {"version": 4}}}
+
+    validate_checkpoint_reward_schema(
+        checkpoint,
+        RewardConfig(profile_version=5),
+        source_reference=True,
+    )
+
+
 def test_trace_prefix_evaluation_requires_exact_checkpoint_identity() -> None:
     class Prefix:
         def specification(self):

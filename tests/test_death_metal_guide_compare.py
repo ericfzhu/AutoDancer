@@ -112,6 +112,7 @@ def _report(
         "character": "Bard",
         "action_contract": "map-navigation-prior-v1",
         "checkpoint_action_contract": "map-navigation-prior-v1",
+        "policy_feedback_matches_checkpoint": True,
         "reward": GUIDE_REWARD_SPEC,
         "evaluation_reward": GUIDE_REWARD_SPEC,
         "num_instances": 8,
@@ -298,6 +299,7 @@ def test_exp0021_launcher_uses_only_legal_player_health_assistance() -> None:
     assert "Select-DeathMetalSeeds $trainingCalibration 48 $guideTrainingCandidates" in source
     assert '$checkpointEntry.Key -eq "parent"' in source
     assert '"--source-reference"' in source
+    assert '"--policy-feedback-reward-config", $guideReward' not in source
     assert "reward-death-metal-guide-v2.json" in source
     assert '"DeathMetalGuideV2"' in source
     assert '"EXP-0021"' in source

@@ -93,10 +93,13 @@ def validate_checkpoint_trace_prefix(
 
 
 def validate_checkpoint_reward_schema(
-    checkpoint: dict[str, Any], evaluation_reward: RewardConfig
+    checkpoint: dict[str, Any],
+    evaluation_reward: RewardConfig,
+    *,
+    source_reference: bool = False,
 ) -> None:
     checkpoint_version = checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
-    if checkpoint_version != evaluation_reward.profile_version:
+    if checkpoint_version != evaluation_reward.profile_version and not source_reference:
         raise ValueError("Evaluation reward schema disagrees with the checkpoint")
 
 
@@ -1979,7 +1982,9 @@ def run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             architecture_version = f"A{int(checkpoint['architecture']['version'])}"
             reward_version = require_reward_lineage_version(arguments.reward_lineage_version)
             validate_checkpoint_reward_schema(
-                checkpoint, load_reward_config(arguments.reward_config)
+                checkpoint,
+                load_reward_config(arguments.reward_config),
+                source_reference=arguments.source_reference,
             )
             observed_components = {"reward": reward_version}
             if arguments.source_reference:

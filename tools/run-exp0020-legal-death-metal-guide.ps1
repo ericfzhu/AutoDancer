@@ -395,7 +395,6 @@ foreach ($checkpointEntry in $checkpoints.GetEnumerator()) {
             "--num-instances", "8", "--seeds", $heldoutSeedArgument, "--max-steps", "500",
             "--policy-mode", $mode.Mode, "--policy-seed", "$($mode.PolicySeed)", "--trained-only",
             "--device", "cuda", "--reward-config", $guideReward,
-            "--policy-feedback-reward-config", $guideReward,
             "--reward-lineage-version", $guideRewardLineage, "--action-contract", "map-navigation-prior-v1",
             "--curriculum-start-level", "4", "--curriculum-target-level", "5",
             "--curriculum-profile", "player20", "--affinity", "none",

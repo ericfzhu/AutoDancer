@@ -85,6 +85,7 @@ def _load_report(
         "checkpoint_action_contract": "map-navigation-prior-v1",
         "curriculum_profile": "player20",
         "policy_mode": expected_mode,
+        "policy_feedback_matches_checkpoint": True,
     }
     for field, expected in expected_fields.items():
         if report.get(field) != expected:
