@@ -2167,6 +2167,35 @@ clear fresh Death Metal seeds with the prefix disabled. Training trace seeds,
 qualification replays, and assisted starts can never count toward normal-start
 promotion.
 
+### A trace boundary is a curriculum window, not a single checkpoint
+
+EXP-0026 deliberately asks the smallest causal question: can PPO acquire one
+learner-controlled action at three exact, replay-qualified handoff states? Its
+nine source episodes (three handoff seeds under deterministic execution and two
+fixed stochastic streams) are only a coarse `0 < success < 1` calibration. They
+do not provide a precise Bernoulli success estimate: deterministic outcomes are
+fixed policy diagnostics rather than independent samples, and each stochastic
+seed contributes only one draw per game seed. The larger frozen-final evaluation
+can decide whether the rung was acquired, but neither matrix supports a claim of
+state-distribution coverage.
+
+This distinction is explicit in Backplay: training samples a *window* of states
+near the end of one or more demonstrations and progressively moves that window
+backward, rather than mastering one fixed checkpoint and jumping directly to the
+original start ([Resnick et al., 2018](https://arxiv.org/abs/1807.06919)). Its
+reported practical failure mode is advancing the window too quickly; advancing
+too slowly was safer. The same paper also warns that a single demonstrated path
+does not cover randomized initial states outside the path's neighborhood.
+
+Therefore a passing EXP-0026 authorizes only a new registered handoff-window
+experiment. That experiment should mix the mastered one-action boundary with
+several immediately earlier qualified states, use more independent stochastic
+policy streams to estimate each boundary's success interval, retain mastered
+states while expanding, and stop expansion whenever the earlier window falls
+below the declared competence band. It must then clear fresh prefix-free Death
+Metal seeds before moving to Floor 3. This preserves the useful reverse-curriculum
+mechanism while addressing exact-state memorization and catastrophic forgetting.
+
 ## Level-transition actions must return the destination observation
 
 Fresh replay of the three EXP-0024 full-boss success traces reproduced every
