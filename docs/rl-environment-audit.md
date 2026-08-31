@@ -2037,11 +2037,18 @@ upstream waiting heartbeat is stale instead of waiting forever. Long active trac
 searches are governed by their own per-report evidence and are not mistaken for a
 waiting launcher heartbeat.
 
-The first consumer is EXP-0025. It trains three independent PPO trials on at most
-the final 16 actions of every qualified trace, with the earlier actions replayed
-only through the live controller. Conditional acquisition must exceed 10% in
-aggregate, reproduce above 5% in two trials, complete all three optimizer trials,
-and cover at least three distinct game seeds with zero restarts and finite losses.
+The first consumer is EXP-0025. A direct recurrent likelihood audit showed that
+the source checkpoint selected the final successful action with probabilities
+8.8%, 50.0%, and 18.4% on the three qualified seeds. The corresponding products
+of recorded-action probabilities across the final 16 actions were approximately
+`3.7e-5`, `6.9e-9`, and `1.15e-2`. Exact trace reproduction is stricter than
+success because alternative successful continuations may exist, but these values
+showed that 16 actions was an uncalibrated first boundary. EXP-0025 therefore
+trains three independent PPO trials on exactly the final action first, with all
+earlier actions replayed only through the live controller. Conditional acquisition
+must exceed 10% in aggregate, reproduce above 5% in two trials, complete all three
+optimizer trials, and cover at least three distinct game seeds with zero restarts
+and finite losses.
 Only then may the tail expand backward. This makes reverse-curriculum movement a
 measured competence decision rather than a fixed schedule.
 

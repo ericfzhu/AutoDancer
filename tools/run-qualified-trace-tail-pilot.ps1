@@ -1,10 +1,10 @@
 param(
     [string]$GameDir = "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64",
     [string]$TraceSearchRoot = "runs\qualified-death-metal-trace-search",
-    [string]$RunDir = "runs\qualified-death-metal-tail16",
+    [string]$RunDir = "runs\qualified-death-metal-tail1",
     [int[]]$TrainingSeeds = @(97001, 97002, 97003),
     [int]$TotalSteps = 61440,
-    [int]$RequestedTailActions = 16,
+    [int]$RequestedTailActions = 1,
     [int]$PollSeconds = 30
 )
 
