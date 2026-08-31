@@ -203,6 +203,30 @@ def test_checkpoint_rejects_a_different_reward_profile(tmp_path: Path) -> None:
         incompatible.load(path)
 
 
+def test_checkpoint_accepts_missing_disabled_retention_metadata(tmp_path: Path) -> None:
+    config = PPOConfig(rollout_length=1, sequence_length=1)
+    path = tmp_path / "pre-retention-controls.pt"
+    RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={"reward": {"version": 5}},
+    ).save(path)
+    resumed = RecurrentPPO(
+        small_model(),
+        config,
+        device=torch.device("cpu"),
+        checkpoint_metadata={
+            "reward": {"version": 5},
+            "policy_feedback_reward": None,
+            "freeze_actor_updates": 0,
+            "freeze_actor_scope": None,
+        },
+    )
+    resumed.load(path)
+    assert resumed.checkpoint_metadata["freeze_actor_updates"] == 0
+
+
 def test_reward_lineage_accepts_catalog_ids_without_numeric_prefixes() -> None:
     assert require_reward_lineage_version("DeathMetalGuideV1") == "DeathMetalGuideV1"
     assert require_reward_lineage_version("DeathMetalGuideV2") == "DeathMetalGuideV2"

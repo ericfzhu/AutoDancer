@@ -330,6 +330,12 @@ class RecurrentPPO:
                 "Checkpoint model architecture is incompatible with the schema-9 policy"
             )
         saved_metadata = dict(payload.get("checkpoint_metadata", {}))
+        # These disabled controls were added after the first schema-10
+        # checkpoints. Missing values are functionally identical and must not
+        # prevent an exact RNG/schedule continuation used for evidence recovery.
+        saved_metadata.setdefault("policy_feedback_reward", None)
+        saved_metadata.setdefault("freeze_actor_updates", 0)
+        saved_metadata.setdefault("freeze_actor_scope", None)
         if any(saved_metadata.get(key) != value for key, value in self.checkpoint_metadata.items()):
             raise ValueError("Checkpoint training metadata does not match the current run")
         saved_config = dict(payload.get("config", {}))
