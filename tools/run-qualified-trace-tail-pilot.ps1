@@ -220,7 +220,6 @@ try {
                 --trace-prefix-qualification $traceQualification `
                 --trace-prefix-tail-actions $tailActions `
                 --trace-prefix-recurrent-state warm `
-                --steam-presence-worker 0 `
                 --affinity none `
                 --experiment-id EXP-0027 `
                 --experiment-arm a8-live-calibrated-tail1 `
@@ -238,8 +237,6 @@ try {
             (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
             [string]$payload.policy_mode -ne [string]$mode.mode -or
             [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
-            $null -eq $payload.steam_presence_worker -or
-            [int]$payload.steam_presence_worker -ne 0 -or
             [int]$payload.trace_prefix.tail_actions -ne $tailActions -or
             [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
         ) {
@@ -291,7 +288,7 @@ try {
                 "--reward-lineage-version", "DeathMetalPotentialV5", "--freeze-base-updates", "10",
                 "--trace-prefix-bank", $bank, "--trace-prefix-qualification", $traceQualification,
                 "--trace-prefix-tail-actions", "$tailActions", "--trace-prefix-recurrent-state", "warm",
-                "--initialize-from", $sourceCheckpoint, "--steam-presence-worker", "0", "--affinity", "none", "--experiment-id", "EXP-0027",
+                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", "EXP-0027",
                 "--experiment-arm", "a8-live-calibrated-tail1", "--trial-id", $trial,
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
@@ -337,7 +334,6 @@ try {
                     --trace-prefix-qualification $traceQualification `
                     --trace-prefix-tail-actions $tailActions `
                     --trace-prefix-recurrent-state warm `
-                    --steam-presence-worker 0 `
                     --affinity none `
                     --experiment-id EXP-0027 `
                     --experiment-arm a8-live-calibrated-tail1 `
@@ -354,8 +350,6 @@ try {
                 (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
                 [string]$payload.policy_mode -ne [string]$mode.mode -or
                 [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
-                $null -eq $payload.steam_presence_worker -or
-                [int]$payload.steam_presence_worker -ne 0 -or
                 [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
             ) {
                 throw "Trace-tail evaluation report identity mismatch: $report"

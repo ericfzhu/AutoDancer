@@ -38,10 +38,13 @@ fragment from that policy version.
 
 ## Optional Steam playtime presence
 
-Training and evaluation may nominate one zero-based slot with
-`--steam-presence-worker`. Only that worker initializes Steamworks; every other
-worker continues to launch with Steam and Galaxy disabled. The designated slot
-survives worker replacement by identity, so `worker-0000` remains the presence
-worker after recovery. This is intended to accrue ordinary wall-clock playtime
-for the experiment, not the sum of parallel worker-hours. The exact slot is
-recorded in training lineage and evaluation reports.
+The diagnostic `--steam-presence-worker` option nominates one zero-based slot;
+only that worker initializes Steamworks and the exact slot is recorded in run
+metadata. It accrues ordinary wall-clock playtime, not the sum of parallel
+worker-hours.
+
+Do not use this option for controlled training or evaluation. Live replay tests
+on the supported build showed that Steam initialization changes generated grid
+state and gameplay outcomes for otherwise identical seeds and action sequences.
+It is retained for explicit diagnostics and benchmarking while a separate,
+non-actor presence mechanism is investigated.
