@@ -38,13 +38,14 @@ fragment from that policy version.
 
 ## Optional Steam playtime presence
 
-The diagnostic `--steam-presence-worker` option nominates one zero-based slot;
+The `--steam-presence-worker` option nominates one zero-based slot;
 only that worker initializes Steamworks and the exact slot is recorded in run
 metadata. It accrues ordinary wall-clock playtime, not the sum of parallel
 worker-hours.
 
-Do not use this option for controlled training or evaluation. Live replay tests
-on the supported build showed that Steam initialization changes generated grid
-state and gameplay outcomes for otherwise identical seeds and action sequences.
-It is retained for explicit diagnostics and benchmarking while a separate,
-non-actor presence mechanism is investigated.
+The trusted WSP bridge pins the training content profile before startup mod
+application. Owned `Amplified`, `DynChar`, and `Synchrony` packages are removed
+from the Steam worker just as they are from Steam-disabled workers. Exact live
+replay qualification on three successful traces produced identical per-turn
+observation/component digests in both modes, so this option is supported for
+controlled training and evaluation on the pinned build.

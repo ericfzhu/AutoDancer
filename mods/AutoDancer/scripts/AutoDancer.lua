@@ -17,6 +17,12 @@ local Vision = require "necro.game.vision.Vision"
 local Entities = require "system.game.Entities"
 local Native = require "system.game.AutoDancerNative"
 
+-- Steam ownership otherwise auto-enables gameplay packages for only the
+-- presence worker, changing seeded generation relative to the other actors.
+Native.blacklistMod("Amplified")
+Native.blacklistMod("DynChar")
+Native.blacklistMod("Synchrony")
+
 local GRID_SIZE = 21
 local GRID_CHANNELS = 29
 local REVEALED_MAP_SIZE = 65

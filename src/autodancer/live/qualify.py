@@ -9,6 +9,7 @@ import os
 import struct
 import threading
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,11 +74,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _wsp_entry_names(path: Path) -> set[str]:
+def _wsp_entries(path: Path) -> dict[str, bytes]:
     data = path.read_bytes()
     if not data.startswith(b"WSP16") or len(data) < 17:
         raise QualificationFailure("NecroDancer.wsp is not a WSP16 archive")
-    names: set[str] = set()
+    names: list[str] = []
     offset = 9
     while offset + 2 <= len(data):
         length = struct.unpack_from("<H", data, offset)[0]
@@ -86,9 +87,36 @@ def _wsp_entry_names(path: Path) -> set[str]:
         encoded = data[offset + 2 : offset + 2 + length]
         if any(byte < 32 or byte > 126 for byte in encoded):
             break
-        names.add(encoded.decode("ascii"))
+        names.append(encoded.decode("ascii"))
         offset += 2 + length
-    return names
+    table_end = offset + 8 * len(names)
+    if not names or table_end > len(data):
+        raise QualificationFailure("NecroDancer.wsp has an invalid entry table")
+    positions = [
+        struct.unpack_from("<Q", data, offset + 8 * index)[0]
+        for index in range(len(names))
+    ]
+    if positions[0] != table_end or positions != sorted(positions):
+        raise QualificationFailure("NecroDancer.wsp has invalid entry offsets")
+    return {
+        name: data[
+            positions[index] : (
+                positions[index + 1] if index + 1 < len(positions) else len(data)
+            )
+        ]
+        for index, name in enumerate(names)
+    }
+
+
+def _wsp_entry_payload(entry: bytes) -> bytes:
+    name_length = struct.unpack_from("<H", entry)[0]
+    header = 2 + name_length + 1
+    compressed = entry[header] == 1
+    stored_size = struct.unpack_from("<I", entry, header + 1)[0]
+    if stored_size < 4:
+        raise QualificationFailure("NecroDancer.wsp entry has an invalid size")
+    payload = entry[header + 9 : header + 9 + stored_size - 4]
+    return zlib.decompress(payload) if compressed else payload
 
 
 def _configuration(arguments: argparse.Namespace, count: int, phase: str) -> SupervisorConfig:
@@ -144,16 +172,26 @@ def preflight(arguments: argparse.Namespace) -> dict[str, Any]:
             "run native/build.ps1, then copy the built DLL into --game-dir"
         )
     native_module = "scripts/system/game/AutoDancerNative.lua"
-    if native_module not in _wsp_entry_names(arguments.game_dir / "NecroDancer.wsp"):
+    wsp_entries = _wsp_entries(arguments.game_dir / "NecroDancer.wsp")
+    native_export = (
+        _wsp_entry_payload(wsp_entries[native_module])
+        if native_module in wsp_entries
+        else b""
+    )
+    if not all(
+        capability in native_export
+        for capability in (b"blacklistMod", b"necro.mod.Mods")
+    ):
         raise QualificationFailure(
-            "NecroDancer.wsp does not contain the AutoDancer native loader; run "
-            "tools/patch_wsp.py against the pinned game archive"
+            "NecroDancer.wsp does not contain the current AutoDancer native/content "
+            "bridge; run tools/patch_wsp.py against the pinned game archive"
         )
     return {
         "passed": True,
         "schema_version": SCHEMA_VERSION,
         "native_sha256": built_hash,
         "wsp_native_module": native_module,
+        "wsp_content_pin": True,
         "mod_files": {
             str(path.relative_to(arguments.mod_dir)): _sha256(path)
             for path in required[2:5]

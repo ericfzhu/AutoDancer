@@ -824,6 +824,19 @@ def test_lua_inventory_uses_the_gameplay_cooldown_component() -> None:
     assert "priceTagCostHealth.costMultiplier" not in source
 
 
+def test_lua_uses_the_trusted_bridge_to_pin_variant_content() -> None:
+    source = (
+        Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "AutoDancer.lua"
+    ).read_text(encoding="utf-8")
+    for mod_name in ("Amplified", "DynChar", "Synchrony"):
+        assert f'Native.blacklistMod("{mod_name}")' in source
+
+    patcher = (Path(__file__).parents[1] / "tools" / "patch_wsp.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'native.blacklistMod = mods.blacklist' in patcher
+
+
 def test_lua_telemetry_reuses_the_built_observation_and_bounds_collection() -> None:
     source = (
         Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "AutoDancer.lua"

@@ -99,6 +99,59 @@ def test_only_designated_worker_initializes_steam_and_replacements_keep_it(
     assert "-cwos.game.steam.enabled=true" in replacement
     assert "-cwos.game.steam.enabled=false" in other
     assert "-cwos.game.galaxy.enabled=false" in first
+    assert "-cnecro.modLoader.autoEnableDLCs=false" in first
+    assert "-cnecro.modLoader.autoEnableDLCs=false" in other
+
+
+def test_symbolic_profile_pins_steam_variant_content_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    roaming = tmp_path / "source-roaming"
+    source_config = roaming / "NecroDancer" / "userconfig.json"
+    source_config.parent.mkdir(parents=True)
+    source_config.write_text(
+        json.dumps(
+            {
+                "wos": {
+                    "game": {
+                        "mods": {
+                            "list": [
+                                {"name": "Patch", "package": True},
+                                {"name": "Amplified", "package": True},
+                                {"name": "DynChar", "package": True},
+                                {"name": "Synchrony", "package": True},
+                                {"name": "AutoDancer", "package": False},
+                            ]
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    mod = tmp_path / "mod"
+    mod.mkdir()
+    (mod / "mod.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(roaming))
+    supervisor = AutoDancerSupervisor(
+        SupervisorConfig(
+            tmp_path / "game",
+            mod,
+            num_instances=1,
+            profile_root=tmp_path / "profiles",
+        )
+    )
+    supervisor.session_id = "test-session"
+
+    _, worker_roaming = supervisor._prepare_worker_profile("worker-0000")
+    payload = json.loads(
+        (worker_roaming / "NecroDancer" / "userconfig.json").read_text(encoding="utf-8")
+    )
+
+    assert [entry["name"] for entry in payload["wos"]["game"]["mods"]["list"]] == [
+        "Patch",
+        "AutoDancer",
+    ]
 
 
 def test_curriculum_target_must_follow_start_level(tmp_path: Path) -> None:

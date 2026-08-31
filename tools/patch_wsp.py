@@ -145,7 +145,14 @@ def patch_archive(
             "return result",
         )
     )
-    export_source = "return bridge.AutoDancerNative"
+    export_source = "\n".join(
+        (
+            "local native = bridge.AutoDancerNative",
+            'local mods = require("necro.mod.Mods")',
+            "native.blacklistMod = mods.blacklist",
+            "return native",
+        )
+    )
     scratch = destination.parent / ".autodancer-wrapper.luac"
     try:
         standard_wrapper = _compile(compiler, lua_dll, standard_source, scratch)

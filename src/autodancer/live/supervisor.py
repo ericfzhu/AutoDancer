@@ -23,6 +23,7 @@ from autodancer.live.protocol import NativePipeTurnSource, decode_pipe_message, 
 from autodancer.rewards import RewardConfig
 
 READY_MARKER = "AUTODANCER_READY:"
+STEAM_VARIANT_CONTENT_MODS = frozenset({"Amplified", "DynChar", "Synchrony"})
 
 
 class SupervisorError(RuntimeError):
@@ -296,6 +297,16 @@ class AutoDancerSupervisor:
                 game = payload.setdefault("wos", {}).setdefault("game", {})
                 game.setdefault("window", {})["size"] = [320, 180]
                 game["window"]["maximized"] = False
+                mods = game.get("mods")
+                if isinstance(mods, dict) and isinstance(mods.get("list"), list):
+                    mods["list"] = [
+                        entry
+                        for entry in mods["list"]
+                        if not (
+                            isinstance(entry, dict)
+                            and str(entry.get("name")) in STEAM_VARIANT_CONTENT_MODS
+                        )
+                    ]
                 user_config.write_text(json.dumps(payload), encoding="utf-8")
             except (json.JSONDecodeError, OSError, TypeError):
                 pass
@@ -399,6 +410,7 @@ class AutoDancerSupervisor:
             "-cwos.game.debug.logging.file.flushInterval=0.05",
             "-cwos.game.debug.logging.console.verbosity=0",
             "-cwos.game.assets.autoReload.enabled=false",
+            "-cnecro.modLoader.autoEnableDLCs=false",
             f"-cwos.game.steam.enabled={'true' if steam_enabled else 'false'}",
             "-cwos.game.galaxy.enabled=false",
             "-cwos.game.size=[320,180]",
