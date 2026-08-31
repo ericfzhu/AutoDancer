@@ -967,7 +967,7 @@ class VersionedAsyncRolloutCollector:
             state.reset_spec,
             previous_action=previous_action if warm else START_ACTION,
             previous_reward=learner_previous_reward if warm else 0.0,
-            episode_start=not warm,
+            episode_start=True,
             prefix_pending=False,
             prefix_metadata=metadata,
         )
@@ -1102,7 +1102,7 @@ class VersionedAsyncRolloutCollector:
                         state.reset_spec,
                         previous_action=last_guide_action if warm else START_ACTION,
                         previous_reward=last_learner_reward if warm else 0.0,
-                        episode_start=not warm,
+                        episode_start=True,
                         prefix_pending=False,
                         prefix_metadata=metadata,
                     )

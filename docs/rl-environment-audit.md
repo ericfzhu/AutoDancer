@@ -2046,8 +2046,10 @@ of recorded-action probabilities across the final 16 actions were approximately
 success because alternative successful continuations may exist, but these values
 showed that 16 actions was an uncalibrated first boundary. Because registered
 experiment contracts are immutable, EXP-0025 remains unchanged and unrun;
-EXP-0026 supersedes it with a live-calibrated design. EXP-0026 therefore
-trains three independent PPO trials on exactly the final action first, with all
+EXP-0026 superseded it with a live-calibrated design. A pre-training recurrent
+audit then superseded EXP-0026 before source calibration or training (described
+below). EXP-0027 retains the live-calibrated design and trains three independent
+PPO trials on exactly the final action first, with all
 earlier actions replayed only through the live controller. Conditional acquisition
 must exceed 10% in aggregate, reproduce above 5% in two trials, complete all three
 optimizer trials, and cover at least three distinct game seeds with zero restarts
@@ -2077,7 +2079,7 @@ of demonstration replay can matter greatly in partially observed, hard-explorati
 tasks, although its recurrent off-policy value-learning algorithm is a much larger
 change than an auxiliary PPO loss.
 
-These results do not justify mixing imitation into EXP-0026: that experiment is
+These results do not justify mixing imitation into EXP-0027: that experiment is
 the causal test of whether a legal start-distribution change alone is sufficient.
 If its frozen-final gate fails despite observing training clears, the next arm
 should test a decaying self-imitation/behavior-cloning loss on the qualified tail
@@ -2101,7 +2103,7 @@ The fallback implementation is now available but remains disabled by default.
 by fresh live replay qualification. Its coefficient decays by PPO update, its
 metrics are namespaced separately, its artifact and configuration are checkpointed,
 and the critic receives no demonstration gradient. Evaluation never loads or
-applies the objective. EXP-0026 therefore remains an unmodified PPO gate; a later
+applies the objective. EXP-0027 therefore remains an unmodified PPO gate; a later
 registered arm must explicitly enable imitation if that gate fails.
 
 ## Long-horizon credit is structurally truncated
@@ -2161,7 +2163,7 @@ A qualified trace tail is deliberately seed-specific: replaying its prefix must
 recreate the exact live observations before learner control begins. Three distinct
 qualified seeds are enough to test whether a boundary is learnable, but they are
 not evidence that the resulting policy generalizes across procedural layouts.
-The EXP-0026 same-seed frozen gate may authorize an earlier handoff only. Before
+The EXP-0027 same-seed frozen gate may authorize an earlier handoff only. Before
 contracting player health or moving the start to Floor 3, the full-boss policy must
 clear fresh Death Metal seeds with the prefix disabled. Training trace seeds,
 qualification replays, and assisted starts can never count toward normal-start
@@ -2169,7 +2171,7 @@ promotion.
 
 ### A trace boundary is a curriculum window, not a single checkpoint
 
-EXP-0026 deliberately asks the smallest causal question: can PPO acquire one
+EXP-0027 deliberately asks the smallest causal question: can PPO acquire one
 learner-controlled action at three exact, replay-qualified handoff states? Its
 nine source episodes (three handoff seeds under deterministic execution and two
 fixed stochastic streams) are only a coarse `0 < success < 1` calibration. They
@@ -2187,7 +2189,7 @@ reported practical failure mode is advancing the window too quickly; advancing
 too slowly was safer. The same paper also warns that a single demonstrated path
 does not cover randomized initial states outside the path's neighborhood.
 
-Therefore a passing EXP-0026 authorizes only a new registered handoff-window
+Therefore a passing EXP-0027 authorizes only a new registered handoff-window
 experiment. That experiment should mix the mastered one-action boundary with
 several immediately earlier qualified states, use more independent stochastic
 policy streams to estimate each boundary's success interval, retain mastered
@@ -2195,6 +2197,32 @@ states while expanding, and stop expansion whenever the earlier window falls
 below the declared competence band. It must then clear fresh prefix-free Death
 Metal seeds before moving to Floor 3. This preserves the useful reverse-curriculum
 mechanism while addressing exact-state memorization and catastrophic forgetting.
+
+### Warm handoffs are recurrent episode boundaries
+
+A pre-training audit of the actual PPO replay path found a separate correctness
+bug in EXP-0026. Collection correctly replayed every guide action through the
+learner, retained the resulting LSTM state, and stored that state beside the first
+learner observation. It then marked a warm handoff as `episode_start = false` to
+avoid the historical zero-state reset. This works for live action selection but
+not for a 32-step optimization chunk containing several short curriculum episodes:
+`evaluate_sequence` loaded the stored state only at the chunk's first step and
+continued the previous episode's hidden state across every later handoff.
+
+Consequently, PPO's new log-probabilities were not evaluated from the recurrent
+states that produced its old log-probabilities. This violates the on-policy ratio
+contract independently of reward quality, and it is especially destructive for a
+one-action curriculum where nearly every transition begins at a warm boundary.
+The fix gives episode identity and zero-state initialization separate meanings:
+every handoff is marked as an episode start, every rollout retains its collected
+state, and sequence replay replaces the current state with that stored state at
+each internal boundary. Ordinary resets still restore their stored zero state.
+
+Focused collector and PPO regressions now place multiple warm episodes inside one
+chunk and require recomputed unchanged-policy likelihoods to match collection
+exactly. EXP-0026 is preserved as an unrun inconclusive contract; EXP-0027 changes
+only the algorithm identity to `recurrent-ppo-v2-warm-boundary-state` while
+retaining its source, seeds, budget, reward, architecture, and outcome gates.
 
 ## Level-transition actions must return the destination observation
 

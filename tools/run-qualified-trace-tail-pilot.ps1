@@ -1,7 +1,7 @@
 param(
     [string]$GameDir = "X:\Steam\steamapps\common\Crypt of the NecroDancer\NecroDancer64",
     [string]$TraceSearchRoot = "runs\qualified-death-metal-trace-search",
-    [string]$RunDir = "runs\qualified-death-metal-tail1",
+    [string]$RunDir = "runs\qualified-death-metal-tail1-warm-boundary",
     [int[]]$TrainingSeeds = @(97001, 97002, 97003),
     [int]$TotalSteps = 61440,
     [int]$RequestedTailActions = 1,
@@ -38,7 +38,7 @@ $pilotStartedAt = (Get-Date).ToUniversalTime().ToString("o")
 function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorText = "") {
     $payload = [ordered]@{
         schema_version = 1
-        experiment_id = "EXP-0026"
+        experiment_id = "EXP-0027"
         process_id = $PID
         process_started_at = $pilotStartedAt
         status = $Status
@@ -221,7 +221,7 @@ try {
                 --trace-prefix-tail-actions $tailActions `
                 --trace-prefix-recurrent-state warm `
                 --affinity none `
-                --experiment-id EXP-0026 `
+                --experiment-id EXP-0027 `
                 --experiment-arm a8-live-calibrated-tail1 `
                 --trial-id "source-$($mode.name)" `
                 --mlflow-tracking-uri $trackingUri `
@@ -288,7 +288,7 @@ try {
                 "--reward-lineage-version", "DeathMetalPotentialV5", "--freeze-base-updates", "10",
                 "--trace-prefix-bank", $bank, "--trace-prefix-qualification", $traceQualification,
                 "--trace-prefix-tail-actions", "$tailActions", "--trace-prefix-recurrent-state", "warm",
-                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", "EXP-0026",
+                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", "EXP-0027",
                 "--experiment-arm", "a8-live-calibrated-tail1", "--trial-id", $trial,
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
@@ -335,7 +335,7 @@ try {
                     --trace-prefix-tail-actions $tailActions `
                     --trace-prefix-recurrent-state warm `
                     --affinity none `
-                    --experiment-id EXP-0026 `
+                    --experiment-id EXP-0027 `
                     --experiment-arm a8-live-calibrated-tail1 `
                     --trial-id "$trial-$($mode.name)" `
                     --mlflow-tracking-uri $trackingUri `
@@ -373,7 +373,7 @@ try {
     $selected = $summaries | Sort-Object @{Expression={@($_.distinct_completion_seeds).Count};Descending=$true}, @{Expression={$_.completion_rate};Descending=$true}, @{Expression={-$_.mean_completion_turns};Descending=$true} | Select-Object -First 1
     $comparison = [ordered]@{
         schema_version = 1
-        experiment_id = "EXP-0026"
+        experiment_id = "EXP-0027"
         source_checkpoint = $sourceCheckpoint
         bank = $bank
         qualification = $traceQualification

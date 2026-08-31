@@ -474,6 +474,8 @@ def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
     finally:
         collector.close()
     assert rollout.actions.shape == (1, 2)
+    assert torch.all(rollout.episode_starts[0])
+    assert torch.any(rollout.hiddens[0] != 0)
     for worker in environment.environments.values():
         assert worker.actions[:2] == [0, 1]
         assert worker.handoffs[0]["learner_tail_actions"] == 1
@@ -1152,7 +1154,7 @@ def test_natural_prefix_warm_mode_preserves_recurrent_context_at_handoff() -> No
         rollout = collector.collect(1)
     finally:
         collector.close()
-    assert not torch.any(rollout.episode_starts[0])
+    assert torch.all(rollout.episode_starts[0])
     assert torch.any(rollout.hiddens[0] != 0)
 
 

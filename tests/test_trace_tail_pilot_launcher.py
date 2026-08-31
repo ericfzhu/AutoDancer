@@ -4,12 +4,12 @@ from pathlib import Path
 def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     source = Path("tools/run-qualified-trace-tail-pilot.ps1").read_text(encoding="utf-8")
     assert "[int]$RequestedTailActions = 1" in source
-    assert "runs\\qualified-death-metal-tail1" in source
+    assert "runs\\qualified-death-metal-tail1-warm-boundary" in source
     assert '"calibrating-source"' in source
     assert "--source-reference" in source
     assert "outside the 10-90 percent live competence band" in source
     assert "source_calibration" in source
-    assert 'experiment_id = "EXP-0026"' in source
+    assert 'experiment_id = "EXP-0027"' in source
     assert "a8-live-calibrated-tail1" in source
     assert '"waiting-for-controller-qualification"' in source
     assert "Test-CurrentQualification" in source

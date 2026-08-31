@@ -439,11 +439,16 @@ class RecurrentActorCritic(nn.Module):
         actions: Tensor,
         initial_state: Tensor,
         episode_starts: Tensor,
+        stored_states: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         state = initial_state
         log_probs, entropies, values = [], [], []
         for step in range(actions.shape[1]):
-            state = state * (~episode_starts[:, step]).float().reshape(-1, 1, 1)
+            boundary = episode_starts[:, step].reshape(-1, 1, 1)
+            if stored_states is None:
+                state = state * (~boundary).float()
+            else:
+                state = torch.where(boundary, stored_states[:, step], state)
             logits, value, state = self.step(
                 {key: item[:, step] for key, item in observation.items()}, state
             )
@@ -575,11 +580,16 @@ class AdapterActorCritic(nn.Module):
         actions: Tensor,
         initial_state: Tensor,
         episode_starts: Tensor,
+        stored_states: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         state = initial_state
         log_probs, entropies, values = [], [], []
         for step in range(actions.shape[1]):
-            state = state * (~episode_starts[:, step]).float().reshape(-1, 1, 1)
+            boundary = episode_starts[:, step].reshape(-1, 1, 1)
+            if stored_states is None:
+                state = state * (~boundary).float()
+            else:
+                state = torch.where(boundary, stored_states[:, step], state)
             logits, value, state = self.step(
                 {key: item[:, step] for key, item in observation.items()}, state
             )
@@ -665,11 +675,16 @@ class ProjectedAdapterActorCritic(nn.Module):
         actions: Tensor,
         initial_state: Tensor,
         episode_starts: Tensor,
+        stored_states: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         state = initial_state
         log_probs, entropies, values = [], [], []
         for step in range(actions.shape[1]):
-            state = state * (~episode_starts[:, step]).float().reshape(-1, 1, 1)
+            boundary = episode_starts[:, step].reshape(-1, 1, 1)
+            if stored_states is None:
+                state = state * (~boundary).float()
+            else:
+                state = torch.where(boundary, stored_states[:, step], state)
             logits, value, state = self.step(
                 {key: item[:, step] for key, item in observation.items()}, state
             )

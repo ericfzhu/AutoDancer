@@ -146,6 +146,96 @@ def test_policy_uses_exact_types_and_recurrent_context() -> None:
     assert model.initial_state(1).shape == (1, 2, 32)
 
 
+def test_sequence_replaces_hidden_state_at_warm_episode_boundaries() -> None:
+    torch.manual_seed(71)
+    model = small_model().eval()
+    sequence = {
+        key: value.transpose(0, 1)
+        for key, value in observations(3, 1).items()
+    }
+    actions = torch.tensor([[0, 1, 2]])
+    stored_states = torch.zeros(1, 3, 2, model.hidden_size)
+    stored_states[:, 1] = 0.75
+    episode_starts = torch.tensor([[True, True, False]])
+
+    with torch.inference_mode():
+        actual = model.evaluate_sequence(
+            sequence,
+            actions,
+            stored_states[:, 0],
+            episode_starts,
+            stored_states,
+        )
+        expected_log_probs = []
+        expected_entropies = []
+        expected_values = []
+        state = stored_states[:, 0]
+        for step in range(3):
+            if episode_starts[0, step]:
+                state = stored_states[:, step]
+            logits, value, state = model.step(
+                {key: item[:, step] for key, item in sequence.items()}, state
+            )
+            distribution = torch.distributions.Categorical(logits=logits)
+            expected_log_probs.append(distribution.log_prob(actions[:, step]))
+            expected_entropies.append(distribution.entropy())
+            expected_values.append(value)
+
+    expected = (
+        torch.stack(expected_log_probs, 1),
+        torch.stack(expected_entropies, 1),
+        torch.stack(expected_values, 1),
+    )
+    for left, right in zip(actual, expected, strict=True):
+        assert torch.allclose(left, right)
+
+
+def test_ppo_recomputes_log_probs_from_each_warm_handoff_state() -> None:
+    torch.manual_seed(72)
+    model = small_model()
+    config = PPOConfig(
+        rollout_length=2,
+        sequence_length=2,
+        update_epochs=1,
+        minibatch_chunks=1,
+    )
+    algorithm = RecurrentPPO(model, config, device=torch.device("cpu"))
+    rollout_observations = observations(2, 1)
+    sequence = {
+        key: value.transpose(0, 1)
+        for key, value in rollout_observations.items()
+    }
+    actions = torch.tensor([[0, 1]])
+    hiddens = torch.zeros(2, 1, 2, model.hidden_size)
+    hiddens[1] = 0.75
+    episode_starts = torch.ones(2, 1, dtype=torch.bool)
+    with torch.inference_mode():
+        old_log_probs, _, values = model.evaluate_sequence(
+            sequence,
+            actions,
+            hiddens[0],
+            episode_starts.transpose(0, 1),
+            hiddens.transpose(0, 1),
+        )
+    rollout = RolloutBatch(
+        observations=rollout_observations,
+        actions=actions.transpose(0, 1),
+        old_log_probs=old_log_probs.transpose(0, 1),
+        rewards=torch.zeros(2, 1),
+        dones=torch.ones(2, 1, dtype=torch.bool),
+        terminations=torch.ones(2, 1, dtype=torch.bool),
+        truncation_values=torch.zeros(2, 1),
+        episode_starts=episode_starts,
+        values=values.transpose(0, 1),
+        hiddens=hiddens,
+        next_value=torch.zeros(1),
+    )
+
+    metrics = algorithm.update(rollout)
+
+    assert metrics["approx_kl"] == pytest.approx(0.0, abs=1.0e-7)
+
+
 def test_policy_encoding_uses_persistent_map_memory() -> None:
     torch.manual_seed(8)
     model = small_model().eval()

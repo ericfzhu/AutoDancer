@@ -74,6 +74,7 @@ blocks:
     versions:
       recurrent-ppo-v1: GRU/LSTM-compatible 128-turn rollout PPO with 32-turn chunks.
       recurrent-ppo-v1-corrected-truncation: Recurrent PPO v1 with separate true termination and time-limit bootstrap values.
+      recurrent-ppo-v2-warm-boundary-state: Recurrent PPO with corrected time-limit bootstrap and exact stored LSTM state restoration at every ordinary or warm-prefix episode boundary inside each replay chunk.
   optimization-schedule:
     versions:
       frozen-policy: No optimizer updates; evaluate the promoted checkpoint unchanged.

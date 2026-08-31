@@ -214,8 +214,13 @@ class RecurrentPPO:
                 initial_hidden = torch.stack(
                     [rollout.hiddens[start, worker] for worker, start in selected]
                 ).to(self.device)
+                stored_hiddens = self._chunks(rollout.hiddens, selected).to(self.device)
                 log_probs, entropy, values = self.model.evaluate_sequence(
-                    observation, actions, initial_hidden, episode_starts
+                    observation,
+                    actions,
+                    initial_hidden,
+                    episode_starts,
+                    stored_hiddens,
                 )
                 log_ratio = log_probs - old_log_probs
                 ratio = log_ratio.exp()
