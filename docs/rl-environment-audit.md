@@ -2037,13 +2037,16 @@ upstream waiting heartbeat is stale instead of waiting forever. Long active trac
 searches are governed by their own per-report evidence and are not mistaken for a
 waiting launcher heartbeat.
 
-The first consumer is EXP-0025. A direct recurrent likelihood audit showed that
+The first registered consumer, EXP-0025, proposed a 16-action tail. Before it
+started training, a direct recurrent likelihood audit showed that
 the source checkpoint selected the final successful action with probabilities
 8.8%, 50.0%, and 18.4% on the three qualified seeds. The corresponding products
 of recorded-action probabilities across the final 16 actions were approximately
 `3.7e-5`, `6.9e-9`, and `1.15e-2`. Exact trace reproduction is stricter than
 success because alternative successful continuations may exist, but these values
-showed that 16 actions was an uncalibrated first boundary. EXP-0025 therefore
+showed that 16 actions was an uncalibrated first boundary. Because registered
+experiment contracts are immutable, EXP-0025 remains unchanged and unrun;
+EXP-0026 supersedes it with a live-calibrated design. EXP-0026 therefore
 trains three independent PPO trials on exactly the final action first, with all
 earlier actions replayed only through the live controller. Conditional acquisition
 must exceed 10% in aggregate, reproduce above 5% in two trials, complete all three
@@ -2074,7 +2077,7 @@ of demonstration replay can matter greatly in partially observed, hard-explorati
 tasks, although its recurrent off-policy value-learning algorithm is a much larger
 change than an auxiliary PPO loss.
 
-These results do not justify mixing imitation into EXP-0025: that experiment is
+These results do not justify mixing imitation into EXP-0026: that experiment is
 the causal test of whether a legal start-distribution change alone is sufficient.
 If its frozen-final gate fails despite observing training clears, the next arm
 should test a decaying self-imitation/behavior-cloning loss on the qualified tail
@@ -2098,7 +2101,7 @@ The fallback implementation is now available but remains disabled by default.
 by fresh live replay qualification. Its coefficient decays by PPO update, its
 metrics are namespaced separately, its artifact and configuration are checkpointed,
 and the critic receives no demonstration gradient. Evaluation never loads or
-applies the objective. EXP-0025 therefore remains an unmodified PPO gate; a later
+applies the objective. EXP-0026 therefore remains an unmodified PPO gate; a later
 registered arm must explicitly enable imitation if that gate fails.
 
 ## Long-horizon credit is structurally truncated
@@ -2158,7 +2161,7 @@ A qualified trace tail is deliberately seed-specific: replaying its prefix must
 recreate the exact live observations before learner control begins. Three distinct
 qualified seeds are enough to test whether a boundary is learnable, but they are
 not evidence that the resulting policy generalizes across procedural layouts.
-The EXP-0025 same-seed frozen gate may authorize an earlier handoff only. Before
+The EXP-0026 same-seed frozen gate may authorize an earlier handoff only. Before
 contracting player health or moving the start to Floor 3, the full-boss policy must
 clear fresh Death Metal seeds with the prefix disabled. Training trace seeds,
 qualification replays, and assisted starts can never count toward normal-start

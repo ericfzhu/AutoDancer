@@ -9,6 +9,8 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "--source-reference" in source
     assert "outside the 10-90 percent live competence band" in source
     assert "source_calibration" in source
+    assert 'experiment_id = "EXP-0026"' in source
+    assert "a8-live-calibrated-tail1" in source
     assert "qualified_distinct_seed_count -lt 3" in source
     assert "--trace-prefix-bank" in source
     assert "--trace-prefix-qualification" in source

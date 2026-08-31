@@ -1,8 +1,8 @@
 schema_version: 1
 id: EXP-0025
 title: Qualified live Death Metal trace-tail acquisition
-question: Can recurrent PPO reliably learn the final legal action of multiple fresh-replay-qualified full-boss successes when rare successful prefixes are replayed through the live game but excluded from PPO?
-hypothesis: EXP-0024 demonstrates that full untouched Death Metal is occasionally solvable but too sparse for reproducible on-policy acquisition. The source policy selects the final successful action with 8.8, 50.0, and 18.4 percent probability on the three qualified seeds, placing a one-action boundary inside the declared intermediate-competence band. Starting there should establish the first measured reverse-curriculum rung while preserving exact live observations, recurrent state, action masks, and terminal semantics.
+question: Can recurrent PPO reliably learn the final legal actions of multiple fresh-replay-qualified full-boss successes when rare successful prefixes are replayed through the live game but excluded from PPO?
+hypothesis: EXP-0024 demonstrates that full untouched Death Metal is occasionally solvable but too sparse for reproducible on-policy acquisition. Starting PPO sixteen actions before at least three independently qualified successes should put the learner inside the useful competence band while preserving exact live observations, recurrent state, action masks, and terminal semantics.
 changed_blocks: [training-level-distribution, data-selection, evaluation]
 component_versions:
   reward: DeathMetalPotentialV5
@@ -12,9 +12,9 @@ component_versions:
   environment-semantics: player-health-only-boss-curriculum-v4
   action-contract: map-navigation-prior-v1
   algorithm: recurrent-ppo-v1-corrected-truncation
-  training-level-distribution: qualified-trace-tail-v5
+  training-level-distribution: qualified-trace-tail-v4
   data-selection: disclosed-qualified-training-traces-v1
-  evaluation: conditional-trace-tail-v14
+  evaluation: conditional-trace-tail-v13
 invariants:
   - every prefix starts from a fresh legal player20 full-boss reset and is replayed through acknowledged live game actions
   - every reset observation, action mask, and transition observation must match its fresh-launch qualification digest
@@ -29,8 +29,6 @@ arms:
     description: Three A8 PPO replications learn only the final live actions after an exact qualified prefix, initialized from the selected EXP-0024 checkpoint.
 source:
   selection: EXP-0024 declared winner when passing, otherwise strongest legal training-only completion checkpoint
-  checkpoint: runs/legal-death-metal-full-boss-potential/training/seed-94001/checkpoint-00092160.pt
-  checkpoint_sha256: a7000ca0178248f9780220b124126100e6e3a0a32c6a19e149b61e883d69a05f
   trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
   qualification: runs/qualified-death-metal-trace-search/qualification.json
 training:
@@ -39,7 +37,7 @@ training:
   device: cuda
   architecture: 8
   transition_budget_per_trial: 61440
-  initial_tail_actions: exactly 1; expand only after a frozen-policy gate passes
+  initial_tail_actions: at most 16 and always shorter than every selected trace
   recurrent_state: warm from exact live replay
   curriculum_start_level: 4
   curriculum_target_level: 5
@@ -51,4 +49,4 @@ evaluation:
   learner_turn_cap: 64
   primary_outcome: conditional live Zone 2 entry after the handoff
   diagnostics: [final-policy per-trial completion rate, distinct completion seeds, learner turns, finite losses, worker restarts]
-decision_rule: Expand the legal trace tail beyond one action only if the three frozen final checkpoints aggregate at least 10 percent conditional completion across deterministic and two predeclared stochastic modes, at least two of three optimizer trials complete at least 5 percent, at least three distinct qualified game seeds complete, every optimizer trial completes at least once, losses are finite, and training plus evaluation controller restarts remain zero. Training-curve successes are diagnostic only and can never pass the gate. Otherwise retain the boundary and diagnose acquisition rather than claiming progress. No outcome is normal-start promotion.
+decision_rule: Expand the legal trace tail only if the three frozen final checkpoints aggregate at least 10 percent conditional completion across deterministic and two predeclared stochastic modes, at least two of three optimizer trials complete at least 5 percent, at least three distinct qualified game seeds complete, every optimizer trial completes at least once, losses are finite, and training plus evaluation controller restarts remain zero. Training-curve successes are diagnostic only and can never pass the gate. Otherwise retain the boundary and diagnose acquisition rather than claiming progress. No outcome is normal-start promotion.
