@@ -166,6 +166,17 @@ def _observation_summary(observation: Mapping[str, np.ndarray]) -> dict[str, Any
     }
 
 
+def _observation_component_digests(
+    observation: Mapping[str, np.ndarray],
+) -> dict[str, str]:
+    """Expose field-level replay identity without storing full observations."""
+
+    return {
+        name: normalized_observation_digest({name: value})
+        for name, value in sorted(observation.items())
+    }
+
+
 def replay_trace(
     environment: ReplayEnvironment,
     trace: Mapping[str, Any],
@@ -181,6 +192,7 @@ def replay_trace(
     if recurrent_capture is not None:
         recurrent_capture.begin(observation, reset_info)
     turn_digests = [normalized_observation_digest(observation)]
+    turn_component_digests = [_observation_component_digests(observation)]
     actual_events: Counter[str] = Counter()
     furthest = (
         int(reset_info.get("zone") or observation["player"][PlayerFeature.ZONE]),
@@ -213,6 +225,7 @@ def replay_trace(
                 break
         observation, _, terminated, truncated, info = environment.step(action)
         turn_digests.append(normalized_observation_digest(observation))
+        turn_component_digests.append(_observation_component_digests(observation))
         executed += 1
         terminal = bool(terminated or truncated)
         status = str(info.get("episode_status", "running"))
@@ -273,6 +286,7 @@ def replay_trace(
         },
         "elapsed_seconds": time.monotonic() - started,
         "turn_digests": turn_digests,
+        "turn_component_digests": turn_component_digests,
     }
     if recurrent_capture is not None:
         recurrent_capture.finalize(trace, valid=bool(result["valid"]))
@@ -313,6 +327,7 @@ def qualify_bank(arguments: argparse.Namespace) -> dict[str, Any]:
         curriculum_commands_enabled=True,
         diagnostic_root=arguments.output.parent / "controller-diagnostics",
         affinity_policy=arguments.affinity,
+        steam_presence_worker=arguments.steam_presence_worker,
     )
     results: list[dict[str, Any]] = []
     recurrent_demonstrations: list[RecurrentDemonstration] = []
@@ -372,6 +387,7 @@ def qualify_bank(arguments: argparse.Namespace) -> dict[str, Any]:
         "trace_count": len(traces),
         "qualified_trace_count": sum(bool(result["valid"]) for result in results),
         "worker_restarts": restarts,
+        "steam_presence_worker": arguments.steam_presence_worker,
         "infrastructure_error": infrastructure_error,
         "valid": valid,
         "results": results,
@@ -424,6 +440,7 @@ def main() -> int:
     qualify.add_argument("--turn-timeout", type=float, default=10.0)
     qualify.add_argument("--reset-timeout", type=float, default=30.0)
     qualify.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    qualify.add_argument("--steam-presence-worker", type=int)
     qualify.add_argument("--recurrent-output", type=Path)
     qualify.add_argument("--action-contract", choices=ACTION_CONTRACTS)
     qualify.add_argument("--policy-feedback-reward-config", type=Path)
@@ -439,6 +456,10 @@ def main() -> int:
     else:
         if arguments.mod_dir is None:
             parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
+        if arguments.steam_presence_worker is not None and not (
+            0 <= arguments.steam_presence_worker < arguments.num_instances
+        ):
+            parser.error("--steam-presence-worker is outside worker capacity")
         recurrent_arguments = (
             arguments.recurrent_output,
             arguments.action_contract,

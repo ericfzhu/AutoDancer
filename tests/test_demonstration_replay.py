@@ -130,6 +130,8 @@ def test_replay_trace_canonicalizes_only_a_proven_successful_prefix() -> None:
     assert result["actual"]["qualified_action_sequence"] == [0, 1]
     assert result["actual"]["stale_suffix_action_count"] == 1
     assert len(result["turn_digests"]) == 3
+    assert len(result["turn_component_digests"]) == 3
+    assert set(result["turn_component_digests"][0]) == set(observation_space().spaces)
     assert capture.demonstration is not None
     assert capture.demonstration.actions.tolist() == [0, 1]
 
