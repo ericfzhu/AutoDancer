@@ -4,8 +4,11 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.constants import ACTION_COUNT, PLAYER_FEATURES, PlayerFeature
-from autodancer.training.demonstration_replay import replay_trace
+from autodancer.constants import PlayerFeature
+from autodancer.observation import observation_space
+from autodancer.rewards import RewardConfig
+from autodancer.training.demonstration_replay import RecurrentReplayCapture, replay_trace
+from autodancer.training.model import START_ACTION
 
 
 class FakeEnvironment:
@@ -14,13 +17,15 @@ class FakeEnvironment:
 
     @staticmethod
     def observation(zone: int, floor: int) -> dict[str, np.ndarray]:
-        player = np.zeros(PLAYER_FEATURES, dtype=np.int32)
+        value = {
+            name: np.zeros(space.shape, dtype=space.dtype)
+            for name, space in observation_space().spaces.items()
+        }
+        player = value["player"]
         player[PlayerFeature.ZONE] = zone
         player[PlayerFeature.FLOOR] = floor
-        return {
-            "player": player,
-            "action_mask": np.ones(ACTION_COUNT, dtype=np.int8),
-        }
+        value["action_mask"].fill(1)
+        return value
 
     def reset(
         self, *, seed: int, options: dict[str, Any]
@@ -98,3 +103,21 @@ def test_replay_trace_rejects_action_that_is_now_masked() -> None:
     result = replay_trace(environment, trace())
     assert result["valid"] is False
     assert "masked" in result["error"]
+
+
+def test_replay_trace_captures_complete_recurrent_policy_inputs() -> None:
+    capture = RecurrentReplayCapture("current", RewardConfig(profile_version=5))
+
+    result = replay_trace(FakeEnvironment(), trace(), recurrent_capture=capture)
+
+    assert result["valid"] is True
+    assert capture.demonstration is not None
+    demonstration = capture.demonstration
+    assert demonstration.trace_id == "a" * 64
+    assert demonstration.seed == 92043
+    assert demonstration.length == 3
+    assert demonstration.observations["grid"].shape[0] == 3
+    assert demonstration.actions.tolist() == [0, 1, 5]
+    assert demonstration.previous_actions.tolist() == [START_ACTION, 0, 1]
+    assert demonstration.episode_starts.tolist() == [True, False, False]
+    assert np.all(np.isfinite(demonstration.previous_rewards))
