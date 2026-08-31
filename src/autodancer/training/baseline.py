@@ -70,21 +70,30 @@ RECURRENT_STATE_MODES = ("carry", "reset-on-floor-transition", "reset-every-step
 
 
 def validate_checkpoint_trace_prefix(
-    checkpoint_metadata: dict[str, Any], trace_prefix: QualifiedTracePrefixBank
+    checkpoint_metadata: dict[str, Any],
+    trace_prefix: QualifiedTracePrefixBank,
+    *,
+    source_reference: bool = False,
 ) -> None:
     """Require frozen evaluation to reproduce the checkpoint's exact handoff distribution."""
 
     checkpoint_spec = checkpoint_metadata.get("trace_prefix")
     if not isinstance(checkpoint_spec, dict):
+        if source_reference:
+            # A declared source checkpoint predates this curriculum boundary.
+            # Its path and file hash are validated against experiment.yaml;
+            # the requested live prefix is retained separately in the report.
+            return
         raise ValueError("Checkpoint has no qualified trace-prefix training identity")
     expected = trace_prefix.specification()
-    identity_keys = (
+    identity_keys = [
         "bank_sha256",
         "qualification_sha256",
         "action_contract",
-        "tail_actions",
         "recurrent_state_mode",
-    )
+    ]
+    if not source_reference:
+        identity_keys.append("tail_actions")
     mismatches = [key for key in identity_keys if checkpoint_spec.get(key) != expected.get(key)]
     if mismatches:
         raise ValueError(
@@ -1761,7 +1770,11 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     )
     checkpoint_metadata = dict(payload.get("checkpoint_metadata", {}))
     if trace_prefix is not None:
-        validate_checkpoint_trace_prefix(checkpoint_metadata, trace_prefix)
+        validate_checkpoint_trace_prefix(
+            checkpoint_metadata,
+            trace_prefix,
+            source_reference=bool(arguments.source_reference),
+        )
     config = SupervisorConfig(
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,

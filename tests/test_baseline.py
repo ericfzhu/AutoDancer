@@ -135,6 +135,41 @@ def test_trace_prefix_evaluation_requires_exact_checkpoint_identity() -> None:
         validate_checkpoint_trace_prefix(metadata, prefix)  # type: ignore[arg-type]
 
 
+def test_trace_prefix_source_reference_may_calibrate_a_new_tail_boundary() -> None:
+    class Prefix:
+        def specification(self):
+            return {
+                "bank_sha256": "a" * 64,
+                "qualification_sha256": "b" * 64,
+                "action_contract": "current",
+                "tail_actions": 1,
+                "recurrent_state_mode": "warm",
+            }
+
+    prefix = Prefix()
+    validate_checkpoint_trace_prefix(
+        {},
+        prefix,
+        source_reference=True,  # type: ignore[arg-type]
+    )
+    metadata = {"trace_prefix": {**prefix.specification(), "tail_actions": 16}}
+    validate_checkpoint_trace_prefix(
+        metadata,
+        prefix,
+        source_reference=True,  # type: ignore[arg-type]
+    )
+    metadata["trace_prefix"] = {
+        **prefix.specification(),
+        "bank_sha256": "c" * 64,
+    }
+    with pytest.raises(ValueError, match="bank_sha256"):
+        validate_checkpoint_trace_prefix(
+            metadata,
+            prefix,
+            source_reference=True,  # type: ignore[arg-type]
+        )
+
+
 class OneStepEnvironment:
     num_envs = 4
     worker_ids = [f"worker-{index:04d}" for index in range(num_envs)]

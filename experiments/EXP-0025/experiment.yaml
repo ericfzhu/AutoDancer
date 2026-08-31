@@ -29,6 +29,8 @@ arms:
     description: Three A8 PPO replications learn only the final live actions after an exact qualified prefix, initialized from the selected EXP-0024 checkpoint.
 source:
   selection: EXP-0024 declared winner when passing, otherwise strongest legal training-only completion checkpoint
+  checkpoint: runs/legal-death-metal-full-boss-potential/training/seed-94001/checkpoint-00092160.pt
+  checkpoint_sha256: a7000ca0178248f9780220b124126100e6e3a0a32c6a19e149b61e883d69a05f
   trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
   qualification: runs/qualified-death-metal-trace-search/qualification.json
 training:

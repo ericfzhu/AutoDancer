@@ -3,8 +3,12 @@ from pathlib import Path
 
 def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     source = Path("tools/run-qualified-trace-tail-pilot.ps1").read_text(encoding="utf-8")
-    assert '[int]$RequestedTailActions = 1' in source
-    assert 'runs\\qualified-death-metal-tail1' in source
+    assert "[int]$RequestedTailActions = 1" in source
+    assert "runs\\qualified-death-metal-tail1" in source
+    assert '"calibrating-source"' in source
+    assert "--source-reference" in source
+    assert "outside the 10-90 percent live competence band" in source
+    assert "source_calibration" in source
     assert "qualified_distinct_seed_count -lt 3" in source
     assert "--trace-prefix-bank" in source
     assert "--trace-prefix-qualification" in source
