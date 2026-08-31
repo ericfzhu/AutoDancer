@@ -238,6 +238,8 @@ try {
             (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
             [string]$payload.policy_mode -ne [string]$mode.mode -or
             [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
+            $null -eq $payload.steam_presence_worker -or
+            [int]$payload.steam_presence_worker -ne 0 -or
             [int]$payload.trace_prefix.tail_actions -ne $tailActions -or
             [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
         ) {
@@ -352,6 +354,8 @@ try {
                 (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
                 [string]$payload.policy_mode -ne [string]$mode.mode -or
                 [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
+                $null -eq $payload.steam_presence_worker -or
+                [int]$payload.steam_presence_worker -ne 0 -or
                 [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
             ) {
                 throw "Trace-tail evaluation report identity mismatch: $report"
