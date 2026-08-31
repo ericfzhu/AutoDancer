@@ -2156,3 +2156,36 @@ contracting player health or moving the start to Floor 3, the full-boss policy m
 clear fresh Death Metal seeds with the prefix disabled. Training trace seeds,
 qualification replays, and assisted starts can never count toward normal-start
 promotion.
+
+## Level-transition actions must return the destination observation
+
+Fresh replay of the three EXP-0024 full-boss success traces reproduced every
+action and the exact aggregate combat/item/damage events, killed all visible
+enemies, and left Bard alive on the unlocked boss staircase.  It nevertheless
+reported Zone 1 Floor 4 instead of Zone 2 Floor 1.  The discrepancy exposed a
+controller race rather than stochastic game behavior: the bridge marked an
+ACTION complete in `event.turn`, and telemetry consumed that acknowledgement
+before the asynchronous level transition materialized.  The later tick detected
+the new level but no longer had a command to acknowledge, so Python selected the
+next action from the previous floor's state or terminated a curriculum episode
+inconsistently depending on timing.
+
+This violates the Markov transition contract used by the learner.  An action
+that causes descent has one environment result: the first policy-ready state on
+the destination floor.  The transient source-floor staircase state is an engine
+implementation detail, not a second agent decision point.  SYNCHRONY exposes
+`LevelTransition.isPending()` specifically for identifying this interval
+([official API](https://vortexbuffer.com/synchrony/docs/modules/necro.client.LevelTransition/));
+its level lifecycle places the actual floor switch in the `nextLevel` phase of
+`event.levelComplete`
+([official level-event ordering](https://vortexbuffer.com/synchrony/docs/events/level/)).
+
+The bridge now retains a completed ACTION while that signal is true, emits
+structured `level_transition_pending` heartbeats during loading, and releases
+the exact acknowledgement only when the destination level is visible and its
+observation can be built.  A bounded watchdog emits
+`level_transition_timeout` rather than fabricating a transition.  This same rule
+covers ordinary stairs, trapdoors, boss exits, and later curriculum boundaries.
+The three saved boss traces must pass fresh-launch replay with Zone 2 observations
+before they are admitted to trace-tail training; earlier raw `curriculum_complete`
+records remain acquisition evidence, not qualified promotion evidence.

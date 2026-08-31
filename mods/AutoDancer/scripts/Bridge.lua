@@ -8,6 +8,7 @@ local Cutscene = require "necro.client.Cutscene"
 local GameClient = require "necro.client.GameClient"
 local GameInput = require "necro.client.Input"
 local GameSession = require "necro.client.GameSession"
+local LevelTransition = require "necro.client.LevelTransition"
 local Netplay = require "necro.network.Netplay"
 local NetRNG = require "necro.client.NetRNG"
 local Player = require "necro.game.character.Player"
@@ -349,6 +350,7 @@ event.turn.add("completeAutoDancerBridgeCommand", {
     if pending then
         sendCommandStatus(pending, "turn_completed")
         completed = pending
+        completed.completed_tick = tickCount
         pending = nil
     end
 end)
@@ -384,14 +386,32 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
         end
     end
 
-    local outstanding = pending or queuedCommand
+    -- A turn can trigger an asynchronous floor transition.  Keep the command
+    -- outstanding until AutoDancer has emitted the first fully materialized
+    -- observation on the destination floor, and report loading heartbeats in
+    -- the meantime.
+    local outstanding = pending or completed or queuedCommand
     if outstanding and tickCount - lastHeartbeatTick >= HEARTBEAT_TICKS then
         lastHeartbeatTick = tickCount
-        sendCommandStatus(outstanding, "heartbeat", lastDeferredReason)
+        local heartbeatReason = lastDeferredReason
+        if completed and completed.kind == "ACTION" and LevelTransition.isPending() then
+            heartbeatReason = "level_transition_pending"
+        elseif completed and completed.kind == "RESET" then
+            heartbeatReason = "reset_safe_state_pending"
+        elseif completed and completed.kind == "GOTO" then
+            heartbeatReason = "target_level_pending"
+        end
+        sendCommandStatus(outstanding, "heartbeat", heartbeatReason)
     end
     if pending and tickCount - pending.accepted_tick >= ACTION_WATCHDOG_TICKS then
         sendCommandStatus(pending, "command_error", "accepted_action_no_turn")
         pending = nil
+    end
+    if completed and completed.kind == "ACTION"
+        and LevelTransition.isPending()
+        and tickCount - completed.accepted_tick >= ACTION_WATCHDOG_TICKS then
+        sendCommandStatus(completed, "command_error", "level_transition_timeout")
+        completed = nil
     end
 end)
 
@@ -401,6 +421,9 @@ function Bridge.consumeCompletedCommand(allowReset)
     end
     if completed and completed.kind == "GOTO"
         and CurrentLevel.getSequentialNumber() ~= completed.target_level then
+        return nil
+    end
+    if completed and completed.kind == "ACTION" and LevelTransition.isPending() then
         return nil
     end
     local result = completed

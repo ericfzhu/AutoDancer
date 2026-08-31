@@ -16,7 +16,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from autodancer.constants import ACTION_COUNT, PlayerFeature
+from autodancer.constants import ACTION_COUNT, GridChannel, PlayerFeature, Terrain
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level
 from autodancer.rewards import RewardConfig, RewardTracker, load_reward_config
@@ -144,6 +144,28 @@ def _event_counts(events: Any) -> Counter[str]:
     return counts
 
 
+def _observation_summary(observation: Mapping[str, np.ndarray]) -> dict[str, Any]:
+    player = np.asarray(observation["player"])
+    terrain = np.asarray(observation["grid"])[..., int(GridChannel.TERRAIN_CLASS)]
+    centre = terrain.shape[0] // 2
+    stairs = [
+        [int(row - centre), int(column - centre)]
+        for row, column in np.argwhere(terrain == int(Terrain.STAIRS))
+    ]
+    return {
+        "zone": int(player[PlayerFeature.ZONE]),
+        "floor": int(player[PlayerFeature.FLOOR]),
+        "turn": int(player[PlayerFeature.TURN]),
+        "health": int(player[PlayerFeature.HEALTH]),
+        "on_stairs": bool(player[PlayerFeature.ON_STAIRS]),
+        "dead": bool(player[PlayerFeature.DEAD]),
+        "visible_enemies": int(player[PlayerFeature.VISIBLE_ENEMIES]),
+        "visible_stairs_relative": stairs,
+        "action_mask": [int(value) for value in observation["action_mask"]],
+        "digest": normalized_observation_digest(dict(observation)),
+    }
+
+
 def replay_trace(
     environment: ReplayEnvironment,
     trace: Mapping[str, Any],
@@ -235,6 +257,7 @@ def replay_trace(
             "furthest_zone": furthest[0],
             "furthest_floor": furthest[1],
             "event_counts": dict(actual_events),
+            "final_observation": _observation_summary(observation),
         },
         "elapsed_seconds": time.monotonic() - started,
         "turn_digests": turn_digests,

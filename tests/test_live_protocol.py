@@ -877,6 +877,69 @@ def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
     assert 'completed.kind == "RESET" and not allowReset' in bridge
 
 
+def test_lua_action_acknowledgement_waits_for_pending_level_transition() -> None:
+    root = Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts"
+    telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")
+    bridge = (root / "Bridge.lua").read_text(encoding="utf-8")
+
+    assert 'require "necro.client.LevelTransition"' in bridge
+    assert (
+        'completed.kind == "ACTION" and LevelTransition.isPending()' in bridge
+    )
+    assert "local outstanding = pending or completed or queuedCommand" in bridge
+    assert 'heartbeatReason = "level_transition_pending"' in bridge
+    assert '"level_transition_timeout"' in bridge
+
+    tick_observer = telemetry.index('event.tick.add("emitAutoDancerInitialObservation"')
+    identity_gate = telemetry.index("levelIdentity ~= lastLevelIdentity", tick_observer)
+    emit = telemetry.index("emitTurn()", identity_gate)
+    assert identity_gate < emit
+
+
+def test_live_action_can_acknowledge_on_the_materialized_next_floor() -> None:
+    reset = record(0, "reset")
+    next_floor = record(1, "turn", requested_action=Action.UP, command_id=1)
+    next_floor["zone"] = 2
+    next_floor["floor"] = 1
+    next_floor["observation"]["player"][PlayerFeature.ZONE] = 2
+    next_floor["observation"]["player"][PlayerFeature.FLOOR] = 1
+
+    statuses = []
+    for phase in ("received", "accepted", "input_observed", "turn_completed"):
+        status = command_status(phase=phase)
+        status["command_id"] = 1
+        statuses.append(status)
+    heartbeat = command_status(phase="heartbeat")
+    heartbeat["command_id"] = 1
+    heartbeat["engine_state"] = {"tick": 11, "loading": True}
+    statuses.append(heartbeat)
+    telemetry_sent = command_status(phase="telemetry_sent")
+    telemetry_sent["command_id"] = 1
+    statuses.append(telemetry_sent)
+
+    payloads = [json.dumps(reset).encode()]
+    payloads.extend(json.dumps(status).encode() for status in statuses)
+    payloads.append(json.dumps(next_floor).encode())
+    source = NativePipeTurnSource(
+        FakeReceiver(payloads),
+        instance_id="worker-0000",
+        session_id="test-session",
+        launch_id="test-launch",
+    )
+    environment = AutoDancerLiveEnv(turn_source=source, bridge=FakeBridge())
+
+    environment.reset(seed=7)
+    observation, _, terminated, truncated, info = environment.step(Action.UP)
+
+    assert not terminated
+    assert not truncated
+    assert info["zone"] == 2
+    assert info["floor"] == 1
+    assert observation["player"][PlayerFeature.ZONE] == 2
+    assert source.last_status is not None
+    assert source.last_status["phase"] == "telemetry_sent"
+
+
 def test_lua_waits_for_a_materialized_visible_world_before_reset_or_action() -> None:
     root = Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts"
     telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")

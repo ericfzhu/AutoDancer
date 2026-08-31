@@ -79,6 +79,7 @@ def trace() -> dict[str, Any]:
 def test_replay_trace_requires_matching_terminal_gameplay_evidence() -> None:
     result = replay_trace(FakeEnvironment(), trace())
     assert result["valid"] is True
+    assert result["actual"]["final_observation"]["zone"] == 2
     assert all(result["checks"].values())
 
 
