@@ -104,6 +104,7 @@ def _configuration(arguments: argparse.Namespace, count: int, phase: str) -> Sup
         # cap and permits the game's per-run/replay state to grow indefinitely.
         max_turns=10_000,
         affinity_policy=arguments.affinity,
+        steam_presence_worker=getattr(arguments, "steam_presence_worker", None),
         diagnostic_root=arguments.run_dir / "controller-diagnostics" / phase,
         qualification_mode=phase == "conformance",
         qualification_startup_fault_slot=0 if phase == "forced-recovery" else None,
@@ -1057,6 +1058,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             "num_instances": arguments.num_instances,
             "transitions_per_worker": arguments.transitions_per_worker,
             "device": arguments.device,
+            "steam_presence_worker": getattr(arguments, "steam_presence_worker", None),
         },
         "phases": progress["phases"],
     }
@@ -1079,12 +1081,17 @@ def main() -> int:
     parser.add_argument("--turn-timeout", type=float, default=30.0)
     parser.add_argument("--reset-timeout", type=float, default=60.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="none")
+    parser.add_argument("--steam-presence-worker", type=int)
     parser.add_argument("--resume", action="store_true")
     arguments = parser.parse_args()
     if arguments.num_instances != 8:
         parser.error("controller qualification requires exactly eight workers")
     if arguments.transitions_per_worker <= 0:
         parser.error("--transitions-per-worker must be positive")
+    if arguments.steam_presence_worker is not None and not (
+        0 <= arguments.steam_presence_worker < arguments.num_instances
+    ):
+        parser.error("--steam-presence-worker is outside worker capacity")
     report = run(arguments)
     print(json.dumps({"passed": report["passed"], "failure": report["failure"]}))
     return 0 if report["passed"] else 1

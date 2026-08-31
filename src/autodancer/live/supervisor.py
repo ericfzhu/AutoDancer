@@ -85,6 +85,7 @@ class SupervisorConfig:
     telemetry_transport: str = "native-pipe"
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
+    steam_presence_worker: int | None = None
     qualification_mode: bool = False
     curriculum_commands_enabled: bool = False
     curriculum_start_level: int = 1
@@ -107,6 +108,10 @@ class SupervisorConfig:
             raise ValueError("the supported worker profile is 'symbolic'")
         if self.affinity_policy not in {"auto", "none", "spread"}:
             raise ValueError("affinity_policy must be auto, none, or spread")
+        if self.steam_presence_worker is not None and not (
+            0 <= self.steam_presence_worker < self.num_instances
+        ):
+            raise ValueError("steam_presence_worker is outside worker capacity")
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
         if self.curriculum_profile not in CURRICULUM_PROFILES:
@@ -154,6 +159,7 @@ class InstanceHandle:
     outstanding_command_since: float | None = None
     last_frame_bytes: int = 0
     max_frame_bytes: int = 0
+    steam_presence_enabled: bool = False
     failure_history: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -188,7 +194,7 @@ class AutoDancerSupervisor:
                             "error": str(error),
                         },
                     )
-        except Exception:
+        except BaseException:
             self.close()
             raise
         return self
@@ -353,15 +359,7 @@ class AutoDancerSupervisor:
             worker_id,
             launch_id,
             transport,
-            [
-                f"-cwos.game.debug.logging.file.name={log_name}",
-                "-cwos.game.debug.logging.file.flushInterval=0.05",
-                "-cwos.game.debug.logging.console.verbosity=0",
-                "-cwos.game.assets.autoReload.enabled=false",
-                "-cwos.game.steam.enabled=false",
-                "-cwos.game.galaxy.enabled=false",
-                "-cwos.game.size=[320,180]",
-            ],
+            self._worker_launch_arguments(worker_id, log_name),
         )
         self._worker_processes[worker_id] = process
         create_time = psutil.Process(process.pid).create_time()
@@ -378,6 +376,9 @@ class AutoDancerSupervisor:
             pid=process.pid,
             config_name=config_name,
             restart_count=restart_count,
+            steam_presence_enabled=(
+                self.config.steam_presence_worker == self.worker_ids.index(worker_id)
+            ),
         )
         self.workers[worker_id] = handle
         if (
@@ -389,6 +390,19 @@ class AutoDancerSupervisor:
             transport.close()
         self._wait_for_hello(worker_id, launch_id, transport)
         return handle
+
+    def _worker_launch_arguments(self, worker_id: str, log_name: str) -> list[str]:
+        slot = self.worker_ids.index(worker_id)
+        steam_enabled = self.config.steam_presence_worker == slot
+        return [
+            f"-cwos.game.debug.logging.file.name={log_name}",
+            "-cwos.game.debug.logging.file.flushInterval=0.05",
+            "-cwos.game.debug.logging.console.verbosity=0",
+            "-cwos.game.assets.autoReload.enabled=false",
+            f"-cwos.game.steam.enabled={'true' if steam_enabled else 'false'}",
+            "-cwos.game.galaxy.enabled=false",
+            "-cwos.game.size=[320,180]",
+        ]
 
     @staticmethod
     def _game_pids() -> set[int]:
@@ -603,6 +617,7 @@ class AutoDancerSupervisor:
                 ),
                 "last_frame_bytes": handle.last_frame_bytes,
                 "max_frame_bytes": handle.max_frame_bytes,
+                "steam_presence_enabled": handle.steam_presence_enabled,
                 "failure_count": len(handle.failure_history),
                 **process_metrics,
             }

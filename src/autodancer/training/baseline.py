@@ -1785,6 +1785,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         max_turns=max(arguments.max_steps + 1, 2),
         reward_config=reward_config,
         affinity_policy=arguments.affinity,
+        steam_presence_worker=arguments.steam_presence_worker,
         diagnostic_root=arguments.output.parent / "controller-diagnostics",
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
@@ -1887,6 +1888,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "policy_feedback_source": policy_feedback_source,
         "policy_feedback_matches_checkpoint": policy_feedback_matches_checkpoint,
         "num_instances": arguments.num_instances,
+        "steam_presence_worker": arguments.steam_presence_worker,
         "max_steps_per_episode": arguments.max_steps,
         "seeds": arguments.seeds,
         "policy_seed": arguments.policy_seed,
@@ -2103,6 +2105,11 @@ def main() -> int:
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--reset-timeout", type=float, default=30.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    parser.add_argument(
+        "--steam-presence-worker",
+        type=int,
+        help="zero-based worker slot that alone initializes Steamworks",
+    )
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
     parser.add_argument(
         "--recurrent-state-mode",
@@ -2171,6 +2178,10 @@ def main() -> int:
         parser.error("--source-reference requires --experiment-id")
     if arguments.num_instances <= 0 or arguments.max_steps <= 0:
         parser.error("--num-instances and --max-steps must be positive")
+    if arguments.steam_presence_worker is not None and not (
+        0 <= arguments.steam_presence_worker < arguments.num_instances
+    ):
+        parser.error("--steam-presence-worker is outside worker capacity")
     if arguments.curriculum_start_level <= 0:
         parser.error("--curriculum-start-level must be positive")
     if arguments.curriculum_profile != "normal" and arguments.curriculum_start_level <= 1:

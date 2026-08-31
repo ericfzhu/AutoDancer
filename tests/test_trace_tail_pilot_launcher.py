@@ -10,6 +10,7 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "outside the 10-90 percent live competence band" in source
     assert "source_calibration" in source
     assert 'experiment_id = "EXP-0027"' in source
+    assert source.count("--steam-presence-worker") == 3
     assert "a8-live-calibrated-tail1" in source
     assert '"waiting-for-controller-qualification"' in source
     assert "Test-CurrentQualification" in source

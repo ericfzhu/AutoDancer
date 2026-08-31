@@ -35,3 +35,13 @@ reload and online integrations, and a dedicated recurrent actor state. A single
 inference scheduler dynamically micro-batches ready actors against a frozen
 policy. PPO updates only after every slot supplies one contiguous 128-step
 fragment from that policy version.
+
+## Optional Steam playtime presence
+
+Training and evaluation may nominate one zero-based slot with
+`--steam-presence-worker`. Only that worker initializes Steamworks; every other
+worker continues to launch with Steam and Galaxy disabled. The designated slot
+survives worker replacement by identity, so `worker-0000` remains the presence
+worker after recovery. This is intended to accrue ordinary wall-clock playtime
+for the experiment, not the sum of parallel worker-hours. The exact slot is
+recorded in training lineage and evaluation reports.

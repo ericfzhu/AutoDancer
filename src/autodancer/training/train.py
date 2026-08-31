@@ -617,6 +617,7 @@ def train(arguments: argparse.Namespace) -> None:
         telemetry_transport=arguments.telemetry_transport,
         worker_profile=arguments.worker_profile,
         affinity_policy=arguments.affinity,
+        steam_presence_worker=arguments.steam_presence_worker,
         diagnostic_root=arguments.run_dir / "controller-diagnostics",
         curriculum_start_level=arguments.curriculum_start_level,
         curriculum_target_level=arguments.curriculum_target_level,
@@ -704,6 +705,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "telemetry_transport": arguments.telemetry_transport,
                 "worker_profile": arguments.worker_profile,
                 "affinity": arguments.affinity,
+                "steam_presence_worker": arguments.steam_presence_worker,
             },
             source_checkpoint=source_checkpoint,
         )
@@ -1078,6 +1080,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 "telemetry_transport": arguments.telemetry_transport,
                                 "worker_profile": arguments.worker_profile,
                                 "affinity": arguments.affinity,
+                                "steam_presence_worker": arguments.steam_presence_worker,
                                 "startup_timeout": arguments.startup_timeout,
                                 "turn_timeout": arguments.turn_timeout,
                                 "reset_timeout": arguments.reset_timeout,
@@ -1182,6 +1185,11 @@ def main() -> int:
     parser.add_argument("--telemetry-transport", choices=("native-pipe",), default="native-pipe")
     parser.add_argument("--worker-profile", choices=("symbolic",), default="symbolic")
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    parser.add_argument(
+        "--steam-presence-worker",
+        type=int,
+        help="zero-based worker slot that alone initializes Steamworks",
+    )
     parser.add_argument("--inference-batch-delay-ms", type=float, default=2.0)
     parser.add_argument("--action-contract", choices=ACTION_CONTRACTS, default="current")
     parser.add_argument(
@@ -1328,6 +1336,10 @@ def main() -> int:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.total_steps <= 0 or arguments.num_instances <= 0:
         parser.error("--total-steps and --num-instances must be positive")
+    if arguments.steam_presence_worker is not None and not (
+        0 <= arguments.steam_presence_worker < arguments.num_instances
+    ):
+        parser.error("--steam-presence-worker is outside worker capacity")
     sources = (arguments.resume, arguments.initialize_from, arguments.fine_tune_from)
     if sum(value is not None for value in sources) > 1:
         parser.error("--resume, --initialize-from, and --fine-tune-from are mutually exclusive")

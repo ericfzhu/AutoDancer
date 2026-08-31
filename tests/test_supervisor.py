@@ -69,6 +69,38 @@ def test_qualification_startup_fault_slot_must_be_inside_capacity(
         )
 
 
+def test_steam_presence_worker_must_be_inside_capacity(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="steam_presence_worker"):
+        SupervisorConfig(
+            tmp_path / "game",
+            tmp_path / "mod",
+            num_instances=2,
+            steam_presence_worker=2,
+        )
+
+
+def test_only_designated_worker_initializes_steam_and_replacements_keep_it(
+    tmp_path: Path,
+) -> None:
+    supervisor = AutoDancerSupervisor(
+        SupervisorConfig(
+            tmp_path / "game",
+            tmp_path / "mod",
+            num_instances=3,
+            steam_presence_worker=0,
+        )
+    )
+
+    first = supervisor._worker_launch_arguments("worker-0000", "first.log")
+    replacement = supervisor._worker_launch_arguments("worker-0000", "replacement.log")
+    other = supervisor._worker_launch_arguments("worker-0001", "other.log")
+
+    assert "-cwos.game.steam.enabled=true" in first
+    assert "-cwos.game.steam.enabled=true" in replacement
+    assert "-cwos.game.steam.enabled=false" in other
+    assert "-cwos.game.galaxy.enabled=false" in first
+
+
 def test_curriculum_target_must_follow_start_level(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="after curriculum_start_level"):
         SupervisorConfig(
@@ -139,6 +171,32 @@ def test_start_recovers_a_worker_that_fails_after_handle_creation(
         ("worker-0000", 1),
         ("worker-0001", 0),
     ]
+
+
+def test_start_cleans_up_on_keyboard_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supervisor = AutoDancerSupervisor(
+        SupervisorConfig(tmp_path / "game", tmp_path / "mod", num_instances=1)
+    )
+    monkeypatch.setattr(AutoDancerSupervisor, "_validate_installation", lambda _self: None)
+    monkeypatch.setattr(AutoDancerSupervisor, "_refuse_existing_processes", lambda _self: None)
+    monkeypatch.setattr(
+        AutoDancerSupervisor,
+        "_spawn_worker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    cleaned = False
+
+    def close(_self: AutoDancerSupervisor) -> None:
+        nonlocal cleaned
+        cleaned = True
+
+    monkeypatch.setattr(AutoDancerSupervisor, "close", close)
+
+    with pytest.raises(KeyboardInterrupt):
+        supervisor.start()
+    assert cleaned
 
 
 def test_malformed_or_stale_pipe_hello_is_rejected(tmp_path: Path) -> None:

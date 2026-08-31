@@ -220,6 +220,7 @@ try {
                 --trace-prefix-qualification $traceQualification `
                 --trace-prefix-tail-actions $tailActions `
                 --trace-prefix-recurrent-state warm `
+                --steam-presence-worker 0 `
                 --affinity none `
                 --experiment-id EXP-0027 `
                 --experiment-arm a8-live-calibrated-tail1 `
@@ -288,7 +289,7 @@ try {
                 "--reward-lineage-version", "DeathMetalPotentialV5", "--freeze-base-updates", "10",
                 "--trace-prefix-bank", $bank, "--trace-prefix-qualification", $traceQualification,
                 "--trace-prefix-tail-actions", "$tailActions", "--trace-prefix-recurrent-state", "warm",
-                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", "EXP-0027",
+                "--initialize-from", $sourceCheckpoint, "--steam-presence-worker", "0", "--affinity", "none", "--experiment-id", "EXP-0027",
                 "--experiment-arm", "a8-live-calibrated-tail1", "--trial-id", $trial,
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
@@ -334,6 +335,7 @@ try {
                     --trace-prefix-qualification $traceQualification `
                     --trace-prefix-tail-actions $tailActions `
                     --trace-prefix-recurrent-state warm `
+                    --steam-presence-worker 0 `
                     --affinity none `
                     --experiment-id EXP-0027 `
                     --experiment-arm a8-live-calibrated-tail1 `

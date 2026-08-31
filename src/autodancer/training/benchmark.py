@@ -66,6 +66,7 @@ def benchmark_capacity(arguments: argparse.Namespace, capacity: int) -> dict[str
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
         affinity_policy=arguments.affinity,
+        steam_presence_worker=arguments.steam_presence_worker,
         diagnostic_root=arguments.run_dir / "controller-diagnostics",
     )
     with AutoDancerSupervisor(config) as supervisor:
@@ -105,6 +106,7 @@ def benchmark_capacity(arguments: argparse.Namespace, capacity: int) -> dict[str
                 },
                 "workers": supervisor.health(),
                 "affinity": arguments.affinity,
+                "steam_presence_worker": arguments.steam_presence_worker,
             }
         finally:
             environment.close()
@@ -121,6 +123,7 @@ def main() -> int:
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument("--turn-timeout", type=float, default=10.0)
     parser.add_argument("--affinity", choices=("auto", "none", "spread"), default="auto")
+    parser.add_argument("--steam-presence-worker", type=int)
     arguments = parser.parse_args()
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
@@ -133,6 +136,11 @@ def main() -> int:
     )
     if not capacities or any(value <= 0 for value in capacities) or arguments.steps <= 0:
         parser.error("provide positive --num-instances or --sweep values and --steps")
+    if arguments.steam_presence_worker is not None and any(
+        arguments.steam_presence_worker >= capacity or arguments.steam_presence_worker < 0
+        for capacity in capacities
+    ):
+        parser.error("--steam-presence-worker must identify a slot in every requested capacity")
     arguments.run_dir.mkdir(parents=True, exist_ok=True)
     results = []
     for capacity in capacities:
