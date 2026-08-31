@@ -7,6 +7,8 @@ param(
     [int]$RequestedTailActions = 1,
     [int[]]$CandidateTailActions = @(),
     [int[]]$CalibrationPolicySeeds = @(0, 98001, 98002, 98003, 98004),
+    [int]$LearnerTurnCap = 64,
+    [int]$SteamPresenceWorker = 0,
     [string]$ExperimentId = "EXP-0027",
     [string]$ExperimentArm = "a8-live-calibrated-tail1",
     [string]$TrainingDistributionVersion = "qualified-trace-tail-v5",
@@ -24,8 +26,11 @@ function Resolve-RepositoryPath([string]$Value) {
 if ($TrainingSeeds.Count -ne 3 -or @($TrainingSeeds | Select-Object -Unique).Count -ne 3) {
     throw "The trace-tail pilot requires exactly three distinct optimizer seeds"
 }
-if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $PollSeconds -le 0) {
-    throw "TotalSteps, RequestedTailActions, and PollSeconds must be positive"
+if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $LearnerTurnCap -le 0 -or $PollSeconds -le 0) {
+    throw "TotalSteps, RequestedTailActions, LearnerTurnCap, and PollSeconds must be positive"
+}
+if ($SteamPresenceWorker -lt 0 -or $SteamPresenceWorker -ge 8) {
+    throw "SteamPresenceWorker must identify one of the eight training workers"
 }
 if ($CalibrationPolicySeeds.Count -eq 0 -or $CalibrationPolicySeeds[0] -ne 0) {
     throw "CalibrationPolicySeeds must begin with deterministic policy seed 0"
@@ -238,7 +243,7 @@ try {
                     --output $report `
                     --num-instances 8 `
                     --seeds $gameSeedCsv `
-                    --max-steps 64 `
+                    --max-steps $LearnerTurnCap `
                     --policy-mode $mode.mode `
                     --policy-seed $mode.policy_seed `
                     --trained-only `
@@ -256,6 +261,7 @@ try {
                     --trace-prefix-tail-actions $candidateTail `
                     --trace-prefix-recurrent-state warm `
                     --affinity none `
+                    --steam-presence-worker $SteamPresenceWorker `
                     --experiment-id $ExperimentId `
                     --experiment-arm $ExperimentArm `
                     --trial-id "source-tail-$candidateTail-$($mode.name)" `
@@ -365,6 +371,7 @@ try {
                 "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", $ExperimentId,
                 "--experiment-arm", $ExperimentArm, "--trial-id", $trial,
                 "--training-level-distribution-version", $TrainingDistributionVersion,
+                "--steam-presence-worker", "$SteamPresenceWorker",
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
             )
@@ -393,7 +400,7 @@ try {
                     --output $report `
                     --num-instances 8 `
                     --seeds $gameSeedCsv `
-                    --max-steps 64 `
+                    --max-steps $LearnerTurnCap `
                     --policy-mode $mode.mode `
                     --policy-seed $mode.policy_seed `
                     --trained-only `
@@ -410,6 +417,7 @@ try {
                     --trace-prefix-tail-actions $tailActions `
                     --trace-prefix-recurrent-state warm `
                     --affinity none `
+                    --steam-presence-worker $SteamPresenceWorker `
                     --experiment-id $ExperimentId `
                     --experiment-arm $ExperimentArm `
                     --trial-id "$trial-$($mode.name)" `
@@ -453,6 +461,8 @@ try {
         bank = $bank
         qualification = $traceQualification
         tail_actions = $tailActions
+        learner_turn_cap = $LearnerTurnCap
+        steam_presence_worker = $SteamPresenceWorker
         qualified_training_seeds = $gameSeeds
         source_calibration = [ordered]@{
             episodes = $sourceCalibrationEpisodes

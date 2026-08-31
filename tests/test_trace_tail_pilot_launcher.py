@@ -12,7 +12,9 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "No trace-tail candidate lies inside the 10-90 percent live competence band" in source
     assert "source_calibration" in source
     assert "experiment_id = $ExperimentId" in source
-    assert "--steam-presence-worker" not in source
+    assert "[int]$SteamPresenceWorker = 0" in source
+    assert "--steam-presence-worker $SteamPresenceWorker" in source
+    assert '"--steam-presence-worker", "$SteamPresenceWorker"' in source
     assert "a8-live-calibrated-tail1" in source
     assert "--training-level-distribution-version" in source
     assert "qualified-trace-tail-v5" in source
@@ -48,3 +50,17 @@ def test_adaptive_trace_tail_experiment_predeclares_boundary_search() -> None:
     assert "competence_band: [0.10, 0.90]" in specification
     assert "assisted trace-tail completion never counts as normal-start Zone 2" in specification
     assert "-CandidateTailActions (1..16)" in readme
+
+
+def test_expanded_trace_tail_experiment_reaches_near_full_boss_start() -> None:
+    specification = Path("experiments/EXP-0029/experiment.yaml").read_text(encoding="utf-8")
+    readme = Path("experiments/EXP-0029/README.md").read_text(encoding="utf-8")
+
+    assert "qualified-trace-tail-v7" in specification
+    assert "conditional-trace-tail-v16" in specification
+    assert "candidate_tail_actions: [20, 24, 28, 32, 36, 40" in specification
+    assert "76, 80, 81]" in specification
+    assert "learner_turn_cap: 128" in specification
+    assert "worker 0 alone initializes Steam presence" in specification
+    assert "-LearnerTurnCap 128" in readme
+    assert "-SteamPresenceWorker 0" in readme

@@ -1,0 +1,64 @@
+schema_version: 1
+id: EXP-0029
+title: Expanded live Death Metal competence-boundary acquisition
+question: Does the frozen source policy expose an informative replay-qualified boundary between 20 learner actions and the maximum legal 81-action tail, and can recurrent PPO improve from that boundary?
+hypothesis: EXP-0028 established that every final-1 through final-16 boundary is saturated at 15/15 source completions. Moving the learner start backward in four-action increments toward the full boss state should reveal a 10--90 percent competence boundary; a 128-turn cap prevents longer continuations from being mislabeled as failures.
+changed_blocks: [training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: player-health-only-boss-curriculum-v4
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v2-warm-boundary-state
+  training-level-distribution: qualified-trace-tail-v7
+  data-selection: disclosed-qualified-training-traces-v1
+  runtime: async-native-pipe-v1
+  evaluation: conditional-trace-tail-v16
+invariants:
+  - calibration tests tails 20 through 80 in four-action increments, followed by maximum legal tail 81, and selects the shortest boundary inside the 10--90 percent live completion band
+  - every candidate uses deterministic execution plus fixed stochastic policy seeds 98001 through 98004 on all three qualified game seeds
+  - every calibration and evaluation episode permits 128 learner turns, exceeding every qualified source trace length
+  - worker 0 alone initializes Steam presence; exact parity with Steam-disabled gameplay was established before this experiment
+  - no optimizer transition is spent unless a complete controller-valid candidate matrix identifies an intermediate boundary
+  - every prefix starts from a fresh legal player20 full-boss reset and replays acknowledged live actions with exact qualified observation digests
+  - guide actions warm the learner recurrent state and stable reward feedback but never enter PPO
+  - every warm handoff is an episode boundary whose collected LSTM state is restored during PPO replay
+  - all 930xx EXP-0024 held-out seeds remain excluded from calibration, training, and trace acquisition
+  - assisted trace-tail completion never counts as normal-start Zone 2 evidence
+  - exactly eight fixed-capacity workers and zero infrastructure contamination are required
+arms:
+  - id: a8-expanded-trace-tail
+    description: Three A8 PPO replications train from the shortest expanded replay-qualified tail inside the frozen source policy's measured intermediate-competence band.
+source:
+  checkpoint: runs/legal-death-metal-full-boss-potential/training/seed-94001/checkpoint-00092160.pt
+  checkpoint_sha256: a7000ca0178248f9780220b124126100e6e3a0a32c6a19e149b61e883d69a05f
+  trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  qualification: runs/qualified-death-metal-trace-search/qualification.json
+  prior_calibration: runs/adaptive-death-metal-trace-tail/calibration.json
+calibration:
+  candidate_tail_actions: [20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 81]
+  policy_modes: [deterministic, stochastic-98001, stochastic-98002, stochastic-98003, stochastic-98004]
+  game_seeds: [92008, 92096, 92116]
+  competence_band: [0.10, 0.90]
+  selection: shortest candidate inside the closed competence band
+training:
+  optimizer_seeds: [97001, 97002, 97003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  transition_budget_per_trial: 61440
+  recurrent_state: warm from exact live replay and restored at every PPO episode boundary
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  reward_config: configs/reward-death-metal-potential-v5.json
+evaluation:
+  population: frozen final checkpoints evaluated after the selected exact qualified handoff on every trace seed
+  modes: [deterministic, stochastic-98001, stochastic-98002]
+  learner_turn_cap: 128
+  primary_outcome: conditional live Zone 2 entry after handoff
+  diagnostics: [expanded source boundary curve, final-policy completion rate, distinct completion seeds, learner turns, finite losses, worker restarts, recurrent likelihood consistency]
+decision_rule: Advance to a retained multi-boundary window only if all three frozen final checkpoints complete at least once, aggregate conditional completion is at least 10 percent, at least two trials complete at least 5 percent, at least three distinct trace seeds complete, losses are finite, and calibration, training, and evaluation have zero controller restarts. If no expanded boundary enters the competence band, reject trace distance as the next curriculum control and test rare-success retention or a broader successful-state bank rather than modifying reward. No assisted result is normal-start promotion.
+

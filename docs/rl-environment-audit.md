@@ -2342,3 +2342,23 @@ tracked trace-prefix training mechanically labeled every such run
 EXP-0027 stopped before reaching that path. Training now accepts an explicit
 registered distribution version, records it in lineage/config/checkpoint metadata,
 and rejects the override outside a tracked experiment.
+
+### EXP-0028 outcome: the local continuation is broader than expected
+
+EXP-0028 evaluated every final-1 through final-16 boundary on the three qualified
+seeds under deterministic execution and four fixed stochastic streams. Every one
+of the 240 live episodes completed: each boundary was `15/15`, with zero PPO
+transitions spent. This disproves the assumption that exact final-sequence
+likelihood estimates locate gameplay difficulty. The policy can choose many
+alternative successful continuations once it begins within the final 16 actions
+of these traces.
+
+The result is positive competence evidence but not generalization: the three game
+seeds were selected because this checkpoint had previously succeeded on them.
+EXP-0029 therefore expands calibration toward the full boss state, testing tails
+20--80 in four-action increments plus the maximum legal tail 81. Its learner cap
+is 128 turns rather than 64, because a longer tail must not fail solely due to the
+evaluation time limit. If that entire expanded grid remains saturated, trace
+distance on this outcome-conditioned seed bank is not an informative curriculum
+variable; the next experiment must broaden the successful-state bank or retain
+rare successes from unassisted full-boss training.
