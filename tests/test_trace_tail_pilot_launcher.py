@@ -11,6 +11,9 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "source_calibration" in source
     assert 'experiment_id = "EXP-0026"' in source
     assert "a8-live-calibrated-tail1" in source
+    assert '"waiting-for-controller-qualification"' in source
+    assert "Test-CurrentQualification" in source
+    assert "Controller qualification heartbeat is stale" in source
     assert "qualified_distinct_seed_count -lt 3" in source
     assert "--trace-prefix-bank" in source
     assert "--trace-prefix-qualification" in source

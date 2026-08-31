@@ -52,6 +52,49 @@ function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorT
     Move-Item -LiteralPath $temporary -Destination $pipelineStatusPath -Force
 }
 
+function Test-CurrentQualification {
+    if (-not (Test-Path -LiteralPath $qualification -PathType Leaf)) { return $false }
+    try {
+        $payload = Get-Content -LiteralPath $qualification -Raw | ConvertFrom-Json
+        if (-not [bool]$payload.passed) { return $false }
+        $configuration = $payload.configuration
+        $preflight = $payload.phases.preflight
+        if ([int]$preflight.schema_version -ne 10) { return $false }
+        if (
+            [System.IO.Path]::GetFullPath([string]$configuration.game_dir) -ne
+                [System.IO.Path]::GetFullPath($GameDir) -or
+            [System.IO.Path]::GetFullPath([string]$configuration.mod_dir) -ne
+                [System.IO.Path]::GetFullPath($mod)
+        ) { return $false }
+        foreach ($entry in $preflight.mod_files.PSObject.Properties) {
+            $path = Join-Path $mod ([string]$entry.Name)
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+            if ($actual -ne ([string]$entry.Value).ToLowerInvariant()) { return $false }
+        }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Get-QualificationHeartbeatAge {
+    $progress = Join-Path (Split-Path -Parent $qualification) "qualification-progress.json"
+    $soakTraces = Join-Path (Split-Path -Parent $qualification) "soak-traces"
+    $candidates = [System.Collections.Generic.List[datetime]]::new()
+    if (Test-Path -LiteralPath $progress -PathType Leaf) {
+        $candidates.Add((Get-Item -LiteralPath $progress).LastWriteTimeUtc)
+    }
+    if (Test-Path -LiteralPath $soakTraces -PathType Container) {
+        Get-ChildItem -LiteralPath $soakTraces -Filter "*.jsonl" -File | ForEach-Object {
+            $candidates.Add($_.LastWriteTimeUtc)
+        }
+    }
+    if (-not $candidates.Count) { return $null }
+    $latest = ($candidates | Sort-Object -Descending | Select-Object -First 1)
+    return ([datetime]::UtcNow - $latest).TotalSeconds
+}
+
 function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
     $metrics = Join-Path $Directory "metrics.jsonl"
     if (-not (Test-Path -LiteralPath $metrics -PathType Leaf)) {
@@ -90,6 +133,22 @@ function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
 }
 
 try {
+    Write-PilotStatus "waiting-for-controller-qualification"
+    while (-not (Test-CurrentQualification)) {
+        $heartbeatAge = Get-QualificationHeartbeatAge
+        if ($null -ne $heartbeatAge -and $heartbeatAge -gt [math]::Max(20 * $PollSeconds, 900)) {
+            throw "Controller qualification heartbeat is stale after $([math]::Round($heartbeatAge, 1)) seconds"
+        }
+        if (Test-Path -LiteralPath $qualification -PathType Leaf) {
+            $candidate = Get-Content -LiteralPath $qualification -Raw | ConvertFrom-Json
+            $candidateTime = (Get-Item -LiteralPath $qualification).LastWriteTimeUtc
+            if (-not [bool]$candidate.passed -and $candidateTime -gt [datetime]::Parse($pilotStartedAt)) {
+                throw "Controller qualification failed: $($candidate.failure)"
+            }
+        }
+        Write-PilotStatus "waiting-for-controller-qualification"
+        Start-Sleep -Seconds $PollSeconds
+    }
     Write-PilotStatus "waiting-for-qualified-traces"
     while (-not (Test-Path -LiteralPath $searchStatusPath -PathType Leaf)) {
         Write-PilotStatus "waiting-for-qualified-traces"
