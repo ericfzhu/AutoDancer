@@ -4,14 +4,18 @@ from pathlib import Path
 def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     source = Path("tools/run-qualified-trace-tail-pilot.ps1").read_text(encoding="utf-8")
     assert "[int]$RequestedTailActions = 1" in source
+    assert "[int[]]$CandidateTailActions = @()" in source
+    assert "[int[]]$CalibrationPolicySeeds" in source
     assert "runs\\qualified-death-metal-tail1-warm-boundary" in source
     assert '"calibrating-source"' in source
     assert "--source-reference" in source
-    assert "outside the 10-90 percent live competence band" in source
+    assert "No trace-tail candidate lies inside the 10-90 percent live competence band" in source
     assert "source_calibration" in source
-    assert 'experiment_id = "EXP-0027"' in source
+    assert "experiment_id = $ExperimentId" in source
     assert "--steam-presence-worker" not in source
     assert "a8-live-calibrated-tail1" in source
+    assert "--training-level-distribution-version" in source
+    assert "qualified-trace-tail-v5" in source
     assert '"waiting-for-controller-qualification"' in source
     assert "Test-CurrentQualification" in source
     assert "Controller qualification heartbeat is stale" in source
@@ -32,3 +36,15 @@ def test_trace_tail_pilot_has_diverse_conditional_acquisition_gate() -> None:
     assert "Trace-search handoff heartbeat is stale" in source
     assert "ToUnixTimeSeconds" in source
     assert "DateTimeOffset]::Parse" not in source
+
+
+def test_adaptive_trace_tail_experiment_predeclares_boundary_search() -> None:
+    specification = Path("experiments/EXP-0028/experiment.yaml").read_text(encoding="utf-8")
+    readme = Path("experiments/EXP-0028/README.md").read_text(encoding="utf-8")
+
+    assert "qualified-trace-tail-v6" in specification
+    assert "conditional-trace-tail-v15" in specification
+    assert "candidate_tail_actions: [1, 2, 3, 4, 5, 6, 7, 8" in specification
+    assert "competence_band: [0.10, 0.90]" in specification
+    assert "assisted trace-tail completion never counts as normal-start Zone 2" in specification
+    assert "-CandidateTailActions (1..16)" in readme

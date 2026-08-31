@@ -5,6 +5,12 @@ param(
     [int[]]$TrainingSeeds = @(97001, 97002, 97003),
     [int]$TotalSteps = 61440,
     [int]$RequestedTailActions = 1,
+    [int[]]$CandidateTailActions = @(),
+    [int[]]$CalibrationPolicySeeds = @(0, 98001, 98002, 98003, 98004),
+    [string]$ExperimentId = "EXP-0027",
+    [string]$ExperimentArm = "a8-live-calibrated-tail1",
+    [string]$TrainingDistributionVersion = "qualified-trace-tail-v5",
+    [string]$ControllerQualification = "runs\controller-qualification-player-health-only-world-ready-memory-controlled\qualification.json",
     [int]$PollSeconds = 30
 )
 
@@ -21,6 +27,12 @@ if ($TrainingSeeds.Count -ne 3 -or @($TrainingSeeds | Select-Object -Unique).Cou
 if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $PollSeconds -le 0) {
     throw "TotalSteps, RequestedTailActions, and PollSeconds must be positive"
 }
+if ($CalibrationPolicySeeds.Count -eq 0 -or $CalibrationPolicySeeds[0] -ne 0) {
+    throw "CalibrationPolicySeeds must begin with deterministic policy seed 0"
+}
+if (@($CalibrationPolicySeeds | Select-Object -Unique).Count -ne $CalibrationPolicySeeds.Count) {
+    throw "CalibrationPolicySeeds must be unique"
+}
 
 $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $traceRoot = Resolve-RepositoryPath $TraceSearchRoot
@@ -29,7 +41,7 @@ $searchStatusPath = Join-Path $traceRoot "status.json"
 $pipelineStatusPath = Join-Path $root "pipeline-status.json"
 $reward = Join-Path $repoRoot "configs\reward-death-metal-potential-v5.json"
 $mod = Join-Path $repoRoot "mods\AutoDancer"
-$qualification = Join-Path $repoRoot "runs\controller-qualification-player-health-only-world-ready-memory-controlled\qualification.json"
+$qualification = Resolve-RepositoryPath $ControllerQualification
 $trackingPath = (Join-Path $repoRoot ".runtime\mlflow\mlflow.db").Replace("\", "/")
 $trackingUri = "sqlite:///$trackingPath"
 $pilotStartedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -38,7 +50,7 @@ $pilotStartedAt = (Get-Date).ToUniversalTime().ToString("o")
 function Write-PilotStatus([string]$Status, [string]$Trial = "", [string]$ErrorText = "") {
     $payload = [ordered]@{
         schema_version = 1
-        experiment_id = "EXP-0027"
+        experiment_id = $ExperimentId
         process_id = $PID
         process_started_at = $pilotStartedAt
         status = $Status
@@ -175,8 +187,19 @@ try {
     $sourceCheckpoint = [string]$search.checkpoint
     $bankPayload = Get-Content -LiteralPath $bank -Raw | ConvertFrom-Json
     $minimumTraceLength = ($bankPayload.traces | ForEach-Object { @($_.action_sequence).Count } | Measure-Object -Minimum).Minimum
-    $tailActions = [math]::Min($RequestedTailActions, [int]$minimumTraceLength - 1)
-    if ($tailActions -le 0) { throw "Qualified traces are too short to leave a legal replay prefix" }
+    $maximumTailActions = [int]$minimumTraceLength - 1
+    if ($maximumTailActions -le 0) {
+        throw "Qualified traces are too short to leave a legal replay prefix"
+    }
+    $tailCandidates = if ($CandidateTailActions.Count) {
+        @($CandidateTailActions | Where-Object { $_ -gt 0 -and $_ -le $maximumTailActions } |
+            Sort-Object -Unique)
+    } else {
+        @([math]::Min($RequestedTailActions, $maximumTailActions))
+    }
+    if ($tailCandidates.Count -eq 0) {
+        throw "No requested trace-tail candidate leaves a legal replay prefix"
+    }
     $gameSeeds = @($search.qualified_distinct_seeds | ForEach-Object { [int]$_ } | Sort-Object -Unique)
     $gameSeedCsv = $gameSeeds -join ","
     $evaluationModes = @(
@@ -184,89 +207,140 @@ try {
         [pscustomobject]@{ name = "stochastic-98001"; mode = "stochastic"; policy_seed = 98001 },
         [pscustomobject]@{ name = "stochastic-98002"; mode = "stochastic"; policy_seed = 98002 }
     )
+    $calibrationModes = @(
+        $CalibrationPolicySeeds | ForEach-Object {
+            if ($_ -eq 0) {
+                [pscustomobject]@{ name = "deterministic"; mode = "deterministic"; policy_seed = 0 }
+            } else {
+                [pscustomobject]@{ name = "stochastic-$_"; mode = "stochastic"; policy_seed = [int]$_ }
+            }
+        }
+    )
 
     # Measure the declared source policy at this exact live handoff before
     # spending transitions on it. Reverse curricula require an intermediate
     # success boundary; action likelihood is useful diagnosis but gameplay is
     # the authoritative calibration.
-    $sourceCalibrationReports = [System.Collections.Generic.List[string]]::new()
-    foreach ($mode in $evaluationModes) {
-        $calibrationDirectory = Join-Path $root "calibration\source\$($mode.name)"
-        [System.IO.Directory]::CreateDirectory($calibrationDirectory) | Out-Null
-        $report = Join-Path $calibrationDirectory "report.json"
-        if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
-            Write-PilotStatus "calibrating-source" $mode.name
-            & $python -m autodancer.training.baseline `
-                --game-dir $GameDir `
-                --mod-dir $mod `
-                --checkpoint $sourceCheckpoint `
-                --output $report `
-                --num-instances 8 `
-                --seeds $gameSeedCsv `
-                --max-steps 64 `
-                --policy-mode $mode.mode `
-                --policy-seed $mode.policy_seed `
-                --trained-only `
-                --source-reference `
-                --device cuda `
-                --reward-config $reward `
-                --policy-feedback-reward-config $reward `
-                --reward-lineage-version DeathMetalPotentialV5 `
-                --action-contract map-navigation-prior-v1 `
-                --curriculum-start-level 4 `
-                --curriculum-target-level 5 `
-                --curriculum-profile player20 `
-                --trace-prefix-bank $bank `
-                --trace-prefix-qualification $traceQualification `
-                --trace-prefix-tail-actions $tailActions `
-                --trace-prefix-recurrent-state warm `
-                --affinity none `
-                --experiment-id EXP-0027 `
-                --experiment-arm a8-live-calibrated-tail1 `
-                --trial-id "source-$($mode.name)" `
-                --mlflow-tracking-uri $trackingUri `
-                --controller-qualification $qualification `
-                --dashboard 8765
-            if ($LASTEXITCODE -ne 0) { throw "Source calibration failed for $($mode.name)" }
+    $calibrationSummaries = [System.Collections.Generic.List[object]]::new()
+    $selectedCalibration = $null
+    foreach ($candidateTail in $tailCandidates) {
+        $candidateReports = [System.Collections.Generic.List[string]]::new()
+        foreach ($mode in $calibrationModes) {
+            $calibrationDirectory = Join-Path $root "calibration\source\tail-$candidateTail\$($mode.name)"
+            [System.IO.Directory]::CreateDirectory($calibrationDirectory) | Out-Null
+            $report = Join-Path $calibrationDirectory "report.json"
+            if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+                Write-PilotStatus "calibrating-source" "tail-$candidateTail-$($mode.name)"
+                & $python -m autodancer.training.baseline `
+                    --game-dir $GameDir `
+                    --mod-dir $mod `
+                    --checkpoint $sourceCheckpoint `
+                    --output $report `
+                    --num-instances 8 `
+                    --seeds $gameSeedCsv `
+                    --max-steps 64 `
+                    --policy-mode $mode.mode `
+                    --policy-seed $mode.policy_seed `
+                    --trained-only `
+                    --source-reference `
+                    --device cuda `
+                    --reward-config $reward `
+                    --policy-feedback-reward-config $reward `
+                    --reward-lineage-version DeathMetalPotentialV5 `
+                    --action-contract map-navigation-prior-v1 `
+                    --curriculum-start-level 4 `
+                    --curriculum-target-level 5 `
+                    --curriculum-profile player20 `
+                    --trace-prefix-bank $bank `
+                    --trace-prefix-qualification $traceQualification `
+                    --trace-prefix-tail-actions $candidateTail `
+                    --trace-prefix-recurrent-state warm `
+                    --affinity none `
+                    --experiment-id $ExperimentId `
+                    --experiment-arm $ExperimentArm `
+                    --trial-id "source-tail-$candidateTail-$($mode.name)" `
+                    --mlflow-tracking-uri $trackingUri `
+                    --controller-qualification $qualification `
+                    --dashboard 8765
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Source calibration failed for tail $candidateTail/$($mode.name)"
+                }
+            }
+            $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+            if (
+                -not [bool]$payload.controller_valid -or
+                -not [bool]$payload.source_reference -or
+                [System.IO.Path]::GetFullPath([string]$payload.checkpoint) -ne [System.IO.Path]::GetFullPath($sourceCheckpoint) -or
+                (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
+                [string]$payload.policy_mode -ne [string]$mode.mode -or
+                [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
+                [int]$payload.trace_prefix.tail_actions -ne $candidateTail -or
+                [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
+            ) {
+                throw "Source calibration report identity mismatch: $report"
+            }
+            $candidateReports.Add($report)
         }
-        $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-        if (
-            -not [bool]$payload.controller_valid -or
-            -not [bool]$payload.source_reference -or
-            [System.IO.Path]::GetFullPath([string]$payload.checkpoint) -ne [System.IO.Path]::GetFullPath($sourceCheckpoint) -or
-            (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
-            [string]$payload.policy_mode -ne [string]$mode.mode -or
-            [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
-            [int]$payload.trace_prefix.tail_actions -ne $tailActions -or
-            [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
-        ) {
-            throw "Source calibration report identity mismatch: $report"
-        }
-        $sourceCalibrationReports.Add($report)
-    }
-    $sourceCalibrationPayloads = @(
-        $sourceCalibrationReports | ForEach-Object {
-            Get-Content -LiteralPath $_ -Raw | ConvertFrom-Json
-        }
-    )
-    $sourceCalibrationEpisodes = @(
-        $sourceCalibrationPayloads | ForEach-Object { $_.trained.results } | Where-Object {
-            [string]$_.natural_prefix.kind -eq "qualified-live-trace-prefix-v1"
-        }
-    )
-    if ($sourceCalibrationEpisodes.Count -ne $evaluationModes.Count * $gameSeeds.Count) {
-        throw "Source calibration did not produce the complete predeclared episode matrix"
-    }
-    $sourceCalibrationCompletions = @(
-        $sourceCalibrationEpisodes | Where-Object { [string]$_.status -eq "curriculum_complete" }
-    )
-    $sourceCalibrationRate = $sourceCalibrationCompletions.Count / $sourceCalibrationEpisodes.Count
-    if ($sourceCalibrationRate -lt 0.10 -or $sourceCalibrationRate -gt 0.90) {
-        throw (
-            "Trace-tail boundary is outside the 10-90 percent live competence band: " +
-            "$($sourceCalibrationCompletions.Count)/$($sourceCalibrationEpisodes.Count)"
+        $candidatePayloads = @(
+            $candidateReports | ForEach-Object {
+                Get-Content -LiteralPath $_ -Raw | ConvertFrom-Json
+            }
         )
+        $candidateEpisodes = @(
+            $candidatePayloads | ForEach-Object { $_.trained.results } | Where-Object {
+                [string]$_.natural_prefix.kind -eq "qualified-live-trace-prefix-v1"
+            }
+        )
+        if ($candidateEpisodes.Count -ne $calibrationModes.Count * $gameSeeds.Count) {
+            throw "Source calibration did not produce the complete tail-$candidateTail episode matrix"
+        }
+        $candidateCompletions = @(
+            $candidateEpisodes | Where-Object { [string]$_.status -eq "curriculum_complete" }
+        )
+        $candidateRate = $candidateCompletions.Count / $candidateEpisodes.Count
+        $summary = [pscustomobject]@{
+            tail_actions = [int]$candidateTail
+            episodes = $candidateEpisodes.Count
+            completions = $candidateCompletions.Count
+            completion_rate = $candidateRate
+            distinct_completion_seeds = @(
+                $candidateCompletions | ForEach-Object { [int]$_.seed } | Sort-Object -Unique
+            )
+            reports = $candidateReports.ToArray()
+            inside_intermediate_competence_band = (
+                $candidateRate -ge 0.10 -and $candidateRate -le 0.90
+            )
+        }
+        $calibrationSummaries.Add($summary)
+        if ($summary.inside_intermediate_competence_band) {
+            $selectedCalibration = $summary
+            break
+        }
     }
+    $calibrationPayload = [ordered]@{
+        schema_version = 1
+        experiment_id = $ExperimentId
+        source_checkpoint = $sourceCheckpoint
+        candidate_tail_actions = $tailCandidates
+        policy_modes = $calibrationModes
+        qualified_training_seeds = $gameSeeds
+        candidates = @($calibrationSummaries)
+        selected_tail_actions = if ($null -eq $selectedCalibration) { $null } else { $selectedCalibration.tail_actions }
+    }
+    $calibrationTemporary = Join-Path $root ".calibration.json.tmp"
+    $calibrationPayload | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $calibrationTemporary -Encoding utf8
+    Move-Item -LiteralPath $calibrationTemporary -Destination (Join-Path $root "calibration.json") -Force
+    if ($null -eq $selectedCalibration) {
+        $rates = @($calibrationSummaries | ForEach-Object {
+            "tail-$($_.tail_actions)=$($_.completions)/$($_.episodes)"
+        }) -join ", "
+        throw "No trace-tail candidate lies inside the 10-90 percent live competence band: $rates"
+    }
+    $tailActions = [int]$selectedCalibration.tail_actions
+    $sourceCalibrationEpisodes = [int]$selectedCalibration.episodes
+    $sourceCalibrationCompletions = [int]$selectedCalibration.completions
+    $sourceCalibrationRate = [double]$selectedCalibration.completion_rate
+    $sourceCalibrationReports = @($selectedCalibration.reports)
 
     $summaries = [System.Collections.Generic.List[object]]::new()
     foreach ($trainingSeed in $TrainingSeeds) {
@@ -288,8 +362,9 @@ try {
                 "--reward-lineage-version", "DeathMetalPotentialV5", "--freeze-base-updates", "10",
                 "--trace-prefix-bank", $bank, "--trace-prefix-qualification", $traceQualification,
                 "--trace-prefix-tail-actions", "$tailActions", "--trace-prefix-recurrent-state", "warm",
-                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", "EXP-0027",
-                "--experiment-arm", "a8-live-calibrated-tail1", "--trial-id", $trial,
+                "--initialize-from", $sourceCheckpoint, "--affinity", "none", "--experiment-id", $ExperimentId,
+                "--experiment-arm", $ExperimentArm, "--trial-id", $trial,
+                "--training-level-distribution-version", $TrainingDistributionVersion,
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
             )
@@ -335,8 +410,8 @@ try {
                     --trace-prefix-tail-actions $tailActions `
                     --trace-prefix-recurrent-state warm `
                     --affinity none `
-                    --experiment-id EXP-0027 `
-                    --experiment-arm a8-live-calibrated-tail1 `
+                    --experiment-id $ExperimentId `
+                    --experiment-arm $ExperimentArm `
                     --trial-id "$trial-$($mode.name)" `
                     --mlflow-tracking-uri $trackingUri `
                     --controller-qualification $qualification `
@@ -373,22 +448,20 @@ try {
     $selected = $summaries | Sort-Object @{Expression={@($_.distinct_completion_seeds).Count};Descending=$true}, @{Expression={$_.completion_rate};Descending=$true}, @{Expression={-$_.mean_completion_turns};Descending=$true} | Select-Object -First 1
     $comparison = [ordered]@{
         schema_version = 1
-        experiment_id = "EXP-0027"
+        experiment_id = $ExperimentId
         source_checkpoint = $sourceCheckpoint
         bank = $bank
         qualification = $traceQualification
         tail_actions = $tailActions
         qualified_training_seeds = $gameSeeds
         source_calibration = [ordered]@{
-            episodes = $sourceCalibrationEpisodes.Count
-            completions = $sourceCalibrationCompletions.Count
+            episodes = $sourceCalibrationEpisodes
+            completions = $sourceCalibrationCompletions
             completion_rate = $sourceCalibrationRate
-            distinct_completion_seeds = @(
-                $sourceCalibrationCompletions | ForEach-Object { [int]$_.seed } |
-                    Sort-Object -Unique
-            )
+            distinct_completion_seeds = @($selectedCalibration.distinct_completion_seeds)
             reports = $sourceCalibrationReports
             inside_intermediate_competence_band = $true
+            candidate_matrix = @($calibrationSummaries)
         }
         trials = @($summaries)
         aggregate = [ordered]@{

@@ -1,0 +1,59 @@
+schema_version: 1
+id: EXP-0028
+title: Adaptive live Death Metal trace-tail boundary acquisition
+question: Can recurrent PPO acquire a replay-qualified Death Metal continuation when the learner boundary is selected from live gameplay competence rather than fixed by action count?
+hypothesis: EXP-0027 showed that the final-action boundary was already solved 9/9 under its predeclared calibration matrix and therefore contained no useful acquisition signal. Selecting the shortest tail whose frozen source policy completes 10--90 percent of exact live handoffs under a larger matrix should place PPO at an informative boundary without changing rewards, observations, actions, or game mechanics.
+changed_blocks: [training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: player-health-only-boss-curriculum-v4
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v2-warm-boundary-state
+  training-level-distribution: qualified-trace-tail-v6
+  data-selection: disclosed-qualified-training-traces-v1
+  evaluation: conditional-trace-tail-v15
+invariants:
+  - calibration tests tail lengths 1 through 16 in ascending order and stops at the first boundary inside the 10--90 percent live completion band
+  - every candidate uses deterministic execution plus fixed stochastic policy seeds 98001 through 98004 on all three qualified game seeds
+  - no optimizer transition is spent unless a complete controller-valid candidate matrix identifies an intermediate boundary
+  - every prefix starts from a fresh legal player20 full-boss reset and replays acknowledged live actions with exact qualified observation digests
+  - guide actions warm the learner recurrent state and stable reward feedback but never enter PPO
+  - every warm handoff is an episode boundary whose collected LSTM state is restored during PPO replay
+  - all 930xx EXP-0024 held-out seeds remain excluded from calibration, training, and trace acquisition
+  - assisted trace-tail completion never counts as normal-start Zone 2 evidence
+  - exactly eight fixed-capacity workers and zero infrastructure contamination are required
+arms:
+  - id: a8-adaptive-trace-tail
+    description: Three A8 PPO replications train from the shortest replay-qualified tail inside the frozen source policy's measured intermediate-competence band.
+source:
+  checkpoint: runs/legal-death-metal-full-boss-potential/training/seed-94001/checkpoint-00092160.pt
+  checkpoint_sha256: a7000ca0178248f9780220b124126100e6e3a0a32c6a19e149b61e883d69a05f
+  trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  qualification: runs/qualified-death-metal-trace-search/qualification.json
+calibration:
+  candidate_tail_actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+  policy_modes: [deterministic, stochastic-98001, stochastic-98002, stochastic-98003, stochastic-98004]
+  game_seeds: [92008, 92096, 92116]
+  competence_band: [0.10, 0.90]
+  selection: shortest candidate inside the closed competence band
+training:
+  optimizer_seeds: [97001, 97002, 97003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  transition_budget_per_trial: 61440
+  recurrent_state: warm from exact live replay and restored at every PPO episode boundary
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  reward_config: configs/reward-death-metal-potential-v5.json
+evaluation:
+  population: frozen final checkpoints evaluated after the selected exact qualified handoff on every trace seed
+  modes: [deterministic, stochastic-98001, stochastic-98002]
+  learner_turn_cap: 64
+  primary_outcome: conditional live Zone 2 entry after handoff
+  diagnostics: [source boundary curve, final-policy completion rate, distinct completion seeds, learner turns, finite losses, worker restarts, recurrent likelihood consistency]
+decision_rule: Advance to a retained multi-boundary window only if all three frozen final checkpoints complete at least once, aggregate conditional completion is at least 10 percent, at least two trials complete at least 5 percent, at least three distinct trace seeds complete, losses are finite, and calibration, training, and evaluation have zero controller restarts. Otherwise reject this boundary and diagnose acquisition before changing reward or architecture. No assisted result is normal-start promotion.

@@ -528,6 +528,21 @@ def train(arguments: argparse.Namespace) -> None:
             raise ValueError(
                 f"training seeds have no qualified trace prefix: {missing_trace_seeds}"
             )
+    inferred_training_distribution_version = (
+        "legal-natural-prefix-phase3-v2"
+        if natural_prefix is not None and natural_prefix.target_phase == 3
+        else "qualified-trace-tail-v4"
+        if trace_prefix is not None
+        else "mixed-curriculum-replay-v1"
+        if arguments.curriculum_mixture is not None
+        else "reverse-curriculum-sequential-goto-v1"
+        if arguments.curriculum_start_level != 1
+        else "uniform-finite-pool-v1"
+    )
+    training_distribution_version = (
+        arguments.training_level_distribution_version
+        or inferred_training_distribution_version
+    )
     imitation_config = (
         None
         if arguments.imitation_demonstrations is None
@@ -682,6 +697,7 @@ def train(arguments: argparse.Namespace) -> None:
                     "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
                 ),
                 "training_seed_pool": list(training_seed_pool),
+                "training_level_distribution_version": training_distribution_version,
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
                 "curriculum_profile": arguments.curriculum_profile,
@@ -723,17 +739,7 @@ def train(arguments: argparse.Namespace) -> None:
             if training_seed_pool:
                 tracker.validate_component_versions(
                     {
-                        "training-level-distribution": (
-                            "legal-natural-prefix-phase3-v2"
-                            if natural_prefix is not None and natural_prefix.target_phase == 3
-                            else "qualified-trace-tail-v4"
-                            if trace_prefix is not None
-                            else "mixed-curriculum-replay-v1"
-                            if arguments.curriculum_mixture is not None
-                            else "reverse-curriculum-sequential-goto-v1"
-                            if arguments.curriculum_start_level != 1
-                            else "uniform-finite-pool-v1"
-                        )
+                        "training-level-distribution": training_distribution_version
                     },
                     require_declared=True,
                 )
@@ -800,6 +806,9 @@ def train(arguments: argparse.Namespace) -> None:
                         ),
                         "action_contract": arguments.action_contract,
                         "max_turns": arguments.max_turns,
+                        "training_level_distribution_version": (
+                            training_distribution_version
+                        ),
                         **seed_checkpoint_metadata,
                         **curriculum_metadata,
                         **(
@@ -1051,6 +1060,9 @@ def train(arguments: argparse.Namespace) -> None:
                                 "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
                             ),
                             "training_seed_pool": list(training_seed_pool),
+                            "training_level_distribution_version": (
+                                training_distribution_version
+                            ),
                             "curriculum_start_level": arguments.curriculum_start_level,
                             "curriculum_target_level": arguments.curriculum_target_level,
                             "curriculum_profile": arguments.curriculum_profile,
@@ -1269,6 +1281,13 @@ def main() -> int:
     )
     parser.add_argument("--trace-prefix-tail-actions", type=int, default=16)
     parser.add_argument(
+        "--training-level-distribution-version",
+        help=(
+            "explicit registered lineage version when the experiment's selection "
+            "protocol is stricter than the mechanically inferred distribution"
+        ),
+    )
+    parser.add_argument(
         "--trace-prefix-recurrent-state",
         choices=TRACE_PREFIX_RECURRENT_MODES,
         default="warm",
@@ -1396,6 +1415,11 @@ def main() -> int:
             parser.error("trace-prefix training requires --training-seed-pool")
         if arguments.trace_prefix_tail_actions <= 0:
             parser.error("--trace-prefix-tail-actions must be positive")
+    if (
+        arguments.training_level_distribution_version is not None
+        and arguments.experiment_id is None
+    ):
+        parser.error("--training-level-distribution-version requires --experiment-id")
     imitation_values = (
         arguments.imitation_coefficient,
         arguments.imitation_decay_updates,

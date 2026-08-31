@@ -2280,3 +2280,65 @@ event mismatch, non-prefix rewrite, or nonterminal early stop still fails. The
 resulting three qualified full-boss demonstrations contain 95, 98, and 82 real
 actions on seeds `92008`, `92096`, and `92116`, respectively, each ending in a
 materialized Zone 2 Floor 1 observation with zero worker restarts.
+
+## EXP-0027 boundary rejection and adaptive successor
+
+EXP-0027 correctly stopped before optimization. Its frozen source policy completed
+all nine exact one-action handoffs: three qualified game seeds under deterministic
+execution and fixed stochastic streams `98001` and `98002`. A 100% source success
+rate is outside the predeclared 10--90% acquisition band. Training there would
+mostly reinforce an already-solved decision and could misleadingly report Zone 2
+without improving the policy's competence frontier.
+
+This result sharpens the environment-design diagnosis:
+
+1. **A fixed action-count boundary is not a difficulty definition.** The number of
+   remaining actions is only a proxy; alternative successful actions, stochastic
+   policy mass, and state-specific tactical difficulty determine actual success.
+   [Reverse Curriculum Generation](https://proceedings.mlr.press/v78/florensa17a.html)
+   advances start states using measured intermediate performance, not distance
+   alone. EXP-0028 therefore evaluates an ascending tail grid and selects the
+   shortest exact live boundary whose frozen completion rate is 10--90%.
+2. **One exact boundary is only a rung, not a robust curriculum.** Backplay trains
+   on a moving window of demonstrated states and warns against advancing that
+   window too quickly ([Resnick et al. 2018](https://arxiv.org/abs/1807.06919)).
+   A passing EXP-0028 authorizes a separately registered retained window containing
+   the mastered boundary and nearby earlier states; it does not authorize a jump
+   to normal starts.
+3. **Qualified trace seeds are training data, not generalization evidence.**
+   Procedurally generated RL agents can overfit surprisingly large level sets
+   ([Cobbe et al. 2019](https://proceedings.mlr.press/v97/cobbe19a.html)), while
+   Procgen shows that diverse held-out environment distributions are essential
+   for evaluation ([Cobbe et al. 2020](https://proceedings.mlr.press/v119/cobbe20a.html)).
+   Every assisted rung therefore remains disjoint from the final normal-start
+   multi-seed gate.
+4. **Uniform finite replay is not yet difficulty-aware.** Once the policy can
+   complete whole floors, its training seed pool should prioritize levels with
+   current learning potential while retaining an unseen evaluation bank. This is
+   the role of the already declared but unimplemented `prioritized-level-replay-v1`;
+   [Prioritized Level Replay](https://proceedings.mlr.press/v139/jiang21b.html)
+   found that TD-error-based level selection improved both sample efficiency and
+   held-out generalization on procedural environments.
+5. **Late success remains easy to forget.** On-policy PPO discards rare successful
+   trajectories after its update epochs. If a correctly calibrated tail produces
+   transient training clears but fails frozen evaluation, the next causal arm is
+   the already implemented, actor-only decaying imitation objective—not another
+   reward edit. [Self-Imitation Learning](https://research.google/pubs/self-imitation-learning/)
+   reports that replaying an agent's own good trajectories can improve exploration
+   and can be combined with PPO.
+6. **Long-horizon normal-start credit remains unresolved by this rung.** With
+   `gamma=0.99`, a Zone 2 reward 2,024 turns after an early decision has direct
+   discount weight of roughly `1.5e-9`; fixed 32-step recurrent truncation also
+   introduces gradient bias
+   ([Aicher et al. 2020](https://proceedings.mlr.press/v115/aicher20a.html)).
+   If reverse-curriculum composition and rare-success retention still fail,
+   return redistribution such as
+   [RUDDER](https://proceedings.neurips.cc/paper/2019/hash/16105fb9cc614fc29e1bda00dab60d41-Abstract.html)
+   is a more targeted comparison than increasing terminal reward magnitude.
+
+The audit also found a provenance defect before it could contaminate a run:
+tracked trace-prefix training mechanically labeled every such run
+`qualified-trace-tail-v4`, even when an immutable experiment declared v5 or later.
+EXP-0027 stopped before reaching that path. Training now accepts an explicit
+registered distribution version, records it in lineage/config/checkpoint metadata,
+and rejects the override outside a tracked experiment.
