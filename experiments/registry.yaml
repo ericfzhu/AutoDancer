@@ -163,9 +163,10 @@ experiments:
   EXP-0025:
     spec: experiments/EXP-0025/experiment.yaml
     spec_sha256: 2a1f43c418151c1d31bdbc592fae1e979d707653800caa398165fdfa8d6cd2ce
-    status: planned
+    status: inconclusive
     historical: false
     registered_at: '2026-08-30T14:05:00+00:00'
+    updated_at: '2026-08-31T01:56:17.886477+00:00'
   EXP-0026:
     spec: experiments/EXP-0026/experiment.yaml
     spec_sha256: a67464ea40c302247df6bc5eb00177ee52984c9d03376594c0d2610504e33d75
