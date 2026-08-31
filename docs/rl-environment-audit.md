@@ -2180,12 +2180,36 @@ its level lifecycle places the actual floor switch in the `nextLevel` phase of
 `event.levelComplete`
 ([official level-event ordering](https://vortexbuffer.com/synchrony/docs/events/level/)).
 
-The bridge now retains a completed ACTION while that signal is true, emits
-structured `level_transition_pending` heartbeats during loading, and releases
+The first correction retained a completed ACTION while that signal was true, but
+fresh replay showed that this was still one timing boundary too late: on all
+three traces Bard was alive, every expected combat event matched, the boss room
+was empty, and Bard stood on the unlocked staircase while
+`LevelTransition.isPending()` had not yet flipped.  SYNCHRONY also exposes
+`LevelExit.isUnlocked()`
+([official API](https://vortexbuffer.com/synchrony/docs/modules/necro.game.tile.LevelExit/)).
+The bridge therefore retains the acknowledgement when Bard is physically on an
+unlocked exit *or* a transition is pending. Because boss exits can expose
+neither flag during the same turn that activates them, every action ending on an
+exit also receives a six-tick activation grace during which telemetry emission
+is retried. It emits structured `exit_activation_pending`,
+`unlocked_exit_pending`, or `level_transition_pending` heartbeats and releases
 the exact acknowledgement only when the destination level is visible and its
-observation can be built.  A bounded watchdog emits
-`level_transition_timeout` rather than fabricating a transition.  This same rule
+observation can be built (or the grace expires without a transition). A bounded watchdog emits
+`action_completion_timeout` rather than fabricating a transition.  This same rule
 covers ordinary stairs, trapdoors, boss exits, and later curriculum boundaries.
 The three saved boss traces must pass fresh-launch replay with Zone 2 observations
 before they are admitted to trace-tail training; earlier raw `curriculum_complete`
 records remain acquisition evidence, not qualified promotion evidence.
+
+With the corrected boundary, all three traces reached Zone 2 earlier than their
+old journals claimed: the old controller had appended 9, 4, and 3 actions after
+the true terminal transition. Qualification now permits trimming only when an
+exact prefix reaches the expected successful status, deepest level, and complete
+event multiset on a fresh launch. It records the original count, canonical action
+prefix, removed suffix count, final pre-action state, and every prefix observation
+digest. The training loader verifies that the canonical sequence is literally a
+prefix of the hash-bound source trace and uses only that prefix. A death, timeout,
+event mismatch, non-prefix rewrite, or nonterminal early stop still fails. The
+resulting three qualified full-boss demonstrations contain 95, 98, and 82 real
+actions on seeds `92008`, `92096`, and `92116`, respectively, each ending in a
+materialized Zone 2 Floor 1 observation with zero worker restarts.

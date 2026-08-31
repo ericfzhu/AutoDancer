@@ -883,17 +883,23 @@ def test_lua_action_acknowledgement_waits_for_pending_level_transition() -> None
     bridge = (root / "Bridge.lua").read_text(encoding="utf-8")
 
     assert 'require "necro.client.LevelTransition"' in bridge
+    assert 'require "necro.game.tile.LevelExit"' in bridge
     assert (
-        'completed.kind == "ACTION" and LevelTransition.isPending()' in bridge
+        'actionCompletionBlockReason(completed)' in bridge
     )
     assert "local outstanding = pending or completed or queuedCommand" in bridge
-    assert 'heartbeatReason = "level_transition_pending"' in bridge
-    assert '"level_transition_timeout"' in bridge
+    assert 'return "level_transition_pending"' in bridge
+    assert 'return "unlocked_exit_pending"' in bridge
+    assert 'return "exit_activation_pending"' in bridge
+    assert "local EXIT_ACTIVATION_GRACE_TICKS = 6" in bridge
+    assert 'return "command_completion_pending"' in bridge
+    assert '"action_completion_timeout"' in bridge
 
     tick_observer = telemetry.index('event.tick.add("emitAutoDancerInitialObservation"')
     identity_gate = telemetry.index("levelIdentity ~= lastLevelIdentity", tick_observer)
+    completed_gate = telemetry.index("Bridge.hasCompletedCommand()", identity_gate)
     emit = telemetry.index("emitTurn()", identity_gate)
-    assert identity_gate < emit
+    assert identity_gate < completed_gate < emit
 
 
 def test_live_action_can_acknowledge_on_the_materialized_next_floor() -> None:

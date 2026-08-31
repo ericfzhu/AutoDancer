@@ -15,8 +15,11 @@ local Player = require "necro.game.character.Player"
 local PlayerList = require "necro.client.PlayerList"
 local Resources = require "necro.client.Resources"
 local SinglePlayer = require "necro.client.SinglePlayer"
+local LevelExit = require "necro.game.tile.LevelExit"
+local Map = require "necro.game.object.Map"
 local Tile = require "necro.game.tile.Tile"
 local Vision = require "necro.game.vision.Vision"
+local Entities = require "system.game.Entities"
 local Native = require "system.game.AutoDancerNative"
 
 local Bridge = {}
@@ -29,6 +32,7 @@ local STARTUP_STABLE_TICKS = 360
 local HEARTBEAT_TICKS = 60
 local ACTION_WATCHDOG_TICKS = 600
 local RESET_WATCHDOG_TICKS = 2700
+local EXIT_ACTIVATION_GRACE_TICKS = 6
 local CURRICULUM_PROFILES = {
     ["normal"] = true,
     ["player20"] = true,
@@ -97,6 +101,44 @@ local function worldReady()
         and player.position ~= nil
         and Tile.exists(player.position.x, player.position.y)
         and Vision.isVisible(player.position.x, player.position.y)
+end
+
+local function playerOnLevelExit()
+    local player = Player.getPlayerEntity(1)
+    if not (player and player.position) then
+        return false
+    end
+    local x = player.position.x
+    local y = player.position.y
+    local tileInfo = Tile.getInfo(x, y) or {}
+    if tileInfo.name == "Stairs" or (tileInfo.descent or 0) > 0 then
+        return true
+    end
+    for _, entityID in ipairs(Map.getAll(x, y)) do
+        local entity = Entities.getEntityByID(entityID)
+        local name = string.lower(entity and entity.name or "")
+        if string.find(name, "stairs", 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function actionCompletionBlockReason(command)
+    if LevelTransition.isPending() then
+        return "level_transition_pending"
+    elseif playerOnLevelExit() and LevelExit.isUnlocked() then
+        -- The exit interaction resolves late in the turn/tick boundary.  This
+        -- state can precede LevelTransition.isPending() by one or more ticks.
+        return "unlocked_exit_pending"
+    elseif playerOnLevelExit() and command and command.completed_tick
+        and tickCount - command.completed_tick < EXIT_ACTIVATION_GRACE_TICKS then
+        -- Some boss exits do not report their unlocked/pending state until a
+        -- later client tick. Retry emission briefly instead of binding the
+        -- acknowledgement to a transient staircase frame.
+        return "exit_activation_pending"
+    end
+    return nil
 end
 
 local function engineState()
@@ -204,6 +246,8 @@ local function playableReason()
         return "world_not_ready"
     elseif pending then
         return "command_pending"
+    elseif completed then
+        return "command_completion_pending"
     end
     return nil
 end
@@ -394,8 +438,8 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
     if outstanding and tickCount - lastHeartbeatTick >= HEARTBEAT_TICKS then
         lastHeartbeatTick = tickCount
         local heartbeatReason = lastDeferredReason
-        if completed and completed.kind == "ACTION" and LevelTransition.isPending() then
-            heartbeatReason = "level_transition_pending"
+        if completed and completed.kind == "ACTION" then
+            heartbeatReason = actionCompletionBlockReason(completed) or heartbeatReason
         elseif completed and completed.kind == "RESET" then
             heartbeatReason = "reset_safe_state_pending"
         elseif completed and completed.kind == "GOTO" then
@@ -408,9 +452,9 @@ event.tick.add("pollAutoDancerBridgeCommand", "input", function()
         pending = nil
     end
     if completed and completed.kind == "ACTION"
-        and LevelTransition.isPending()
+        and actionCompletionBlockReason(completed)
         and tickCount - completed.accepted_tick >= ACTION_WATCHDOG_TICKS then
-        sendCommandStatus(completed, "command_error", "level_transition_timeout")
+        sendCommandStatus(completed, "command_error", "action_completion_timeout")
         completed = nil
     end
 end)
@@ -423,7 +467,8 @@ function Bridge.consumeCompletedCommand(allowReset)
         and CurrentLevel.getSequentialNumber() ~= completed.target_level then
         return nil
     end
-    if completed and completed.kind == "ACTION" and LevelTransition.isPending() then
+    if completed and completed.kind == "ACTION"
+        and actionCompletionBlockReason(completed) then
         return nil
     end
     local result = completed
@@ -433,6 +478,10 @@ end
 
 function Bridge.markTelemetrySent(command)
     sendCommandStatus(command, "telemetry_sent")
+end
+
+function Bridge.hasCompletedCommand()
+    return completed ~= nil
 end
 
 function Bridge.getInstanceID()

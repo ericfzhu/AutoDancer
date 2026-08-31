@@ -98,7 +98,17 @@ class QualifiedTracePrefixBank:
             result = results.get(trace_id)
             if result is None:
                 raise ValueError(f"trace {trace_id} has no valid live replay qualification")
-            actions = tuple(int(action) for action in raw_trace["action_sequence"])
+            source_actions = tuple(int(action) for action in raw_trace["action_sequence"])
+            raw_qualified_actions = result.get("actual", {}).get(
+                "qualified_action_sequence"
+            )
+            if not isinstance(raw_qualified_actions, list):
+                raise ValueError(f"trace {trace_id} has no qualified action prefix")
+            actions = tuple(int(action) for action in raw_qualified_actions)
+            if not actions or len(actions) > len(source_actions):
+                raise ValueError(f"trace {trace_id} has an invalid qualified action prefix")
+            if source_actions[: len(actions)] != actions:
+                raise ValueError(f"trace {trace_id} qualification is not a source prefix")
             digests = tuple(str(value) for value in result.get("turn_digests", ()))
             if len(digests) != len(actions) + 1 or any(len(value) != 64 for value in digests):
                 raise ValueError(f"trace {trace_id} has invalid per-turn observation digests")

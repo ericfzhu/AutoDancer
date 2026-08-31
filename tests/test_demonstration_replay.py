@@ -57,6 +57,29 @@ class FakeEnvironment:
         )
 
 
+class EarlyTerminalEnvironment(FakeEnvironment):
+    def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+        assert action == [0, 1][self.turn]
+        self.turn += 1
+        terminal = self.turn == 2
+        zone, floor = (2, 1) if terminal else (1, 4)
+        events = [{"kind": "enemy_damage"}]
+        if terminal:
+            events.append({"kind": "enemy_kill"})
+        return (
+            self.observation(zone, floor),
+            0.0,
+            terminal,
+            False,
+            {
+                "zone": zone,
+                "floor": floor,
+                "episode_status": "curriculum_complete" if terminal else "running",
+                "raw_events": events,
+            },
+        )
+
+
 def trace() -> dict[str, Any]:
     return {
         "trace_id": "a" * 64,
@@ -79,6 +102,8 @@ def trace() -> dict[str, Any]:
 def test_replay_trace_requires_matching_terminal_gameplay_evidence() -> None:
     result = replay_trace(FakeEnvironment(), trace())
     assert result["valid"] is True
+    assert result["actual"]["final_action"] == 5
+    assert result["actual"]["final_pre_action_observation"]["zone"] == 1
     assert result["actual"]["final_observation"]["zone"] == 2
     assert all(result["checks"].values())
 
@@ -89,6 +114,24 @@ def test_replay_trace_rejects_terminal_summary_mismatch() -> None:
     result = replay_trace(FakeEnvironment(), candidate)
     assert result["valid"] is False
     assert result["checks"]["event_counts"] is False
+
+
+def test_replay_trace_canonicalizes_only_a_proven_successful_prefix() -> None:
+    candidate = trace()
+    candidate["event_counts"] = {"enemy_damage": 2, "enemy_kill": 1}
+    capture = RecurrentReplayCapture("current", RewardConfig(profile_version=5))
+
+    result = replay_trace(
+        EarlyTerminalEnvironment(), candidate, recurrent_capture=capture
+    )
+
+    assert result["valid"] is True
+    assert result["checks"]["successful_action_prefix"] is True
+    assert result["actual"]["qualified_action_sequence"] == [0, 1]
+    assert result["actual"]["stale_suffix_action_count"] == 1
+    assert len(result["turn_digests"]) == 3
+    assert capture.demonstration is not None
+    assert capture.demonstration.actions.tolist() == [0, 1]
 
 
 def test_replay_trace_rejects_action_that_is_now_masked() -> None:

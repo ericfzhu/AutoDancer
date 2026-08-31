@@ -190,9 +190,11 @@ def replay_trace(
     status = str(reset_info.get("episode_status", "running"))
     executed = 0
     error = ""
-    for action in iter_trace_actions(trace):
+    final_pre_action_observation: dict[str, Any] | None = None
+    final_action: int | None = None
+    source_actions = tuple(iter_trace_actions(trace))
+    for action in source_actions:
         if terminal:
-            error = "episode terminated before the recorded action sequence ended"
             break
         mask = observation.get("action_mask")
         if mask is None or np.asarray(mask).shape != (ACTION_COUNT,):
@@ -201,6 +203,8 @@ def replay_trace(
         if not bool(mask[action]):
             error = f"recorded action {action} is masked at replay turn {executed}"
             break
+        final_pre_action_observation = _observation_summary(observation)
+        final_action = int(action)
         if recurrent_capture is not None:
             try:
                 recurrent_capture.before_action(action)
@@ -231,7 +235,10 @@ def replay_trace(
         )
     expected_events = {str(key): int(value) for key, value in trace["event_counts"].items()}
     checks = {
-        "all_actions_executed": executed == int(trace["turns"]),
+        "successful_action_prefix": bool(
+            0 < executed <= int(trace["turns"])
+            and (executed == int(trace["turns"]) or terminal)
+        ),
         "terminal": terminal,
         "status": status == str(trace["status"]),
         "furthest_zone": furthest[0] == int(trace["furthest_zone"]),
@@ -257,6 +264,11 @@ def replay_trace(
             "furthest_zone": furthest[0],
             "furthest_floor": furthest[1],
             "event_counts": dict(actual_events),
+            "source_action_count": len(source_actions),
+            "qualified_action_sequence": list(source_actions[:executed]),
+            "stale_suffix_action_count": len(source_actions) - executed,
+            "final_action": final_action,
+            "final_pre_action_observation": final_pre_action_observation,
             "final_observation": _observation_summary(observation),
         },
         "elapsed_seconds": time.monotonic() - started,

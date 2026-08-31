@@ -57,6 +57,7 @@ def fixtures(tmp_path: Path) -> tuple[Path, Path, dict]:
             {
                 "trace_id": trace["trace_id"],
                 "valid": True,
+                "actual": {"qualified_action_sequence": [0, 1, 2, 3]},
                 "turn_digests": [
                     hashlib.sha256(str(index).encode()).hexdigest() for index in range(5)
                 ],
@@ -89,3 +90,21 @@ def test_rejects_unqualified_or_empty_prefix(tmp_path: Path) -> None:
     _, report_path, _ = fixtures(tmp_path)
     with pytest.raises(ValueError, match="leaves no qualified prefix"):
         QualifiedTracePrefixBank.load(bank_path, report_path, tail_actions=4)
+
+
+def test_loads_fresh_replay_canonical_prefix_and_rejects_nonprefix(tmp_path: Path) -> None:
+    bank_path, report_path, _ = fixtures(tmp_path)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    result = report["results"][0]
+    result["actual"]["qualified_action_sequence"] = [0, 1, 2]
+    result["turn_digests"] = result["turn_digests"][:4]
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    prefix = QualifiedTracePrefixBank.load(bank_path, report_path, tail_actions=1)
+    assert prefix.trace_for_seed(7).actions == (0, 1, 2)
+    assert prefix.specification()["prefix_actions"] == {"7": 2}
+
+    result["actual"]["qualified_action_sequence"] = [0, 3, 2]
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="not a source prefix"):
+        QualifiedTracePrefixBank.load(bank_path, report_path, tail_actions=1)

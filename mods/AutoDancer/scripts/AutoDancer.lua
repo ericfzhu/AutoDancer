@@ -981,7 +981,8 @@ event.tick.add("emitAutoDancerInitialObservation", {
         local levelIdentity = tostring(CurrentLevel.getSeed())
             .. ":" .. tostring(CurrentLevel.getUniqueID())
             .. ":" .. tostring(CurrentLevel.getSequentialNumber())
-        if activeRunID == "" or levelIdentity ~= lastLevelIdentity then
+        if activeRunID == "" or levelIdentity ~= lastLevelIdentity
+            or Bridge.hasCompletedCommand() then
             emitTurn()
         end
     end
