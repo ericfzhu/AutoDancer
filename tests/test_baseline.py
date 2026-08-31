@@ -24,6 +24,7 @@ from autodancer.training.baseline import (
     EpisodeAccumulator,
     compare_summaries,
     evaluate_live_policy,
+    evaluation_worker_turn_limit,
     masked_random_actions,
     recurrent_state_after_transition,
     recurrent_state_for_action,
@@ -35,6 +36,26 @@ from autodancer.training.baseline import (
     validate_declared_source_reference,
     zero_hidden_rows,
 )
+
+
+def test_evaluation_worker_turn_limit_does_not_truncate_prefix_acquisition() -> None:
+    class NaturalPrefix:
+        max_guide_turns = 80
+
+    class Trace:
+        actions = tuple(range(95))
+
+    class TracePrefix:
+        tail_actions = 1
+        traces = (Trace(),)
+
+    assert evaluation_worker_turn_limit(64) == 65
+    assert evaluation_worker_turn_limit(
+        64, natural_prefix=NaturalPrefix()  # type: ignore[arg-type]
+    ) == 81
+    assert evaluation_worker_turn_limit(
+        64, trace_prefix=TracePrefix()  # type: ignore[arg-type]
+    ) == 95
 
 
 def test_policy_feedback_defaults_to_legacy_checkpoint_reward() -> None:

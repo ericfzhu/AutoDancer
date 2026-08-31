@@ -835,6 +835,25 @@ def recurrent_state_after_transition(
     return next_hidden
 
 
+def evaluation_worker_turn_limit(
+    max_steps: int,
+    *,
+    natural_prefix: NaturalPrefixConfig | None = None,
+    trace_prefix: QualifiedTracePrefixBank | None = None,
+) -> int:
+    """Keep guide acquisition and the evaluated learner segment independently bounded."""
+
+    limits = [int(max_steps) + 1, 2]
+    if natural_prefix is not None:
+        limits.append(int(natural_prefix.max_guide_turns) + 1)
+    if trace_prefix is not None:
+        limits.append(
+            max(len(trace.actions) - trace_prefix.tail_actions for trace in trace_prefix.traces)
+            + 1
+        )
+    return max(limits)
+
+
 def evaluate_live_policy(
     environment: AutoDancerVectorEnv,
     *,
@@ -1782,7 +1801,11 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         startup_timeout=arguments.startup_timeout,
         turn_timeout=arguments.turn_timeout,
         reset_timeout=arguments.reset_timeout,
-        max_turns=max(arguments.max_steps + 1, 2),
+        max_turns=evaluation_worker_turn_limit(
+            arguments.max_steps,
+            natural_prefix=natural_prefix,
+            trace_prefix=trace_prefix,
+        ),
         reward_config=reward_config,
         affinity_policy=arguments.affinity,
         steam_presence_worker=arguments.steam_presence_worker,
