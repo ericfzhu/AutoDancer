@@ -110,7 +110,11 @@ try {
     }
 
     $trialDirectory = Join-Path $experiment "training\$selectedTrial"
-    $checkpointNames = @("final.pt", "checkpoint-00092160.pt", "checkpoint-00061440.pt")
+    # Trial 94001's acquisition density peaked around updates 71--89: five of
+    # its nine legal clears occurred after the 61,440 checkpoint and before the
+    # 92,160 checkpoint. Search that measured competence window before the
+    # final policy, which produced no held-out clear and may have forgotten it.
+    $checkpointNames = @("checkpoint-00092160.pt", "final.pt", "checkpoint-00061440.pt")
     $checkpointCandidates = @(
         $checkpointNames |
             ForEach-Object { Join-Path $trialDirectory $_ } |

@@ -12,6 +12,10 @@ def test_exp0024_trace_handoff_waits_selects_and_preserves_seed_split() -> None:
     assert "No EXP-0024 training checkpoint produced" in source
     assert '"checkpoint-00092160.pt"' in source
     assert '"checkpoint-00061440.pt"' in source
+    assert (
+        '$checkpointNames = @("checkpoint-00092160.pt", "final.pt", '
+        '"checkpoint-00061440.pt")' in source
+    )
     assert "Every competence-window checkpoint failed" in source
     assert 'published["failed_candidates"]' in source
     assert "if (-not $competenceMiss)" in source
