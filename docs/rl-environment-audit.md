@@ -2086,6 +2086,14 @@ separately from PPO policy/value/entropy losses. Selection remains frozen live
 Zone 2 entry with the imitation path disabled. This is the predeclared algorithmic
 fallback; another reward revision would not address rare-success forgetting.
 
+The fallback implementation is now available but remains disabled by default.
+`--imitation-demonstrations` accepts only the hash-bound recurrent artifact written
+by fresh live replay qualification. Its coefficient decays by PPO update, its
+metrics are namespaced separately, its artifact and configuration are checkpointed,
+and the critic receives no demonstration gradient. Evaluation never loads or
+applies the objective. EXP-0025 therefore remains an unmodified PPO gate; a later
+registered arm must explicitly enable imitation if that gate fails.
+
 ## Long-horizon credit is structurally truncated
 
 The normal-start task is not merely sparse; its causal horizon is much longer than

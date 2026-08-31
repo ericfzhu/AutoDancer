@@ -136,12 +136,16 @@ if ($candidateDistinctSeeds.Count -lt $MinQualifiedDistinctSeeds) {
 }
 
 $qualification = Join-Path $traceRoot "qualification.json"
+$recurrentDemonstrations = Join-Path $traceRoot "recurrent-demonstrations.npz"
 & $python -m autodancer.training.demonstration_replay qualify `
     --game-dir $GameDir `
     --mod-dir $ModDir `
     --bank $bank `
     --output $qualification `
-    --num-instances $NumInstances
+    --num-instances $NumInstances `
+    --action-contract $ActionContract `
+    --policy-feedback-reward-config $resolvedReward `
+    --recurrent-output $recurrentDemonstrations
 if ($LASTEXITCODE -ne 0) {
     throw "Fresh-launch live trace qualification failed"
 }
@@ -176,6 +180,8 @@ $status = [ordered]@{
     bank_sha256 = [string]$bankPayload.bank_sha256
     trace_count = @($bankPayload.traces).Count
     qualification = $qualification
+    recurrent_demonstrations = $recurrentDemonstrations
+    recurrent_demonstrations_manifest = "$recurrentDemonstrations.manifest.json"
     qualified_trace_count = [int]$qualificationPayload.qualified_trace_count
     qualified_distinct_seed_count = $qualifiedDistinctSeeds.Count
     qualified_distinct_seeds = $qualifiedDistinctSeeds

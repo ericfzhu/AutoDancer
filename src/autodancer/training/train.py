@@ -28,6 +28,12 @@ from autodancer.rewards import RewardConfig, load_reward_config
 from autodancer.training.action_contract import ACTION_CONTRACTS
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
+from autodancer.training.imitation import (
+    ImitationConfig,
+    RecurrentImitationUpdater,
+    imitation_specification,
+)
+from autodancer.training.imitation_sequences import load_recurrent_demonstrations
 from autodancer.training.model import (
     START_ACTION,
     AdapterActorCritic,
@@ -522,6 +528,31 @@ def train(arguments: argparse.Namespace) -> None:
             raise ValueError(
                 f"training seeds have no qualified trace prefix: {missing_trace_seeds}"
             )
+    imitation_config = (
+        None
+        if arguments.imitation_demonstrations is None
+        else ImitationConfig(
+            coefficient=arguments.imitation_coefficient,
+            final_coefficient=arguments.imitation_final_coefficient,
+            decay_updates=arguments.imitation_decay_updates,
+            epochs=arguments.imitation_epochs,
+            sequence_length=arguments.imitation_sequence_length,
+            minibatch_sequences=arguments.imitation_minibatch_sequences,
+            max_grad_norm=arguments.imitation_max_grad_norm,
+        )
+    )
+    imitation_manifest: dict[str, Any] | None = None
+    imitation_demonstrations = ()
+    imitation_metadata: dict[str, Any] | None = None
+    if imitation_config is not None:
+        imitation_manifest, imitation_demonstrations = load_recurrent_demonstrations(
+            arguments.imitation_demonstrations
+        )
+        imitation_metadata = imitation_specification(
+            imitation_manifest,
+            imitation_demonstrations,
+            imitation_config,
+        )
     curriculum_entries = (
         load_curriculum_mixture(arguments.curriculum_mixture)
         if arguments.curriculum_mixture is not None
@@ -661,6 +692,7 @@ def train(arguments: argparse.Namespace) -> None:
                 ),
                 "natural_prefix": natural_prefix_metadata,
                 "trace_prefix": trace_prefix_metadata,
+                "imitation": imitation_metadata,
                 "freeze_base_updates": arguments.freeze_base_updates,
                 "freeze_base_scope": (
                     "inherited-actor-base-only-v1" if arguments.freeze_base_updates else None
@@ -778,6 +810,11 @@ def train(arguments: argparse.Namespace) -> None:
                             if trace_prefix_metadata is not None
                             else {}
                         ),
+                        **(
+                            {"imitation": imitation_metadata}
+                            if imitation_metadata is not None
+                            else {}
+                        ),
                         "freeze_base_updates": arguments.freeze_base_updates,
                         "freeze_base_scope": (
                             "inherited-actor-base-only-v1"
@@ -797,6 +834,17 @@ def train(arguments: argparse.Namespace) -> None:
                     algorithm.initialize_from(arguments.initialize_from)
                 elif arguments.fine_tune_from:
                     algorithm.initialize_for_finetune(arguments.fine_tune_from)
+                imitation_updater = (
+                    None
+                    if imitation_config is None
+                    else RecurrentImitationUpdater(
+                        algorithm.model,
+                        algorithm.optimizer,
+                        imitation_demonstrations,
+                        imitation_config,
+                        device=device,
+                    )
+                )
                 guide_model: PolicyModel | None = None
                 guide_reward: RewardConfig | None = None
                 if arguments.natural_prefix_guide is not None:
@@ -875,6 +923,8 @@ def train(arguments: argparse.Namespace) -> None:
                         base_frozen = algorithm.updates < arguments.freeze_base_updates
                         model.set_base_trainable(not base_frozen)
                     update_metrics = algorithm.update(rollout)
+                    if imitation_updater is not None:
+                        update_metrics.update(imitation_updater.update(algorithm.updates - 1))
                     elapsed = max(time.monotonic() - started, 1.0e-6)
                     metrics = {
                         "global_step": algorithm.global_step,
@@ -1010,6 +1060,7 @@ def train(arguments: argparse.Namespace) -> None:
                             ),
                             "natural_prefix": natural_prefix_metadata,
                             "trace_prefix": trace_prefix_metadata,
+                            "imitation": imitation_metadata,
                             "freeze_base_updates": arguments.freeze_base_updates,
                             "freeze_base_scope": (
                                 "inherited-actor-base-only-v1"
@@ -1214,6 +1265,21 @@ def main() -> int:
         choices=TRACE_PREFIX_RECURRENT_MODES,
         default="warm",
     )
+    parser.add_argument(
+        "--imitation-demonstrations",
+        type=Path,
+        help=(
+            "hash-bound recurrent observations captured during fresh live trace "
+            "qualification; enables an actor-only decaying imitation objective"
+        ),
+    )
+    parser.add_argument("--imitation-coefficient", type=float, default=1.0)
+    parser.add_argument("--imitation-final-coefficient", type=float, default=0.0)
+    parser.add_argument("--imitation-decay-updates", type=int, default=60)
+    parser.add_argument("--imitation-epochs", type=int, default=1)
+    parser.add_argument("--imitation-sequence-length", type=int, default=32)
+    parser.add_argument("--imitation-minibatch-sequences", type=int, default=8)
+    parser.add_argument("--imitation-max-grad-norm", type=float, default=0.5)
     parser.add_argument("--freeze-base-updates", type=int, default=0)
     parser.add_argument(
         "--freeze-actor-updates",
@@ -1318,6 +1384,20 @@ def main() -> int:
             parser.error("trace-prefix training requires --training-seed-pool")
         if arguments.trace_prefix_tail_actions <= 0:
             parser.error("--trace-prefix-tail-actions must be positive")
+    imitation_values = (
+        arguments.imitation_coefficient,
+        arguments.imitation_decay_updates,
+        arguments.imitation_epochs,
+        arguments.imitation_sequence_length,
+        arguments.imitation_minibatch_sequences,
+        arguments.imitation_max_grad_norm,
+    )
+    if arguments.imitation_demonstrations is not None and any(
+        value <= 0 for value in imitation_values
+    ):
+        parser.error("enabled imitation coefficients, counts, and gradient norm must be positive")
+    if not 0 <= arguments.imitation_final_coefficient <= arguments.imitation_coefficient:
+        parser.error("--imitation-final-coefficient must be in [0, --imitation-coefficient]")
     if bool(arguments.experiment_id) != bool(arguments.experiment_arm):
         parser.error("--experiment-id and --experiment-arm must be supplied together")
     train(arguments)

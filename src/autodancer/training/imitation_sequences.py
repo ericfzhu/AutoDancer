@@ -3,8 +3,8 @@
 The artifact is deliberately separate from PPO rollouts.  It stores the exact
 policy inputs observed during a freshly qualified live replay, plus the action
 and feedback context needed to reconstruct an LSTM state.  Nothing in this
-module enables imitation during ordinary training; experiments must opt in with
-an explicit, lineage-bound objective.
+artifact enables imitation implicitly. Ordinary training can consume it only
+through an explicit, lineage-bound, disabled-by-default actor objective.
 """
 
 from __future__ import annotations
