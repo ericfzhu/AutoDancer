@@ -2362,3 +2362,33 @@ evaluation time limit. If that entire expanded grid remains saturated, trace
 distance on this outcome-conditioned seed bank is not an informative curriculum
 variable; the next experiment must broaden the successful-state bank or retain
 rare successes from unassisted full-boss training.
+
+### EXP-0029 outcome: acquisition succeeds at the measured boundary
+
+EXP-0029 found the first non-saturated boundary at tail 32. The frozen source
+checkpoint completed `13/15` live episodes (`86.7%`) across deterministic play
+and four fixed stochastic policy streams on seeds `92008`, `92096`, and `92116`.
+Three independently initialized PPO optimizers then trained for 61,440
+transitions each. Their frozen final checkpoints completed all `27/27`
+deterministic and stochastic evaluation episodes, with all three game seeds
+represented, finite losses, and zero controller restarts. This accepts tail 32
+as a reproducibly acquired conditional boss skill. It does not establish
+prefix-free boss competence or normal-start Zone 2 progress.
+
+The result also rejects a single-checkpoint jump as the next training
+distribution. A source policy that is perfect at tail 32 can still fail from a
+state only a few actions earlier, and optimizing solely on the new frontier can
+forget the accepted state. EXP-0030 therefore follows Backplay's retained-window
+principle: it calibrates tails 36, 40, and onward, then samples tail 32 and every
+four-action boundary through the first new 10--90% frontier. Selection is a
+deterministic function of worker slot and the checkpointed per-slot episode
+counter, so asynchronous actor timing cannot change the start distribution.
+Frozen evaluation scores the retained and expanded boundaries separately.
+
+A pre-launch audit found that exact-A8 `--initialize-from` reset ordinary
+`critic.*` parameters but accidentally copied nested `base.critic.*` tensors.
+That violated the declared warm-start contract whenever the reward/start
+distribution changed. Critic identification is now architecture-aware for both
+transfer and missing-tensor validation. A real EXP-0029 A8 checkpoint test proves
+that all 157 actor/representation tensors transfer while all four critic tensors
+retain their fresh initialization; the optimizer and counters also start fresh.
