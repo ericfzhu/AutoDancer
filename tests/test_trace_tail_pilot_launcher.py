@@ -75,8 +75,26 @@ def test_retained_trace_window_predeclares_balanced_expansion_and_retention() ->
     )
     assert "--trace-prefix-tail-window" in launcher
     assert "RetainedTailActions" in launcher
+    assert "RetainedTailWindow" in launcher
     assert "SourceCheckpointOverride" in launcher
     assert "retained_boundary_at_least_80_percent" in launcher
     assert "qualified-trace-window-v8" in specification
     assert "conditional-trace-window-v17" in specification
     assert "assisted completion never counts as normal-start Zone 2" in specification
+
+
+def test_second_retained_window_preserves_every_mastered_boundary() -> None:
+    launcher = Path("tools/run-qualified-trace-tail-pilot.ps1").read_text(
+        encoding="utf-8"
+    )
+    specification = Path("experiments/EXP-0031/experiment.yaml").read_text(
+        encoding="utf-8"
+    )
+    readme = Path("experiments/EXP-0031/README.md").read_text(encoding="utf-8")
+    assert "every_retained_boundary_at_least_80_percent" in launcher
+    assert "retained_boundaries" in launcher
+    assert "qualified-trace-window-v9" in specification
+    assert "conditional-trace-window-v18" in specification
+    assert "retained_tail_window: [32, 36]" in specification
+    assert "each of tails 32 and 36 independently remains at least 80 percent" in specification
+    assert "-RetainedTailWindow 32,36" in readme

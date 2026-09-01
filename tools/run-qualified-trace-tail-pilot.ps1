@@ -10,6 +10,7 @@ param(
     [int]$LearnerTurnCap = 64,
     [string]$SourceCheckpointOverride = "",
     [int]$RetainedTailActions = 0,
+    [int[]]$RetainedTailWindow = @(),
     [int]$SteamPresenceWorker = 0,
     [string]$ExperimentId = "EXP-0027",
     [string]$ExperimentArm = "a8-live-calibrated-tail1",
@@ -33,6 +34,15 @@ if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $LearnerTurnCap -le 0 
 }
 if ($RetainedTailActions -lt 0) {
     throw "RetainedTailActions cannot be negative"
+}
+if ($RetainedTailWindow.Count -and $RetainedTailActions -gt 0) {
+    throw "RetainedTailActions and RetainedTailWindow are mutually exclusive"
+}
+if (@($RetainedTailWindow | Where-Object { $_ -le 0 }).Count) {
+    throw "RetainedTailWindow values must be positive"
+}
+if (@($RetainedTailWindow | Select-Object -Unique).Count -ne $RetainedTailWindow.Count) {
+    throw "RetainedTailWindow must not contain duplicates"
 }
 if ($SteamPresenceWorker -lt 0 -or $SteamPresenceWorker -ge 8) {
     throw "SteamPresenceWorker must identify one of the eight training workers"
@@ -237,6 +247,21 @@ try {
     if ($tailCandidates.Count -eq 0) {
         throw "No requested trace-tail candidate leaves a legal replay prefix"
     }
+    $retainedTails = if ($RetainedTailWindow.Count) {
+        @($RetainedTailWindow | Sort-Object -Unique)
+    } elseif ($RetainedTailActions -gt 0) {
+        @($RetainedTailActions)
+    } else {
+        @()
+    }
+    $hardestRetainedTail = if ($retainedTails.Count) {
+        [int](($retainedTails | Measure-Object -Maximum).Maximum)
+    } else {
+        0
+    }
+    if (@($retainedTails | Where-Object { $_ -gt $maximumTailActions }).Count) {
+        throw "A retained trace tail leaves no legal replay prefix"
+    }
     $gameSeeds = @($search.qualified_distinct_seeds | ForEach-Object { [int]$_ } | Sort-Object -Unique)
     $gameSeedCsv = $gameSeeds -join ","
     $evaluationModes = @(
@@ -375,19 +400,19 @@ try {
         throw "No trace-tail candidate lies inside the 10-90 percent live competence band: $rates"
     }
     $tailActions = [int]$selectedCalibration.tail_actions
-    $trainingTailWindow = if ($RetainedTailActions -gt 0) {
+    $trainingTailWindow = if ($retainedTails.Count) {
         @(
-            @($RetainedTailActions) + @(
+            @($retainedTails) + @(
                 $tailCandidates | Where-Object {
-                    $_ -gt $RetainedTailActions -and $_ -le $tailActions
+                    $_ -gt $hardestRetainedTail -and $_ -le $tailActions
                 }
             ) | Sort-Object -Unique
         )
     } else {
         @($tailActions)
     }
-    if ($RetainedTailActions -gt 0 -and $RetainedTailActions -ge $tailActions) {
-        throw "RetainedTailActions must be easier than the selected expanded tail"
+    if ($retainedTails.Count -and $hardestRetainedTail -ge $tailActions) {
+        throw "Every retained tail must be easier than the selected expanded tail"
     }
     $trainingTailWindowCsv = $trainingTailWindow -join ","
     $sourceCalibrationEpisodes = [int]$selectedCalibration.episodes
@@ -437,8 +462,8 @@ try {
             }
         }
         $evaluationReports = [System.Collections.Generic.List[string]]::new()
-        $evaluationTails = if ($RetainedTailActions -gt 0) {
-            @($RetainedTailActions, $tailActions)
+        $evaluationTails = if ($retainedTails.Count) {
+            @(@($retainedTails) + @($tailActions) | Sort-Object -Unique)
         } else {
             @($tailActions)
         }
@@ -522,29 +547,41 @@ try {
     $reproducibleTrials = @(
         $hardestResults | Where-Object { $_.completion_rate -ge 0.05 }
     ).Count
-    $retainedResults = if ($RetainedTailActions -gt 0) {
-        @(
-            $summaries | ForEach-Object {
-                $_.boundary_results | Where-Object {
-                    [int]$_.tail_actions -eq $RetainedTailActions
+    $retentionEvaluationTails = if ($retainedTails.Count) { $retainedTails } else { @($tailActions) }
+    $retainedBoundarySummaries = @(
+        foreach ($retainedTail in $retentionEvaluationTails) {
+            $results = @(
+                $summaries | ForEach-Object {
+                    $_.boundary_results | Where-Object {
+                        [int]$_.tail_actions -eq $retainedTail
+                    }
                 }
+            )
+            if ($results.Count -ne $summaries.Count) {
+                throw "Every trial must contain retained tail $retainedTail"
             }
-        )
-    } else {
-        $hardestResults
-    }
-    if ($retainedResults.Count -ne $summaries.Count) {
-        throw "Every trial must contain the retained-tail evaluation"
-    }
-    $retainedEpisodes = ($retainedResults | Measure-Object episodes -Sum).Sum
-    $retainedCompletions = ($retainedResults | Measure-Object completions -Sum).Sum
+            $episodes = ($results | Measure-Object episodes -Sum).Sum
+            $completions = ($results | Measure-Object completions -Sum).Sum
+            [pscustomobject]@{
+                tail_actions = [int]$retainedTail
+                episodes = $episodes
+                completions = $completions
+                completion_rate = $completions / [math]::Max($episodes, 1)
+            }
+        }
+    )
+    $retainedEpisodes = ($retainedBoundarySummaries | Measure-Object episodes -Sum).Sum
+    $retainedCompletions = ($retainedBoundarySummaries | Measure-Object completions -Sum).Sum
     $retainedRate = $retainedCompletions / [math]::Max($retainedEpisodes, 1)
+    $everyRetainedBoundaryPassed = @(
+        $retainedBoundarySummaries | Where-Object { $_.completion_rate -lt 0.80 }
+    ).Count -eq 0
     $passed = (
         $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10 -and
         $reproducibleTrials -ge 2 -and
         $distinctSuccesses.Count -ge 3 -and
         @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0 -and
-        $retainedRate -ge 0.80 -and
+        $everyRetainedBoundaryPassed -and
         @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
     )
     $selected = $summaries | Sort-Object @{
@@ -560,7 +597,8 @@ try {
         qualification = $traceQualification
         tail_actions = $tailActions
         training_tail_window = $trainingTailWindow
-        retained_tail_actions = if ($RetainedTailActions -gt 0) { $RetainedTailActions } else { $null }
+        retained_tail_actions = if ($retainedTails.Count -eq 1) { $retainedTails[0] } else { $null }
+        retained_tail_window = $retainedTails
         learner_turn_cap = $LearnerTurnCap
         steam_presence_worker = $SteamPresenceWorker
         qualified_training_seeds = $gameSeeds
@@ -583,18 +621,20 @@ try {
             evaluated_tail_actions = $tailActions
         }
         retained_boundary = [ordered]@{
-            tail_actions = if ($RetainedTailActions -gt 0) { $RetainedTailActions } else { $tailActions }
+            tail_actions = if ($retainedTails.Count -eq 1) { $retainedTails[0] } else { $null }
             episodes = $retainedEpisodes
             completions = $retainedCompletions
             completion_rate = $retainedRate
         }
+        retained_boundaries = $retainedBoundarySummaries
         gate = [ordered]@{
             passed = $passed
             completion_rate_at_least_10_percent = $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10
             at_least_two_reproducible_trials = $reproducibleTrials -ge 2
             at_least_three_distinct_completion_seeds = $distinctSuccesses.Count -ge 3
             every_trial_completed = @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0
-            retained_boundary_at_least_80_percent = $retainedRate -ge 0.80
+            retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
+            every_retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
             controller_and_losses_valid = @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
         }
         selected_trial = if ($passed) { $selected.trial } else { $null }
