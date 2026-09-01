@@ -576,15 +576,34 @@ try {
     $everyRetainedBoundaryPassed = @(
         $retainedBoundarySummaries | Where-Object { $_.completion_rate -lt 0.80 }
     ).Count -eq 0
+    $retentionEligibleTrialIds = @(
+        foreach ($summary in $summaries) {
+            $failedBoundaries = @(
+                foreach ($retainedTail in $retentionEvaluationTails) {
+                    $boundary = $summary.boundary_results | Where-Object {
+                        [int]$_.tail_actions -eq $retainedTail
+                    }
+                    if ($null -eq $boundary -or $boundary.completion_rate -lt 0.80) {
+                        $retainedTail
+                    }
+                }
+            )
+            if ($failedBoundaries.Count -eq 0) { $summary.trial }
+        }
+    )
+    $retentionEligibleSummaries = @(
+        $summaries | Where-Object { $retentionEligibleTrialIds -contains $_.trial }
+    )
     $passed = (
         $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10 -and
         $reproducibleTrials -ge 2 -and
         $distinctSuccesses.Count -ge 3 -and
         @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0 -and
         $everyRetainedBoundaryPassed -and
+        $retentionEligibleSummaries.Count -ge 1 -and
         @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
     )
-    $selected = $summaries | Sort-Object @{
+    $selected = $retentionEligibleSummaries | Sort-Object @{
         Expression={
             ($_.boundary_results | Where-Object tail_actions -eq $tailActions).completion_rate
         }; Descending=$true
@@ -627,6 +646,7 @@ try {
             completion_rate = $retainedRate
         }
         retained_boundaries = $retainedBoundarySummaries
+        retention_eligible_trials = $retentionEligibleTrialIds
         gate = [ordered]@{
             passed = $passed
             completion_rate_at_least_10_percent = $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10
@@ -635,6 +655,7 @@ try {
             every_trial_completed = @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0
             retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
             every_retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
+            selected_checkpoint_retains_every_boundary = $retentionEligibleSummaries.Count -ge 1
             controller_and_losses_valid = @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
         }
         selected_trial = if ($passed) { $selected.trial } else { $null }

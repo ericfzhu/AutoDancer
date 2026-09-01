@@ -92,6 +92,8 @@ def test_second_retained_window_preserves_every_mastered_boundary() -> None:
     )
     readme = Path("experiments/EXP-0031/README.md").read_text(encoding="utf-8")
     assert "every_retained_boundary_at_least_80_percent" in launcher
+    assert "selected_checkpoint_retains_every_boundary" in launcher
+    assert "retentionEligibleSummaries" in launcher
     assert "retained_boundaries" in launcher
     assert "qualified-trace-window-v9" in specification
     assert "conditional-trace-window-v18" in specification
