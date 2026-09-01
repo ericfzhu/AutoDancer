@@ -56,6 +56,7 @@ from autodancer.training.seed_schedule import parse_training_seed_pool
 from autodancer.training.trace_prefix import (
     TRACE_PREFIX_RECURRENT_MODES,
     QualifiedTracePrefixBank,
+    parse_trace_tail_window,
 )
 
 TelemetryCallback = Callable[
@@ -511,6 +512,11 @@ def train(arguments: argparse.Namespace) -> None:
             arguments.trace_prefix_bank,
             arguments.trace_prefix_qualification,
             tail_actions=arguments.trace_prefix_tail_actions,
+            tail_action_window=(
+                ()
+                if arguments.trace_prefix_tail_window is None
+                else parse_trace_tail_window(arguments.trace_prefix_tail_window)
+            ),
             recurrent_state_mode=arguments.trace_prefix_recurrent_state,
         )
     )
@@ -1281,6 +1287,13 @@ def main() -> int:
     )
     parser.add_argument("--trace-prefix-tail-actions", type=int, default=16)
     parser.add_argument(
+        "--trace-prefix-tail-window",
+        help=(
+            "comma-separated balanced learner-tail lengths; selection is deterministic "
+            "per worker slot and checkpointed episode count"
+        ),
+    )
+    parser.add_argument(
         "--training-level-distribution-version",
         help=(
             "explicit registered lineage version when the experiment's selection "
@@ -1415,6 +1428,15 @@ def main() -> int:
             parser.error("trace-prefix training requires --training-seed-pool")
         if arguments.trace_prefix_tail_actions <= 0:
             parser.error("--trace-prefix-tail-actions must be positive")
+        if arguments.trace_prefix_tail_window is not None:
+            try:
+                tail_window = parse_trace_tail_window(arguments.trace_prefix_tail_window)
+            except ValueError as error:
+                parser.error(str(error))
+            if arguments.trace_prefix_tail_actions not in tail_window:
+                parser.error(
+                    "--trace-prefix-tail-actions must belong to --trace-prefix-tail-window"
+                )
     if (
         arguments.training_level_distribution_version is not None
         and arguments.experiment_id is None

@@ -680,6 +680,51 @@ def test_architecture_eight_actor_warm_start_resets_reward_critic(tmp_path: Path
     )
 
 
+def test_exact_architecture_eight_warm_start_resets_nested_critic(tmp_path: Path) -> None:
+    config = AdapterConfig(
+        cell_size=32,
+        spatial_size=64,
+        hidden_size=32,
+        entity_limit=16,
+        attention_layers=1,
+        attention_heads=4,
+        tactical_size=16,
+        map_size=16,
+        player_size=8,
+        inventory_size=8,
+    )
+    source_model = ProjectedAdapterActorCritic(config)
+    with torch.no_grad():
+        for parameter in source_model.parameters():
+            parameter.fill_(0.25)
+    source = RecurrentPPO(
+        source_model,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    path = tmp_path / "architecture-8.pt"
+    source.save(path)
+
+    target_model = ProjectedAdapterActorCritic(config)
+    critic_before = {
+        name: value.clone()
+        for name, value in target_model.state_dict().items()
+        if is_critic_parameter(name)
+    }
+    target = RecurrentPPO(
+        target_model,
+        PPOConfig(rollout_length=1, sequence_length=1),
+        device=torch.device("cpu"),
+    )
+    target.initialize_from(path)
+
+    for name, value in target_model.state_dict().items():
+        if is_critic_parameter(name):
+            assert torch.equal(value, critic_before[name])
+        else:
+            assert torch.equal(value, source_model.state_dict()[name])
+
+
 def test_architecture_eight_base_freeze_keeps_fresh_critic_trainable() -> None:
     model = ProjectedAdapterActorCritic(
         AdapterConfig(

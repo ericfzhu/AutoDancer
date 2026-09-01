@@ -15,6 +15,22 @@ from autodancer.training.demonstrations import validate_demonstration_bank
 TRACE_PREFIX_RECURRENT_MODES = ("fresh", "warm")
 
 
+def parse_trace_tail_window(value: str) -> tuple[int, ...]:
+    """Parse a comma-separated, unique set of positive learner-tail lengths."""
+
+    try:
+        values = tuple(int(item.strip()) for item in value.split(",") if item.strip())
+    except ValueError as error:
+        raise ValueError("trace-prefix tail window must contain integers") from error
+    if not values:
+        raise ValueError("trace-prefix tail window must not be empty")
+    if any(item <= 0 for item in values):
+        raise ValueError("trace-prefix tail window values must be positive")
+    if len(set(values)) != len(values):
+        raise ValueError("trace-prefix tail window must not contain duplicates")
+    return tuple(sorted(values))
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -44,6 +60,7 @@ class QualifiedTracePrefixBank:
     qualification_sha256: str
     action_contract: str
     tail_actions: int
+    tail_action_window: tuple[int, ...]
     recurrent_state_mode: str
     traces: tuple[QualifiedActionTrace, ...]
 
@@ -54,12 +71,23 @@ class QualifiedTracePrefixBank:
         qualification_path: str | Path,
         *,
         tail_actions: int,
+        tail_action_window: tuple[int, ...] = (),
         recurrent_state_mode: str = "warm",
     ) -> QualifiedTracePrefixBank:
         bank_source = Path(bank_path).resolve()
         qualification_source = Path(qualification_path).resolve()
         if tail_actions <= 0:
             raise ValueError("trace-prefix tail_actions must be positive")
+        selected_window = tuple(int(value) for value in tail_action_window) or (
+            int(tail_actions),
+        )
+        if any(value <= 0 for value in selected_window):
+            raise ValueError("trace-prefix tail_action_window values must be positive")
+        if len(set(selected_window)) != len(selected_window):
+            raise ValueError("trace-prefix tail_action_window must not contain duplicates")
+        selected_window = tuple(sorted(selected_window))
+        if int(tail_actions) not in selected_window:
+            raise ValueError("trace-prefix tail_actions must belong to tail_action_window")
         if recurrent_state_mode not in TRACE_PREFIX_RECURRENT_MODES:
             raise ValueError(
                 "trace-prefix recurrent_state_mode must be one of "
@@ -112,9 +140,17 @@ class QualifiedTracePrefixBank:
             digests = tuple(str(value) for value in result.get("turn_digests", ()))
             if len(digests) != len(actions) + 1 or any(len(value) != 64 for value in digests):
                 raise ValueError(f"trace {trace_id} has invalid per-turn observation digests")
-            if tail_actions >= len(actions):
+            invalid_tails = [value for value in selected_window if value >= len(actions)]
+            if invalid_tails:
+                if len(invalid_tails) == 1:
+                    raise ValueError(
+                        f"trace-prefix tail {invalid_tails[0]} leaves no qualified prefix "
+                        f"for {trace_id}"
+                    )
                 raise ValueError(
-                    f"trace-prefix tail {tail_actions} leaves no qualified prefix for {trace_id}"
+                    "trace-prefix tails "
+                    + ", ".join(str(value) for value in invalid_tails)
+                    + f" leave no qualified prefix for {trace_id}"
                 )
             reset = EpisodeResetSpec.from_mapping(raw_trace["curriculum_reset"])
             trace = QualifiedActionTrace(
@@ -140,6 +176,7 @@ class QualifiedTracePrefixBank:
             qualification_sha256=_sha256_file(qualification_source),
             action_contract=action_contract,
             tail_actions=int(tail_actions),
+            tail_action_window=selected_window,
             recurrent_state_mode=recurrent_state_mode,
             traces=selected,
         )
@@ -154,18 +191,40 @@ class QualifiedTracePrefixBank:
                 return trace
         raise ValueError(f"game seed {seed} has no qualified trace prefix")
 
+    def tail_for_episode(self, slot: int, episode_index: int) -> int:
+        """Select a balanced handoff window independently of actor timing."""
+
+        if slot < 0 or episode_index < 0:
+            raise ValueError("trace-prefix slot and episode_index must be non-negative")
+        return self.tail_action_window[
+            (int(slot) + int(episode_index)) % len(self.tail_action_window)
+        ]
+
     def specification(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
-            "kind": "qualified-live-trace-prefix-v1",
+            "schema_version": 2 if len(self.tail_action_window) > 1 else 1,
+            "kind": (
+                "qualified-live-trace-window-v2"
+                if len(self.tail_action_window) > 1
+                else "qualified-live-trace-prefix-v1"
+            ),
             "bank": str(self.bank_path),
             "bank_sha256": self.bank_sha256,
             "qualification": str(self.qualification_path),
             "qualification_sha256": self.qualification_sha256,
             "action_contract": self.action_contract,
             "tail_actions": self.tail_actions,
+            "tail_action_window": list(self.tail_action_window),
             "prefix_actions": {
-                str(trace.seed): len(trace.actions) - self.tail_actions for trace in self.traces
+                str(trace.seed): len(trace.actions) - self.tail_actions
+                for trace in self.traces
+            },
+            "prefix_actions_by_tail": {
+                str(trace.seed): {
+                    str(value): len(trace.actions) - value
+                    for value in self.tail_action_window
+                }
+                for trace in self.traces
             },
             "recurrent_state_mode": self.recurrent_state_mode,
             "selected_traces": [

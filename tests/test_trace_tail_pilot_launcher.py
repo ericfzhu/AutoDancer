@@ -64,3 +64,19 @@ def test_expanded_trace_tail_experiment_reaches_near_full_boss_start() -> None:
     assert "worker 0 alone initializes Steam presence" in specification
     assert "-LearnerTurnCap 128" in readme
     assert "-SteamPresenceWorker 0" in readme
+
+
+def test_retained_trace_window_predeclares_balanced_expansion_and_retention() -> None:
+    launcher = Path("tools/run-qualified-trace-tail-pilot.ps1").read_text(
+        encoding="utf-8"
+    )
+    specification = Path("experiments/EXP-0030/experiment.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "--trace-prefix-tail-window" in launcher
+    assert "RetainedTailActions" in launcher
+    assert "SourceCheckpointOverride" in launcher
+    assert "retained_boundary_at_least_80_percent" in launcher
+    assert "qualified-trace-window-v8" in specification
+    assert "conditional-trace-window-v17" in specification
+    assert "assisted completion never counts as normal-start Zone 2" in specification

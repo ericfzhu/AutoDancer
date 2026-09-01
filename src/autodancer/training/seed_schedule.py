@@ -52,6 +52,13 @@ class TrainingSeedSchedule:
         self._draws[slot] += 1
         return int(seed)
 
+    def draw_count(self, slot: int) -> int:
+        """Return the checkpointed number of resets issued for one actor slot."""
+
+        if not 0 <= slot < self.slots:
+            raise IndexError(f"Seed-schedule slot {slot} is outside capacity {self.slots}")
+        return int(self._draws[slot])
+
     def state_dict(self) -> dict[str, Any]:
         return {
             "schema_version": 1,

@@ -409,7 +409,12 @@ def test_async_collector_uses_opt_in_adaptive_curriculum_and_checkpoints_it() ->
     assert state["mastered_indices"] == [0, 1]
 
 
-def trace_prefix_bank(seed_slots: dict[int, int], *, corrupt: bool = False):
+def trace_prefix_bank(
+    seed_slots: dict[int, int],
+    *,
+    corrupt: bool = False,
+    tail_window: tuple[int, ...] = (1,),
+):
     traces = []
     reset_spec = EpisodeResetSpec("fixed", 4, 5, "player20")
     for seed, slot in sorted(seed_slots.items()):
@@ -439,7 +444,8 @@ def trace_prefix_bank(seed_slots: dict[int, int], *, corrupt: bool = False):
         "a" * 64,
         "b" * 64,
         "current",
-        1,
+        max(tail_window),
+        tail_window,
         "warm",
         tuple(traces),
     )
@@ -479,6 +485,45 @@ def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
     for worker in environment.environments.values():
         assert worker.actions[:2] == [0, 1]
         assert worker.handoffs[0]["learner_tail_actions"] == 1
+
+
+def test_async_collector_balances_trace_window_by_slot() -> None:
+    environment = PrefixEnvironment()
+    for worker in environment.environments.values():
+        worker.slot = 0
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=831,
+        training_seed_pool=(7, 8),
+        curriculum_entries=(
+            WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),
+        ),
+        trace_prefix=trace_prefix_bank({7: 0, 8: 0}, tail_window=(1, 2)),
+    )
+    try:
+        collector.collect(1)
+    finally:
+        collector.close()
+    assert environment.environments["worker-0000"].handoffs[0][
+        "learner_tail_actions"
+    ] == 1
+    assert environment.environments["worker-0001"].handoffs[0][
+        "learner_tail_actions"
+    ] == 2
+    assert environment.environments["worker-0000"].actions[:2] == [0, 1]
+    assert environment.environments["worker-0001"].actions[:1] == [0]
 
 
 def test_async_collector_fails_closed_when_trace_prefix_digest_diverges() -> None:

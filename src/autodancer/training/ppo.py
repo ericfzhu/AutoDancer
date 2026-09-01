@@ -17,6 +17,7 @@ from autodancer.training.model import (
     PolicyModel,
     actor_and_critic_parameters,
     current_representation_gradient_norms,
+    is_critic_parameter,
 )
 
 
@@ -483,7 +484,7 @@ class RecurrentPPO:
         transferred = {
             name: value
             for name, value in source.items()
-            if not name.startswith("critic.")
+            if not is_critic_parameter(name)
             and name in target
             and target[name].shape == value.shape
         }
@@ -507,9 +508,9 @@ class RecurrentPPO:
         allowed_missing = {
             name
             for name in target
-            if name.startswith(
+            if is_critic_parameter(name)
+            or name.startswith(
                 (
-                    "critic.",
                     "map_",
                     "facing.",
                     "charge_direction.",
@@ -526,7 +527,9 @@ class RecurrentPPO:
             unexpected
             or (
                 exact_architecture
-                and set(missing) != {name for name in target if name.startswith("critic.")}
+                and set(missing) != {
+                    name for name in target if is_critic_parameter(name)
+                }
             )
             or (sensory_upgrade and not set(missing).issubset(allowed_missing))
         ):

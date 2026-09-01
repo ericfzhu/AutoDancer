@@ -92,9 +92,13 @@ def validate_checkpoint_trace_prefix(
         "action_contract",
         "recurrent_state_mode",
     ]
-    if not source_reference:
-        identity_keys.append("tail_actions")
     mismatches = [key for key in identity_keys if checkpoint_spec.get(key) != expected.get(key)]
+    if not source_reference:
+        checkpoint_window = checkpoint_spec.get(
+            "tail_action_window", [checkpoint_spec.get("tail_actions")]
+        )
+        if expected["tail_actions"] not in checkpoint_window:
+            mismatches.append("tail_actions")
     if mismatches:
         raise ValueError(
             "Evaluation trace prefix disagrees with checkpoint identity: " + ", ".join(mismatches)

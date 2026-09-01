@@ -8,6 +8,8 @@ param(
     [int[]]$CandidateTailActions = @(),
     [int[]]$CalibrationPolicySeeds = @(0, 98001, 98002, 98003, 98004),
     [int]$LearnerTurnCap = 64,
+    [string]$SourceCheckpointOverride = "",
+    [int]$RetainedTailActions = 0,
     [int]$SteamPresenceWorker = 0,
     [string]$ExperimentId = "EXP-0027",
     [string]$ExperimentArm = "a8-live-calibrated-tail1",
@@ -28,6 +30,9 @@ if ($TrainingSeeds.Count -ne 3 -or @($TrainingSeeds | Select-Object -Unique).Cou
 }
 if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $LearnerTurnCap -le 0 -or $PollSeconds -le 0) {
     throw "TotalSteps, RequestedTailActions, LearnerTurnCap, and PollSeconds must be positive"
+}
+if ($RetainedTailActions -lt 0) {
+    throw "RetainedTailActions cannot be negative"
 }
 if ($SteamPresenceWorker -lt 0 -or $SteamPresenceWorker -ge 8) {
     throw "SteamPresenceWorker must identify one of the eight training workers"
@@ -126,6 +131,25 @@ function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
     })
     if ($episodes.Count -eq 0) { throw "Trace-tail trial contains no frozen final-policy episodes: $Directory" }
     $completed = @($episodes | Where-Object { [string]$_.status -eq "curriculum_complete" })
+    $boundaryResults = @(
+        $payloads | Group-Object { [int]$_.trace_prefix.tail_actions } | ForEach-Object {
+            $boundaryEpisodes = @($_.Group | ForEach-Object { $_.trained.results } | Where-Object {
+                [string]$_.natural_prefix.kind -eq "qualified-live-trace-prefix-v1"
+            })
+            $boundaryCompletions = @(
+                $boundaryEpisodes | Where-Object { [string]$_.status -eq "curriculum_complete" }
+            )
+            [pscustomobject]@{
+                tail_actions = [int]$_.Name
+                episodes = $boundaryEpisodes.Count
+                completions = $boundaryCompletions.Count
+                completion_rate = $boundaryCompletions.Count / [math]::Max($boundaryEpisodes.Count, 1)
+                distinct_completion_seeds = @(
+                    $boundaryCompletions | ForEach-Object { [int]$_.seed } | Sort-Object -Unique
+                )
+            }
+        } | Sort-Object tail_actions
+    )
     $last = Get-Content -LiteralPath $metrics -Tail 1 | ConvertFrom-Json
     $lossesFinite = @("policy_loss", "value_loss", "entropy", "approx_kl") | ForEach-Object {
         $value = [double]$last.$_
@@ -146,6 +170,7 @@ function Read-TrialSummary([string]$Directory, [int]$Seed, [string[]]$Reports) {
         final_global_step = [int]$last.global_step
         final_checkpoint = Join-Path $Directory "final.pt"
         evaluation_reports = $Reports
+        boundary_results = $boundaryResults
     }
 }
 
@@ -189,7 +214,14 @@ try {
     }
     $bank = [string]$search.bank
     $traceQualification = [string]$search.qualification
-    $sourceCheckpoint = [string]$search.checkpoint
+    $sourceCheckpoint = if ([string]::IsNullOrWhiteSpace($SourceCheckpointOverride)) {
+        [string]$search.checkpoint
+    } else {
+        Resolve-RepositoryPath $SourceCheckpointOverride
+    }
+    if (-not (Test-Path -LiteralPath $sourceCheckpoint -PathType Leaf)) {
+        throw "Source checkpoint does not exist: $sourceCheckpoint"
+    }
     $bankPayload = Get-Content -LiteralPath $bank -Raw | ConvertFrom-Json
     $minimumTraceLength = ($bankPayload.traces | ForEach-Object { @($_.action_sequence).Count } | Measure-Object -Minimum).Minimum
     $maximumTailActions = [int]$minimumTraceLength - 1
@@ -343,6 +375,21 @@ try {
         throw "No trace-tail candidate lies inside the 10-90 percent live competence band: $rates"
     }
     $tailActions = [int]$selectedCalibration.tail_actions
+    $trainingTailWindow = if ($RetainedTailActions -gt 0) {
+        @(
+            @($RetainedTailActions) + @(
+                $tailCandidates | Where-Object {
+                    $_ -gt $RetainedTailActions -and $_ -le $tailActions
+                }
+            ) | Sort-Object -Unique
+        )
+    } else {
+        @($tailActions)
+    }
+    if ($RetainedTailActions -gt 0 -and $RetainedTailActions -ge $tailActions) {
+        throw "RetainedTailActions must be easier than the selected expanded tail"
+    }
+    $trainingTailWindowCsv = $trainingTailWindow -join ","
     $sourceCalibrationEpisodes = [int]$selectedCalibration.episodes
     $sourceCalibrationCompletions = [int]$selectedCalibration.completions
     $sourceCalibrationRate = [double]$selectedCalibration.completion_rate
@@ -375,6 +422,9 @@ try {
                 "--mlflow-tracking-uri", $trackingUri, "--controller-qualification", $qualification,
                 "--dashboard", "8765"
             )
+            if ($trainingTailWindow.Count -gt 1) {
+                $arguments += @("--trace-prefix-tail-window", $trainingTailWindowCsv)
+            }
             $latest = Join-Path $directory "latest.pt"
             if (Test-Path -LiteralPath $latest -PathType Leaf) {
                 $initializeIndex = [array]::IndexOf($arguments, "--initialize-from")
@@ -387,73 +437,121 @@ try {
             }
         }
         $evaluationReports = [System.Collections.Generic.List[string]]::new()
-        foreach ($mode in $evaluationModes) {
-            $evaluationDirectory = Join-Path $root "evaluation\$trial\$($mode.name)"
-            [System.IO.Directory]::CreateDirectory($evaluationDirectory) | Out-Null
-            $report = Join-Path $evaluationDirectory "report.json"
-            if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
-                Write-PilotStatus "evaluating" "$trial-$($mode.name)"
-                & $python -m autodancer.training.baseline `
-                    --game-dir $GameDir `
-                    --mod-dir $mod `
-                    --checkpoint $final `
-                    --output $report `
-                    --num-instances 8 `
-                    --seeds $gameSeedCsv `
-                    --max-steps $LearnerTurnCap `
-                    --policy-mode $mode.mode `
-                    --policy-seed $mode.policy_seed `
-                    --trained-only `
-                    --device cuda `
-                    --reward-config $reward `
-                    --policy-feedback-reward-config $reward `
-                    --reward-lineage-version DeathMetalPotentialV5 `
-                    --action-contract map-navigation-prior-v1 `
-                    --curriculum-start-level 4 `
-                    --curriculum-target-level 5 `
-                    --curriculum-profile player20 `
-                    --trace-prefix-bank $bank `
-                    --trace-prefix-qualification $traceQualification `
-                    --trace-prefix-tail-actions $tailActions `
-                    --trace-prefix-recurrent-state warm `
-                    --affinity none `
-                    --steam-presence-worker $SteamPresenceWorker `
-                    --experiment-id $ExperimentId `
-                    --experiment-arm $ExperimentArm `
-                    --trial-id "$trial-$($mode.name)" `
-                    --mlflow-tracking-uri $trackingUri `
-                    --controller-qualification $qualification `
-                    --dashboard 8765
-                if ($LASTEXITCODE -ne 0) { throw "Trace-tail evaluation failed for $trial/$($mode.name)" }
+        $evaluationTails = if ($RetainedTailActions -gt 0) {
+            @($RetainedTailActions, $tailActions)
+        } else {
+            @($tailActions)
+        }
+        foreach ($evaluationTail in $evaluationTails) {
+            foreach ($mode in $evaluationModes) {
+                $evaluationDirectory = if ($evaluationTails.Count -gt 1) {
+                    Join-Path $root "evaluation\$trial\tail-$evaluationTail\$($mode.name)"
+                } else {
+                    Join-Path $root "evaluation\$trial\$($mode.name)"
+                }
+                [System.IO.Directory]::CreateDirectory($evaluationDirectory) | Out-Null
+                $report = Join-Path $evaluationDirectory "report.json"
+                if (-not (Test-Path -LiteralPath $report -PathType Leaf)) {
+                    Write-PilotStatus "evaluating" "$trial-tail-$evaluationTail-$($mode.name)"
+                    & $python -m autodancer.training.baseline `
+                        --game-dir $GameDir `
+                        --mod-dir $mod `
+                        --checkpoint $final `
+                        --output $report `
+                        --num-instances 8 `
+                        --seeds $gameSeedCsv `
+                        --max-steps $LearnerTurnCap `
+                        --policy-mode $mode.mode `
+                        --policy-seed $mode.policy_seed `
+                        --trained-only `
+                        --device cuda `
+                        --reward-config $reward `
+                        --policy-feedback-reward-config $reward `
+                        --reward-lineage-version DeathMetalPotentialV5 `
+                        --action-contract map-navigation-prior-v1 `
+                        --curriculum-start-level 4 `
+                        --curriculum-target-level 5 `
+                        --curriculum-profile player20 `
+                        --trace-prefix-bank $bank `
+                        --trace-prefix-qualification $traceQualification `
+                        --trace-prefix-tail-actions $evaluationTail `
+                        --trace-prefix-recurrent-state warm `
+                        --affinity none `
+                        --steam-presence-worker $SteamPresenceWorker `
+                        --experiment-id $ExperimentId `
+                        --experiment-arm $ExperimentArm `
+                        --trial-id "$trial-tail-$evaluationTail-$($mode.name)" `
+                        --mlflow-tracking-uri $trackingUri `
+                        --controller-qualification $qualification `
+                        --dashboard 8765
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Trace-tail evaluation failed for $trial/tail-$evaluationTail/$($mode.name)"
+                    }
+                }
+                $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+                if (
+                    -not [bool]$payload.controller_valid -or
+                    [System.IO.Path]::GetFullPath([string]$payload.checkpoint) -ne [System.IO.Path]::GetFullPath($final) -or
+                    (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
+                    [string]$payload.policy_mode -ne [string]$mode.mode -or
+                    [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
+                    [int]$payload.trace_prefix.tail_actions -ne $evaluationTail -or
+                    [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
+                ) {
+                    throw "Trace-tail evaluation report identity mismatch: $report"
+                }
+                $evaluationReports.Add($report)
             }
-            $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-            if (
-                -not [bool]$payload.controller_valid -or
-                [System.IO.Path]::GetFullPath([string]$payload.checkpoint) -ne [System.IO.Path]::GetFullPath($final) -or
-                (@($payload.seeds | ForEach-Object { [int]$_ }) -join ",") -ne $gameSeedCsv -or
-                [string]$payload.policy_mode -ne [string]$mode.mode -or
-                [int]$payload.policy_seed -ne [int]$mode.policy_seed -or
-                [string]$payload.trace_prefix.bank_sha256 -ne [string]$bankPayload.bank_sha256
-            ) {
-                throw "Trace-tail evaluation report identity mismatch: $report"
-            }
-            $evaluationReports.Add($report)
         }
         $summaries.Add((Read-TrialSummary $directory $trainingSeed $evaluationReports.ToArray()))
     }
 
-    $allEpisodes = ($summaries | Measure-Object episodes -Sum).Sum
-    $allCompletions = ($summaries | Measure-Object completions -Sum).Sum
-    $distinctSuccesses = @($summaries | ForEach-Object { $_.distinct_completion_seeds } | Sort-Object -Unique)
-    $reproducibleTrials = @($summaries | Where-Object { $_.completion_rate -ge 0.05 }).Count
+    $hardestResults = @(
+        $summaries | ForEach-Object {
+            $_.boundary_results | Where-Object { [int]$_.tail_actions -eq $tailActions }
+        }
+    )
+    if ($hardestResults.Count -ne $summaries.Count) {
+        throw "Every trial must contain the selected expanded-tail evaluation"
+    }
+    $allEpisodes = ($hardestResults | Measure-Object episodes -Sum).Sum
+    $allCompletions = ($hardestResults | Measure-Object completions -Sum).Sum
+    $distinctSuccesses = @(
+        $hardestResults | ForEach-Object { $_.distinct_completion_seeds } | Sort-Object -Unique
+    )
+    $reproducibleTrials = @(
+        $hardestResults | Where-Object { $_.completion_rate -ge 0.05 }
+    ).Count
+    $retainedResults = if ($RetainedTailActions -gt 0) {
+        @(
+            $summaries | ForEach-Object {
+                $_.boundary_results | Where-Object {
+                    [int]$_.tail_actions -eq $RetainedTailActions
+                }
+            }
+        )
+    } else {
+        $hardestResults
+    }
+    if ($retainedResults.Count -ne $summaries.Count) {
+        throw "Every trial must contain the retained-tail evaluation"
+    }
+    $retainedEpisodes = ($retainedResults | Measure-Object episodes -Sum).Sum
+    $retainedCompletions = ($retainedResults | Measure-Object completions -Sum).Sum
+    $retainedRate = $retainedCompletions / [math]::Max($retainedEpisodes, 1)
     $passed = (
         $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10 -and
         $reproducibleTrials -ge 2 -and
         $distinctSuccesses.Count -ge 3 -and
-        @($summaries | Where-Object { $_.completions -le 0 }).Count -eq 0 -and
+        @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0 -and
+        $retainedRate -ge 0.80 -and
         @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
     )
-    $selected = $summaries | Sort-Object @{Expression={@($_.distinct_completion_seeds).Count};Descending=$true}, @{Expression={$_.completion_rate};Descending=$true}, @{Expression={-$_.mean_completion_turns};Descending=$true} | Select-Object -First 1
+    $selected = $summaries | Sort-Object @{
+        Expression={
+            ($_.boundary_results | Where-Object tail_actions -eq $tailActions).completion_rate
+        }; Descending=$true
+    }, @{Expression={-$_.mean_completion_turns};Descending=$true} | Select-Object -First 1
     $comparison = [ordered]@{
         schema_version = 1
         experiment_id = $ExperimentId
@@ -461,6 +559,8 @@ try {
         bank = $bank
         qualification = $traceQualification
         tail_actions = $tailActions
+        training_tail_window = $trainingTailWindow
+        retained_tail_actions = if ($RetainedTailActions -gt 0) { $RetainedTailActions } else { $null }
         learner_turn_cap = $LearnerTurnCap
         steam_presence_worker = $SteamPresenceWorker
         qualified_training_seeds = $gameSeeds
@@ -480,13 +580,21 @@ try {
             completion_rate = $allCompletions / [math]::Max($allEpisodes, 1)
             distinct_completion_seeds = $distinctSuccesses
             reproducible_trials = $reproducibleTrials
+            evaluated_tail_actions = $tailActions
+        }
+        retained_boundary = [ordered]@{
+            tail_actions = if ($RetainedTailActions -gt 0) { $RetainedTailActions } else { $tailActions }
+            episodes = $retainedEpisodes
+            completions = $retainedCompletions
+            completion_rate = $retainedRate
         }
         gate = [ordered]@{
             passed = $passed
             completion_rate_at_least_10_percent = $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10
             at_least_two_reproducible_trials = $reproducibleTrials -ge 2
             at_least_three_distinct_completion_seeds = $distinctSuccesses.Count -ge 3
-            every_trial_completed = @($summaries | Where-Object { $_.completions -le 0 }).Count -eq 0
+            every_trial_completed = @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0
+            retained_boundary_at_least_80_percent = $retainedRate -ge 0.80
             controller_and_losses_valid = @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
         }
         selected_trial = if ($passed) { $selected.trial } else { $null }

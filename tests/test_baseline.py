@@ -156,6 +156,28 @@ def test_trace_prefix_evaluation_requires_exact_checkpoint_identity() -> None:
         validate_checkpoint_trace_prefix(metadata, prefix)  # type: ignore[arg-type]
 
 
+def test_trace_window_checkpoint_can_evaluate_any_declared_boundary() -> None:
+    class Prefix:
+        def __init__(self, tail_actions: int) -> None:
+            self.tail_actions = tail_actions
+
+        def specification(self):
+            return {
+                "bank_sha256": "a" * 64,
+                "qualification_sha256": "b" * 64,
+                "action_contract": "current",
+                "tail_actions": self.tail_actions,
+                "tail_action_window": [28, 32, 36],
+                "recurrent_state_mode": "warm",
+            }
+
+    metadata = {"trace_prefix": Prefix(36).specification()}
+    validate_checkpoint_trace_prefix(metadata, Prefix(28))  # type: ignore[arg-type]
+    validate_checkpoint_trace_prefix(metadata, Prefix(32))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="tail_actions"):
+        validate_checkpoint_trace_prefix(metadata, Prefix(40))  # type: ignore[arg-type]
+
+
 def test_trace_prefix_source_reference_may_calibrate_a_new_tail_boundary() -> None:
     class Prefix:
         def specification(self):

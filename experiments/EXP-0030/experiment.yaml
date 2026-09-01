@@ -1,0 +1,66 @@
+schema_version: 1
+id: EXP-0030
+title: Retained live Death Metal handoff window
+question: Can a balanced window retain the accepted tail-32 boss skill while moving the learner to the next earlier live competence boundary?
+hypothesis: EXP-0029 made tail 32 reproducibly solvable, but training only one exact handoff risks state memorization and forgetting during expansion. Uniform replay of tail 32 and every four-action boundary through the next measured 10--90 percent frontier should expand control earlier in the fight without losing the mastered rung.
+changed_blocks: [training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: player-health-only-boss-curriculum-v4
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v2-warm-boundary-state
+  training-level-distribution: qualified-trace-window-v8
+  data-selection: disclosed-qualified-training-traces-v1
+  runtime: async-native-pipe-v1
+  evaluation: conditional-trace-window-v17
+invariants:
+  - source calibration evaluates tails 36 through 80 in four-action increments plus tail 81 and selects the shortest boundary inside the closed 10--90 percent completion band
+  - calibration uses deterministic execution and fixed stochastic policy seeds 98001 through 98004 on all three qualified training seeds
+  - training samples a balanced window containing retained tail 32 and every tested four-action boundary through the selected frontier
+  - handoff selection is deterministic by worker slot and checkpointed episode count, independent of actor timing
+  - every guide action is acknowledged in the live game, excluded from PPO, and used to warm the learner recurrent state and stable reward feedback
+  - frozen evaluation separately scores retained tail 32 and the selected harder tail under deterministic execution and stochastic seeds 98001 and 98002
+  - all 930xx held-out seeds remain excluded from calibration, training, and trace acquisition
+  - assisted completion never counts as normal-start Zone 2 evidence
+  - exactly eight workers, finite losses, zero controller restarts, and current qualification hashes are required
+arms:
+  - id: a8-retained-trace-window
+    description: Three A8 PPO replications initialize from the accepted EXP-0029 checkpoint and train uniformly over the retained-to-frontier live handoff window.
+source:
+  checkpoint: runs/expanded-death-metal-trace-tail/training/seed-97001/final.pt
+  checkpoint_sha256: 1d7a33ab3b8c827f6b955dd9cc4fd11c12331fd77a3e4978d57c4b5dc985d567
+  parent_experiment: EXP-0029
+  parent_evidence: runs/expanded-death-metal-trace-tail/comparison.json
+  trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  qualification: runs/qualified-death-metal-trace-search/qualification.json
+calibration:
+  candidate_tail_actions: [36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 81]
+  retained_tail_actions: 32
+  policy_modes: [deterministic, stochastic-98001, stochastic-98002, stochastic-98003, stochastic-98004]
+  game_seeds: [92008, 92096, 92116]
+  competence_band: [0.10, 0.90]
+  selection: shortest candidate inside the closed competence band
+training:
+  optimizer_seeds: [99001, 99002, 99003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  transition_budget_per_trial: 92160
+  rollout_length_per_worker: 128
+  recurrent_chunk_length: 32
+  initialization: actor and representation from EXP-0029; critic and optimizer reset
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  reward_config: configs/reward-death-metal-potential-v5.json
+evaluation:
+  game_seeds: [92008, 92096, 92116]
+  modes: [deterministic, stochastic-98001, stochastic-98002]
+  learner_turn_cap: 128
+  boundaries: [retained-tail-32, selected-expanded-tail]
+  primary_outcome: conditional live Zone 2 entry at the selected expanded boundary
+  retention_outcome: conditional live Zone 2 entry at tail 32
+decision_rule: Accept the expansion only if the selected harder boundary aggregates at least 10 percent completion, at least two trials reach 5 percent, every trial completes at least once, all three trace seeds complete, retained tail-32 completion remains at least 80 percent, losses are finite, and training plus evaluation have zero controller restarts. A pass authorizes another retained-window expansion; reaching the maximum legal tail authorizes a separately registered prefix-free full-boss test. No assisted outcome is normal-start promotion.

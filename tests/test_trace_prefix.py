@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from autodancer.training.demonstrations import build_demonstration_bank, write_demonstration_bank
-from autodancer.training.trace_prefix import QualifiedTracePrefixBank
+from autodancer.training.trace_prefix import (
+    QualifiedTracePrefixBank,
+    parse_trace_tail_window,
+)
 
 
 def episode(seed: int, actions: list[int], *, policy_version: int) -> dict[str, object]:
@@ -77,6 +80,38 @@ def test_loads_only_freshly_qualified_prefixes_and_binds_identity(tmp_path: Path
     assert prefix.trace_for_seed(7).trace_id == trace["trace_id"]
     assert prefix.specification()["prefix_actions"] == {"7": 2}
     assert len(prefix.qualification_sha256) == 64
+
+
+def test_balanced_trace_window_is_deterministic_and_identified(tmp_path: Path) -> None:
+    bank_path, report_path, _ = fixtures(tmp_path)
+    prefix = QualifiedTracePrefixBank.load(
+        bank_path,
+        report_path,
+        tail_actions=3,
+        tail_action_window=(1, 2, 3),
+    )
+    assert [prefix.tail_for_episode(0, episode) for episode in range(6)] == [
+        1,
+        2,
+        3,
+        1,
+        2,
+        3,
+    ]
+    assert prefix.tail_for_episode(1, 0) == 2
+    specification = prefix.specification()
+    assert specification["schema_version"] == 2
+    assert specification["kind"] == "qualified-live-trace-window-v2"
+    assert specification["tail_action_window"] == [1, 2, 3]
+    assert specification["prefix_actions_by_tail"] == {"7": {"1": 3, "2": 2, "3": 1}}
+
+
+def test_trace_window_parser_rejects_invalid_values() -> None:
+    assert parse_trace_tail_window("3, 1,2") == (1, 2, 3)
+    with pytest.raises(ValueError, match="duplicates"):
+        parse_trace_tail_window("1,1")
+    with pytest.raises(ValueError, match="positive"):
+        parse_trace_tail_window("0,1")
 
 
 def test_rejects_unqualified_or_empty_prefix(tmp_path: Path) -> None:

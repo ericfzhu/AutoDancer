@@ -879,7 +879,9 @@ class VersionedAsyncRolloutCollector:
         previous_action = START_ACTION
         learner_previous_reward = 0.0
         learner_feedback_tracker = self._new_policy_feedback_tracker(observation, info)
-        prefix_actions = trace.actions[: -bank.tail_actions]
+        episode_index = self.seed_schedule.draw_count(index) - 1
+        tail_actions = bank.tail_for_episode(index, episode_index)
+        prefix_actions = trace.actions[:-tail_actions]
 
         for turn, action in enumerate(prefix_actions, start=1):
             if not bool(observation["action_mask"][action]):
@@ -947,7 +949,8 @@ class VersionedAsyncRolloutCollector:
             "trace_id": trace.trace_id,
             "seed": trace.seed,
             "guide_turns": len(prefix_actions),
-            "learner_tail_actions": bank.tail_actions,
+            "learner_tail_actions": tail_actions,
+            "trace_window_episode_index": episode_index,
             "handoff_sequence": int(info.get("sequence", -1)),
             "handoff_run_id": str(info.get("run_id", "")),
             "handoff_observation_digest": trace.turn_digests[len(prefix_actions)],
