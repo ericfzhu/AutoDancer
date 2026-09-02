@@ -2463,3 +2463,33 @@ failure is a missing start-distribution bridge, which can be tested with the
 existing flat policy. Explicit floor/boss options become justified only if a
 correct forward curriculum acquires its component boundaries but still fails to
 compose them.
+
+## PPO clipping currently has no active KL guard
+
+The trainer implements a pre-optimizer-step `target_kl` check, but every retained
+trace-window experiment has left it unset. The nominal PPO clip range of `0.2`
+does not impose a hard bound on the policy update; it only clips the surrogate
+objective for sampled action ratios. The original
+[PPO paper](https://arxiv.org/abs/1707.06347) presents clipping and an adaptive
+KL-penalty variant as practical ways to limit destructive policy movement, while
+the implementation study
+[What Matters in On-Policy Reinforcement Learning?](https://arxiv.org/abs/2006.05990)
+shows that such apparently secondary choices can materially change results.
+
+The live metrics now make this risk concrete. First-update approximate KL across
+the nine completed EXP-0030--0032 trials ranged from `0.025` to `0.239`. The
+selected EXP-0031 seed-100002 checkpoint began at `0.239` and later retained all
+tested boundaries, so a large first update is not by itself a demonstrated
+failure cause. In the active EXP-0033 seed-102001 trial, KL reached `0.141` on
+the first adapter-only update and `0.197` on the first jointly unfrozen update;
+batch curriculum completion nevertheless remained `87.5%` at the latter point.
+This is therefore an optimization-variance risk, not grounds to invalidate the
+predeclared run retrospectively.
+
+Frozen per-boundary evaluation remains the authoritative protection against
+forgetting. If EXP-0033 fails retention, the next causal experiment should keep
+its source checkpoint, trace window, seeds, rewards, and architecture fixed and
+compare the current unguarded optimizer with either a predeclared KL threshold
+or a lower actor-specific learning rate. It must measure skipped minibatches,
+policy KL, acquisition, and every retained boundary. Changing the optimizer at
+the same time as advancing the curriculum would make the result uninterpretable.
