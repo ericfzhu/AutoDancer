@@ -19,7 +19,7 @@ from torch import Tensor
 
 from autodancer.adaptive_curriculum import load_adaptive_curriculum_config
 from autodancer.constants import ACTION_COUNT
-from autodancer.curriculum import fixed_reset_spec, load_curriculum_mixture
+from autodancer.curriculum import EpisodeResetSpec, fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
@@ -52,7 +52,10 @@ from autodancer.training.natural_prefix import (
     validate_guide_action_contract,
 )
 from autodancer.training.ppo import PPOConfig, RecurrentPPO, RolloutBatch
-from autodancer.training.seed_schedule import parse_training_seed_pool
+from autodancer.training.seed_schedule import (
+    load_reset_conditioned_seed_pools,
+    parse_training_seed_pool,
+)
 from autodancer.training.trace_prefix import (
     TRACE_PREFIX_RECURRENT_MODES,
     QualifiedTracePrefixBank,
@@ -505,6 +508,11 @@ def train(arguments: argparse.Namespace) -> None:
         if arguments.training_seed_pool is None
         else parse_training_seed_pool(arguments.training_seed_pool)
     )
+    training_seed_pools = (
+        None
+        if arguments.training_seed_pools is None
+        else load_reset_conditioned_seed_pools(arguments.training_seed_pools)
+    )
     trace_prefix = (
         None
         if getattr(arguments, "trace_prefix_bank", None) is None
@@ -527,9 +535,13 @@ def train(arguments: argparse.Namespace) -> None:
                 "trace-prefix action contract mismatch: "
                 f"bank={trace_prefix.action_contract!r}, run={arguments.action_contract!r}"
             )
-        if not training_seed_pool:
-            raise ValueError("trace-prefix training requires an explicit finite seed pool")
-        missing_trace_seeds = sorted(set(training_seed_pool) - set(trace_prefix.seeds))
+        if not training_seed_pool and training_seed_pools is None:
+            raise ValueError("trace-prefix training requires explicit finite seed pools")
+        missing_trace_seeds = (
+            sorted(set(training_seed_pool) - set(trace_prefix.seeds))
+            if training_seed_pool
+            else []
+        )
         if missing_trace_seeds:
             raise ValueError(
                 f"training seeds have no qualified trace prefix: {missing_trace_seeds}"
@@ -583,6 +595,30 @@ def train(arguments: argparse.Namespace) -> None:
             arguments.curriculum_profile,
         )
     )
+    if training_seed_pools is not None:
+        reset_ids = {entry.spec.id for entry in curriculum_entries}
+        if set(training_seed_pools) != reset_ids:
+            raise ValueError(
+                "reset-conditioned training seed pool ids must exactly match curriculum ids"
+            )
+        if trace_prefix is not None:
+            trace_seeds_by_reset: dict[EpisodeResetSpec, set[int]] = {}
+            for trace in trace_prefix.traces:
+                trace_seeds_by_reset.setdefault(trace.reset_spec, set()).add(trace.seed)
+            matching_entries = [
+                entry for entry in curriculum_entries if entry.spec in trace_seeds_by_reset
+            ]
+            if not matching_entries:
+                raise ValueError("curriculum mixture has no reset eligible for trace replay")
+            for entry in matching_entries:
+                missing = sorted(
+                    set(training_seed_pools[entry.spec.id])
+                    - trace_seeds_by_reset[entry.spec]
+                )
+                if missing:
+                    raise ValueError(
+                        f"trace-enabled reset {entry.spec.id!r} has unqualified seeds: {missing}"
+                    )
     adaptive_curriculum_config = (
         None
         if getattr(arguments, "adaptive_curriculum_config", None) is None
@@ -604,6 +640,13 @@ def train(arguments: argparse.Namespace) -> None:
     )
     seed_checkpoint_metadata = (
         {
+            "training_seed_schedule": "reset-conditioned-uniform-pools-v1",
+            "training_seed_pools": {
+                key: list(value) for key, value in training_seed_pools.items()
+            },
+        }
+        if training_seed_pools is not None
+        else {
             "training_seed_schedule": "uniform-pool-v1",
             "training_seed_pool": list(training_seed_pool),
         }
@@ -700,9 +743,18 @@ def train(arguments: argparse.Namespace) -> None:
                 ),
                 "action_contract": arguments.action_contract,
                 "training_seed_schedule": (
-                    "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
+                    "reset-conditioned-uniform-pools-v1"
+                    if training_seed_pools is not None
+                    else "uniform-pool-v1"
+                    if training_seed_pool
+                    else "unbounded-random-v1"
                 ),
                 "training_seed_pool": list(training_seed_pool),
+                "training_seed_pools": (
+                    None
+                    if training_seed_pools is None
+                    else {key: list(value) for key, value in training_seed_pools.items()}
+                ),
                 "training_level_distribution_version": training_distribution_version,
                 "curriculum_start_level": arguments.curriculum_start_level,
                 "curriculum_target_level": arguments.curriculum_target_level,
@@ -907,6 +959,7 @@ def train(arguments: argparse.Namespace) -> None:
                     action_contract=arguments.action_contract,
                     initial_policy_version=algorithm.updates,
                     training_seed_pool=training_seed_pool,
+                    training_seed_pools=training_seed_pools,
                     seed_schedule_state=resume_metrics.get("training_seed_schedule_state"),
                     curriculum_entries=curriculum_entries,
                     curriculum_schedule_state=resume_metrics.get("curriculum_schedule_state"),
@@ -1215,6 +1268,11 @@ def main() -> int:
         help="finite `start-end` or comma-separated game-seed pool sampled on resets",
     )
     parser.add_argument(
+        "--training-seed-pools",
+        type=Path,
+        help="schema-1 finite seed pools keyed by curriculum reset id",
+    )
+    parser.add_argument(
         "--curriculum-start-level",
         type=int,
         default=1,
@@ -1402,6 +1460,10 @@ def main() -> int:
         or arguments.curriculum_profile != "normal"
     ):
         parser.error("--curriculum-mixture is mutually exclusive with fixed curriculum arguments")
+    if arguments.training_seed_pool is not None and arguments.training_seed_pools is not None:
+        parser.error("--training-seed-pool and --training-seed-pools are mutually exclusive")
+    if arguments.training_seed_pools is not None and arguments.curriculum_mixture is None:
+        parser.error("--training-seed-pools requires --curriculum-mixture")
     if arguments.adaptive_curriculum_config is not None and arguments.curriculum_mixture is None:
         parser.error("--adaptive-curriculum-config requires --curriculum-mixture")
     if arguments.natural_prefix_guide is not None:
@@ -1422,10 +1484,12 @@ def main() -> int:
     if arguments.trace_prefix_bank is not None:
         if arguments.natural_prefix_guide is not None:
             parser.error("natural and trace prefixes are mutually exclusive")
-        if arguments.curriculum_mixture is not None:
-            parser.error("trace-prefix training currently requires one fixed curriculum reset")
-        if arguments.training_seed_pool is None:
-            parser.error("trace-prefix training requires --training-seed-pool")
+        if arguments.curriculum_mixture is not None and arguments.training_seed_pools is None:
+            parser.error(
+                "trace-prefix curriculum mixtures require --training-seed-pools"
+            )
+        if arguments.training_seed_pool is None and arguments.training_seed_pools is None:
+            parser.error("trace-prefix training requires explicit finite seed pools")
         if arguments.trace_prefix_tail_actions <= 0:
             parser.error("--trace-prefix-tail-actions must be positive")
         if arguments.trace_prefix_tail_window is not None:

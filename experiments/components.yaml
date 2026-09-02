@@ -108,6 +108,7 @@ blocks:
       qualified-trace-window-v9: Retain every accepted handoff in the complete tail-32-through-tail-36 window while calibrating and adding every four-action boundary through the next intermediate-competence frontier; all retained starts remain independently evaluable.
       qualified-trace-window-v10: Retain the complete tail-32-through-tail-40 window, expand through the next measured frontier, and require at least two independent optimizer trials to preserve every retained boundary before selecting a source checkpoint.
       qualified-trace-window-v11: Retain and independently score every accepted or saturated boundary in the complete tail-32-through-tail-48 training window, including intermediate tail 44, then expand to the next measured frontier while requiring at least two independent optimizer trials to preserve the whole window.
+      reverse-forward-composition-v12: Mix trace-qualified downstream replay with prefix-free upstream resets using independent finite seed pools per reset specification; trace replay is eligible only for an exact qualified reset-and-seed pair, and every curriculum and seed RNG stream resumes exactly.
   data-selection:
     versions:
       disclosed-qualified-training-traces-v1: Successful trajectories are searched only on a predeclared training seed bank, hash-bound to their reports and action contract, replay-qualified on fresh live launches, and required to cover at least three distinct seeds; held-out seeds never enter the bank.

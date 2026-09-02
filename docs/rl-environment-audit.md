@@ -2464,6 +2464,25 @@ existing flat policy. Explicit floor/boss options become justified only if a
 correct forward curriculum acquires its component boundaries but still fails to
 compose them.
 
+The required controller support is now implemented as the opt-in
+`reverse-forward-composition-v12` training distribution. A curriculum mixture
+may declare both trace-qualified and prefix-free resets, while
+`--training-seed-pools` supplies a schema-1 JSON object whose pool IDs exactly
+match the curriculum reset IDs. Each reset has its own deterministic finite seed
+stream; its state and draw counts are checkpointed independently. Trace replay
+is applied only when both the selected reset specification and seed match a
+qualified trace. A seed reused by a prefix-free reset never inherits trace
+eligibility. Infrastructure recovery repeats the same reset and seed, while an
+ordinary episode boundary advances both schedules. The previous global seed-pool
+and trace-only paths remain unchanged.
+
+This mechanism deliberately does not choose the forward-stage weights or seed
+banks. Those remain experiment variables and must be registered before use. In
+particular, enabling the mechanism during the active reverse-acquisition run
+would confound its predeclared comparison; the first forward-composition
+experiment begins only after a reproducible source clears the full prefix-free
+boss boundary.
+
 ## PPO clipping currently has no active KL guard
 
 The trainer implements a pre-optimizer-step `target_kl` check, but every retained

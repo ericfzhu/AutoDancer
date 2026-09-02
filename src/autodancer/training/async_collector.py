@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from collections.abc import Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,7 +39,10 @@ from autodancer.training.natural_prefix import (
     natural_prefix_policy_sample,
 )
 from autodancer.training.ppo import RolloutBatch
-from autodancer.training.seed_schedule import TrainingSeedSchedule
+from autodancer.training.seed_schedule import (
+    ResetConditionedTrainingSeedSchedule,
+    TrainingSeedSchedule,
+)
 from autodancer.training.trace_prefix import (
     QualifiedTracePrefixBank,
     TracePrefixError,
@@ -237,6 +241,7 @@ class VersionedAsyncRolloutCollector:
         action_contract: str = "current",
         initial_policy_version: int = 0,
         training_seed_pool: tuple[int, ...] = (),
+        training_seed_pools: Mapping[str, tuple[int, ...]] | None = None,
         seed_schedule_state: dict[str, Any] | None = None,
         curriculum_entries: tuple[WeightedResetSpec, ...] = (),
         curriculum_schedule_state: dict[str, Any] | None = None,
@@ -270,8 +275,16 @@ class VersionedAsyncRolloutCollector:
         self.action_contract = action_contract
         self.contract_memory = ActionContractMemory(action_contract, environment.num_envs)
         self.base_seed = int(seed)
-        self.seed_schedule = TrainingSeedSchedule(
-            int(seed), environment.num_envs, tuple(training_seed_pool)
+        if training_seed_pool and training_seed_pools:
+            raise ValueError("global and reset-conditioned training seed pools are exclusive")
+        self.seed_schedule = (
+            TrainingSeedSchedule(int(seed), environment.num_envs, tuple(training_seed_pool))
+            if not training_seed_pools
+            else ResetConditionedTrainingSeedSchedule(
+                int(seed),
+                environment.num_envs,
+                {key: tuple(value) for key, value in training_seed_pools.items()},
+            )
         )
         if seed_schedule_state is not None:
             self.seed_schedule.load_state_dict(seed_schedule_state)
@@ -293,8 +306,24 @@ class VersionedAsyncRolloutCollector:
             [item[0] for item in initial_resets],
             options=[item[1].reset_options() for item in initial_resets],
         )
-        if not self._prefix_enabled:
+        initial_prefix_pending = [
+            self._prefix_pending(
+                initial_resets[index][1],
+                int(infos[index].get("seed", initial_resets[index][0])),
+            )
+            for index in range(environment.num_envs)
+        ]
+        if not any(initial_prefix_pending):
             observations = self.contract_memory.reset_batch(observations)
+        elif not all(initial_prefix_pending):
+            for index, pending in enumerate(initial_prefix_pending):
+                if pending:
+                    continue
+                reset_observation = self.contract_memory.reset_slot(
+                    index, {key: value[index].copy() for key, value in observations.items()}
+                )
+                for key, value in reset_observation.items():
+                    observations[key][index] = value
         initial_hidden = model.initial_state(environment.num_envs, device=device)
         self.states = [
             ActorState(
@@ -302,7 +331,7 @@ class VersionedAsyncRolloutCollector:
                 infos[index],
                 initial_hidden[index : index + 1],
                 initial_resets[index][1],
-                prefix_pending=self._prefix_enabled,
+                prefix_pending=initial_prefix_pending[index],
             )
             for index in range(environment.num_envs)
         ]
@@ -337,6 +366,26 @@ class VersionedAsyncRolloutCollector:
     def _prefix_enabled(self) -> bool:
         return self.natural_prefix is not None or self.trace_prefix is not None
 
+    def _prefix_pending(self, reset_spec: EpisodeResetSpec, seed: int) -> bool:
+        if self.natural_prefix is not None:
+            return True
+        bank = self.trace_prefix
+        if bank is None:
+            return False
+        matching_traces = [
+            trace
+            for trace in bank.traces
+            if trace.reset_spec.as_dict() == reset_spec.as_dict()
+        ]
+        if not matching_traces:
+            return False
+        if not any(trace.seed == int(seed) for trace in matching_traces):
+            raise ValueError(
+                f"trace-enabled curriculum reset {reset_spec.id!r} selected seed {seed} "
+                "without a qualified trace"
+            )
+        return True
+
     def _publish_telemetry(
         self,
         index: int,
@@ -348,11 +397,14 @@ class VersionedAsyncRolloutCollector:
         if self.telemetry_callback is not None:
             self.telemetry_callback(index, observation, info, action, reward)
 
-    def _seed(self, index: int) -> int:
+    def _seed(self, index: int, reset_spec: EpisodeResetSpec) -> int:
+        if isinstance(self.seed_schedule, ResetConditionedTrainingSeedSchedule):
+            return self.seed_schedule.next(index, reset_spec.id)
         return self.seed_schedule.next(index)
 
     def _next_reset(self, index: int) -> tuple[int, EpisodeResetSpec]:
-        return self._seed(index), self.curriculum_schedule.next(index)
+        reset_spec = self.curriculum_schedule.next(index)
+        return self._seed(index, reset_spec), reset_spec
 
     def _new_policy_feedback_tracker(
         self,
@@ -550,14 +602,17 @@ class VersionedAsyncRolloutCollector:
                     options=state.reset_spec.reset_options(),
                     failure=failure,
                 )
-                if not self._prefix_enabled:
+                prefix_pending = self._prefix_pending(
+                    state.reset_spec, int(info.get("seed", state.info.get("seed", 0)))
+                )
+                if not prefix_pending:
                     observation = self.contract_memory.reset_slot(index, observation)
                 self.states[index] = ActorState(
                     observation,
                     info,
                     self.model.initial_state(1, device=self.device),
                     state.reset_spec,
-                    prefix_pending=self._prefix_enabled,
+                    prefix_pending=prefix_pending,
                 )
                 self._reset_policy_feedback(index, observation, info)
                 self._publish_telemetry(index, observation, info, None, None)
@@ -652,12 +707,19 @@ class VersionedAsyncRolloutCollector:
                         seed=next_seed,
                         options=next_spec.reset_options(),
                     )
+                    prefix_pending = self._prefix_pending(
+                        next_spec, int(next_info.get("seed", next_seed))
+                    )
+                    if not prefix_pending:
+                        next_observation = self.contract_memory.reset_slot(
+                            index, next_observation
+                        )
                     state = ActorState(
                         next_observation,
                         next_info,
                         self.model.initial_state(1, device=self.device),
                         next_spec,
-                        prefix_pending=True,
+                        prefix_pending=prefix_pending,
                     )
                     self._publish_telemetry(index, next_observation, next_info, None, None)
             for key, value in state.observation.items():
@@ -795,14 +857,17 @@ class VersionedAsyncRolloutCollector:
                     seed=next_seed,
                     options=next_spec.reset_options(),
                 )
-                if not self._prefix_enabled:
+                prefix_pending = self._prefix_pending(
+                    next_spec, int(next_info.get("seed", next_seed))
+                )
+                if not prefix_pending:
                     next_observation = self.contract_memory.reset_slot(index, next_observation)
                 state = ActorState(
                     next_observation,
                     next_info,
                     self.model.initial_state(1, device=self.device),
                     next_spec,
-                    prefix_pending=self._prefix_enabled,
+                    prefix_pending=prefix_pending,
                 )
                 self._reset_policy_feedback(index, next_observation, next_info)
             else:

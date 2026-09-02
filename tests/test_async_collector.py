@@ -26,7 +26,7 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
-from autodancer.curriculum import EpisodeResetSpec, WeightedResetSpec
+from autodancer.curriculum import EpisodeCurriculumSchedule, EpisodeResetSpec, WeightedResetSpec
 from autodancer.rewards import RewardConfig
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.baseline import _evaluate_model_async
@@ -524,6 +524,59 @@ def test_async_collector_balances_trace_window_by_slot() -> None:
     ] == 2
     assert environment.environments["worker-0000"].actions[:2] == [0, 1]
     assert environment.environments["worker-0001"].actions[:1] == [0]
+
+
+def test_async_collector_applies_trace_prefix_only_to_matching_reset() -> None:
+    environment = PrefixEnvironment()
+    for worker in environment.environments.values():
+        worker.slot = 0
+    entries = (
+        WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),
+        WeightedResetSpec(EpisodeResetSpec("normal", 1, None, "normal"), 1.0),
+    )
+    seed = next(
+        candidate
+        for candidate in range(1000)
+        if {
+            EpisodeCurriculumSchedule(candidate, 2, entries).next(slot).id
+            for slot in range(2)
+        }
+        == {"fixed", "normal"}
+    )
+    model = RecurrentActorCritic(
+        ModelConfig(
+            cell_size=16,
+            spatial_size=32,
+            hidden_size=16,
+            entity_limit=8,
+            attention_layers=1,
+            attention_heads=4,
+        )
+    )
+    collector = VersionedAsyncRolloutCollector(
+        environment,
+        model,
+        device=torch.device("cpu"),
+        seed=seed,
+        # The same seed is intentionally legal for both reset kinds.  Trace
+        # eligibility is the (reset, seed) pair, never the seed alone.
+        training_seed_pools={"fixed": (7,), "normal": (7,)},
+        curriculum_entries=entries,
+        trace_prefix=trace_prefix_bank({7: 0}),
+    )
+    try:
+        collector.collect(1)
+    finally:
+        collector.close()
+
+    workers = list(environment.environments.values())
+    prefixed = [worker for worker in workers if worker.handoffs]
+    prefix_free = [worker for worker in workers if not worker.handoffs]
+    assert len(prefixed) == len(prefix_free) == 1
+    assert prefixed[0].seed == 7
+    assert prefixed[0].actions[:2] == [0, 1]
+    assert prefix_free[0].seed == 7
+    assert len(prefix_free[0].actions) == 1
 
 
 def test_async_collector_fails_closed_when_trace_prefix_digest_diverges() -> None:

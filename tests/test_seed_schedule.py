@@ -5,7 +5,9 @@ import json
 import pytest
 
 from autodancer.training.seed_schedule import (
+    ResetConditionedTrainingSeedSchedule,
     TrainingSeedSchedule,
+    load_reset_conditioned_seed_pools,
     parse_training_seed_pool,
 )
 
@@ -102,3 +104,52 @@ def test_parse_training_seed_pool(text: str, expected: tuple[int, ...]) -> None:
 def test_parse_training_seed_pool_rejects_invalid_values(text: str) -> None:
     with pytest.raises(ValueError):
         parse_training_seed_pool(text)
+
+
+def test_reset_conditioned_seed_schedule_is_exactly_resumable() -> None:
+    pools = {"boss": (7, 8), "normal": (101, 102, 103)}
+    schedule = ResetConditionedTrainingSeedSchedule(91, 2, pools)
+    assert schedule.next(0, "boss") in pools["boss"]
+    assert schedule.next(1, "normal") in pools["normal"]
+    state = schedule.state_dict()
+    json.dumps(state)
+    expected = [
+        schedule.next(0, "normal"),
+        schedule.next(0, "boss"),
+        schedule.next(1, "normal"),
+    ]
+
+    resumed = ResetConditionedTrainingSeedSchedule(91, 2, pools)
+    resumed.load_state_dict(state)
+
+    assert [
+        resumed.next(0, "normal"),
+        resumed.next(0, "boss"),
+        resumed.next(1, "normal"),
+    ] == expected
+    assert resumed.state_dict() == schedule.state_dict()
+
+
+def test_reset_conditioned_seed_schedule_rejects_unknown_reset() -> None:
+    schedule = ResetConditionedTrainingSeedSchedule(1, 1, {"normal": (3,)})
+
+    with pytest.raises(ValueError, match="has no training seed pool"):
+        schedule.next(0, "boss")
+
+
+def test_load_reset_conditioned_seed_pools_validates_schema(tmp_path) -> None:
+    source = tmp_path / "pools.json"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "pools": {"boss": [7, 8], "normal": [101, 102]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_reset_conditioned_seed_pools(source) == {
+        "boss": (7, 8),
+        "normal": (101, 102),
+    }
