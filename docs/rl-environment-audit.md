@@ -2392,3 +2392,74 @@ distribution changed. Critic identification is now architecture-aware for both
 transfer and missing-tensor validation. A real EXP-0029 A8 checkpoint test proves
 that all 157 actor/representation tensors transfer while all four critic tensors
 retain their fresh initialization; the optimizer and counters also start fresh.
+
+## The reverse curriculum still lacks its forward-composition phase
+
+The retained trace window protects competence at previously mastered Death Metal
+handoffs, but it does not protect or improve the policy that must reach those
+handoffs from an untouched All Zones start. This is now the largest remaining
+environment-design gap between assisted Zone 2 entry and the actual acceptance
+target.
+
+The distinction is structural:
+
+1. trace-prefix training samples exact, outcome-selected states from three
+   successful Death Metal trajectories;
+2. retained-boundary evaluation detects forgetting only within that narrow boss
+   state distribution;
+3. ordinary Floor 1--3 navigation and arrival-state quality are absent from both
+   the rollout mixture and checkpoint selector; and
+4. the current collector treats a trace prefix as global for the run and requires
+   every training seed to have a qualified trace, so it cannot yet interleave
+   prefix-free normal episodes with trace-boundary episodes.
+
+A checkpoint can therefore pass every current tail gate while losing the
+pre-boss behavior needed to make the boss skill reachable. Conversely, jumping
+straight from three trace seeds to uniformly sampled normal starts would expose
+the policy mostly to states from which it still receives no success signal.
+
+This is the same narrow-to-broad gap addressed by
+[Reverse Forward Curriculum Learning](https://arxiv.org/abs/2405.03379): its
+reverse stage first learns a sparse task near demonstrations, while a separate
+forward stage expands competence over the real initial-state distribution. The
+paper reports that reverse training alone remains narrow and that uniform full
+initial-state sampling wastes interaction when most starts are beyond the
+current policy. Its forward curriculum instead prioritizes initial states near
+the policy's current competence frontier. That is also consistent with
+[Prioritized Level Replay](https://proceedings.mlr.press/v139/jiang21b.html),
+which samples procedural levels according to current learning potential rather
+than uniformly. Research on
+[skill chaining](https://proceedings.mlr.press/v164/lee22a.html) independently
+identifies mismatched termination and initiation distributions as a primary
+reason locally successful skills fail when composed.
+
+AutoDancer should therefore separate the remaining program into two declared
+phases:
+
+1. **Finish reverse acquisition.** Continue retained live trace-window expansion
+   only until a reproducible checkpoint clears the complete prefix-free
+   player20 Death Metal start on fresh seeds. Tail results remain subskill
+   evidence.
+2. **Run forward composition.** Add reset-conditioned prefixes and
+   reset-conditioned seed pools so one checkpointed rollout distribution can
+   mix mastered boss replay, prefix-free boss starts, Floor 3, Floor 2, and
+   finally normal Floor 1 starts. Allocate most samples to boundaries with
+   measured intermediate success while retaining a fixed replay floor for every
+   mastered boundary. Episode caps must expand to at least 3,000 turns for the
+   earlier floors.
+
+Every forward stage needs two independent retention gates: downstream Zone 2
+entry and upstream navigation/arrival quality. Checkpoint selection must include
+both; shaped return must not substitute for either. Training seeds may be
+prioritized, but the final evaluation bank must remain unfiltered, disjoint, and
+stratified by official Zone 1 boss type. Only untouched normal-start entries into
+Zone 2 on multiple unseen seeds can complete the objective.
+
+Hierarchical options are not the next default intervention. The analysis in
+[When Do Skills Help Reinforcement Learning?](https://proceedings.mlr.press/v235/li24be.html)
+shows that temporal abstractions help most when useful solutions are
+compressible and can hurt when the skill set is unexpressive. Here the immediate
+failure is a missing start-distribution bridge, which can be tested with the
+existing flat policy. Explicit floor/boss options become justified only if a
+correct forward curriculum acquires its component boundaries but still fails to
+compose them.
