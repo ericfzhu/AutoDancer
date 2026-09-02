@@ -1,0 +1,70 @@
+schema_version: 1
+id: EXP-0033
+title: Complete-window Death Metal handoff expansion
+question: Can the tail-48 policy expand farther backward while reproducibly retaining every accepted or saturated state in the full tail-32-through-tail-48 training window?
+hypothesis: EXP-0032 acquired tail 48 with all three checkpoints retaining tails 32, 36, and 40, but tail 44 was trained and source-saturated without being a named final retention boundary. Explicitly retaining 32, 36, 40, 44, and 48 will prevent this intermediate state from being silently dropped while continuing the reverse curriculum.
+changed_blocks: [training-level-distribution, evaluation]
+component_versions:
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+  environment-semantics: player-health-only-boss-curriculum-v4
+  action-contract: map-navigation-prior-v1
+  algorithm: recurrent-ppo-v2-warm-boundary-state
+  training-level-distribution: qualified-trace-window-v11
+  data-selection: disclosed-qualified-training-traces-v1
+  runtime: async-native-pipe-v1
+  evaluation: conditional-trace-window-v20
+invariants:
+  - source calibration evaluates tails 52 through 80 in four-action increments plus tail 81 and selects the shortest boundary inside the closed 10--90 percent completion band
+  - calibration uses deterministic execution and fixed stochastic policy seeds 98001 through 98004 on all three qualified training seeds
+  - training samples a balanced window containing retained tails 32, 36, 40, 44, and 48 plus every tested four-action boundary through the selected frontier
+  - handoff selection is deterministic by worker slot and checkpointed episode count, independent of actor timing
+  - guide transitions remain acknowledged live actions outside PPO and warm the exact learner recurrent state and stable reward feedback
+  - frozen evaluation scores every retained tail and the selected harder tail separately under deterministic execution and stochastic seeds 98001 and 98002
+  - every retained boundary must independently aggregate at least 80 percent success
+  - at least two optimizer trials must each score at least 80 percent on every retained boundary before either can be selected
+  - all 930xx held-out seeds remain excluded from calibration, training, and trace acquisition
+  - assisted completion never counts as normal-start Zone 2 evidence
+  - exactly eight workers, finite losses, zero controller restarts, and current qualification hashes are required
+arms:
+  - id: a8-complete-trace-window-4
+    description: Three A8 PPO replications initialize from the fully retention-eligible EXP-0032 checkpoint and train uniformly over the complete retained-to-frontier live handoff window.
+source:
+  checkpoint: runs/retained-death-metal-trace-window-3/training/seed-101002/final.pt
+  checkpoint_sha256: 5099d48b5a25547d5d03e89ae95ff3a7dbfde068779bc165da589d394afd5ef1
+  parent_experiment: EXP-0032
+  parent_evidence: runs/retained-death-metal-trace-window-3/comparison.json
+  trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  qualification: runs/qualified-death-metal-trace-search/qualification.json
+calibration:
+  candidate_tail_actions: [52, 56, 60, 64, 68, 72, 76, 80, 81]
+  retained_tail_window: [32, 36, 40, 44, 48]
+  policy_modes: [deterministic, stochastic-98001, stochastic-98002, stochastic-98003, stochastic-98004]
+  game_seeds: [92008, 92096, 92116]
+  competence_band: [0.10, 0.90]
+  selection: shortest candidate inside the closed competence band
+training:
+  optimizer_seeds: [102001, 102002, 102003]
+  workers: 8
+  device: cuda
+  architecture: 8
+  transition_budget_per_trial: 92160
+  rollout_length_per_worker: 128
+  recurrent_chunk_length: 32
+  initialization: actor and representation from retention-eligible EXP-0032 seed-101002; critic and optimizer reset
+  curriculum_start_level: 4
+  curriculum_target_level: 5
+  curriculum_profile: player20
+  reward_config: configs/reward-death-metal-potential-v5.json
+evaluation:
+  game_seeds: [92008, 92096, 92116]
+  modes: [deterministic, stochastic-98001, stochastic-98002]
+  learner_turn_cap: 128
+  retained_boundaries: [32, 36, 40, 44, 48]
+  expanded_boundary: selected by calibration
+  minimum_retention_eligible_trials: 2
+  primary_outcome: conditional live Zone 2 entry at the selected expanded boundary
+  retention_outcome: conditional live Zone 2 entry at every state in the accepted training window
+decision_rule: Accept the expansion only if the selected harder boundary aggregates at least 10 percent completion, at least two trials reach 5 percent, every trial completes at least once, all three trace seeds complete, every retained boundary independently aggregates at least 80 percent success, at least two trials each score at least 80 percent on every retained boundary, losses are finite, and training plus evaluation have zero controller restarts. A pass below tail 81 authorizes another retained-window expansion; a pass at tail 81 authorizes a separately registered prefix-free full-boss test. No assisted outcome is normal-start promotion.
