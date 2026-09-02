@@ -11,6 +11,7 @@ param(
     [string]$SourceCheckpointOverride = "",
     [int]$RetainedTailActions = 0,
     [int[]]$RetainedTailWindow = @(),
+    [int]$MinimumRetentionEligibleTrials = 1,
     [int]$SteamPresenceWorker = 0,
     [string]$ExperimentId = "EXP-0027",
     [string]$ExperimentArm = "a8-live-calibrated-tail1",
@@ -34,6 +35,9 @@ if ($TotalSteps -le 0 -or $RequestedTailActions -le 0 -or $LearnerTurnCap -le 0 
 }
 if ($RetainedTailActions -lt 0) {
     throw "RetainedTailActions cannot be negative"
+}
+if ($MinimumRetentionEligibleTrials -le 0 -or $MinimumRetentionEligibleTrials -gt 3) {
+    throw "MinimumRetentionEligibleTrials must be between one and three"
 }
 if ($RetainedTailWindow.Count -and $RetainedTailActions -gt 0) {
     throw "RetainedTailActions and RetainedTailWindow are mutually exclusive"
@@ -600,7 +604,7 @@ try {
         $distinctSuccesses.Count -ge 3 -and
         @($hardestResults | Where-Object { $_.completions -le 0 }).Count -eq 0 -and
         $everyRetainedBoundaryPassed -and
-        $retentionEligibleSummaries.Count -ge 1 -and
+        $retentionEligibleSummaries.Count -ge $MinimumRetentionEligibleTrials -and
         @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
     )
     $selected = $retentionEligibleSummaries | Sort-Object @{
@@ -647,6 +651,7 @@ try {
         }
         retained_boundaries = $retainedBoundarySummaries
         retention_eligible_trials = $retentionEligibleTrialIds
+        minimum_retention_eligible_trials = $MinimumRetentionEligibleTrials
         gate = [ordered]@{
             passed = $passed
             completion_rate_at_least_10_percent = $allCompletions / [math]::Max($allEpisodes, 1) -ge 0.10
@@ -656,6 +661,9 @@ try {
             retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
             every_retained_boundary_at_least_80_percent = $everyRetainedBoundaryPassed
             selected_checkpoint_retains_every_boundary = $retentionEligibleSummaries.Count -ge 1
+            enough_checkpoints_retain_every_boundary = (
+                $retentionEligibleSummaries.Count -ge $MinimumRetentionEligibleTrials
+            )
             controller_and_losses_valid = @($summaries | Where-Object { $_.worker_restarts -ne 0 -or -not $_.finite_losses }).Count -eq 0
         }
         selected_trial = if ($passed) { $selected.trial } else { $null }

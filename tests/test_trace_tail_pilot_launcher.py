@@ -94,6 +94,8 @@ def test_second_retained_window_preserves_every_mastered_boundary() -> None:
     assert "every_retained_boundary_at_least_80_percent" in launcher
     assert "selected_checkpoint_retains_every_boundary" in launcher
     assert "retentionEligibleSummaries" in launcher
+    assert "MinimumRetentionEligibleTrials" in launcher
+    assert "enough_checkpoints_retain_every_boundary" in launcher
     assert "retained_boundaries" in launcher
     assert "qualified-trace-window-v9" in specification
     assert "conditional-trace-window-v18" in specification
