@@ -74,6 +74,9 @@ uv run autodancer-benchmark `
 The benchmark reports throughput, latency percentiles, process memory/CPU use,
 restarts, and the recommended tested worker count.
 
+For measured training bottlenecks, the optional batched PPO encoder, and a bounded
+live performance pilot, see [the performance report](docs/performance-project.md).
+
 Run the fixed-seed live mechanic diagnostic before changing rewards or policy
 architecture:
 

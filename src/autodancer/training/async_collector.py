@@ -31,7 +31,7 @@ from autodancer.progress import deeper_level
 from autodancer.rewards import RewardConfig, RewardTracker
 from autodancer.training.action_contract import ActionContractMemory
 from autodancer.training.demonstrations import normalized_observation_digest
-from autodancer.training.model import START_ACTION, PolicyModel
+from autodancer.training.model import START_ACTION, PolicyModel, warm_recurrent_state_batched
 from autodancer.training.natural_prefix import (
     DeathMetalPhaseTracker,
     NaturalPrefixConfig,
@@ -108,6 +108,17 @@ class _InferenceRequest:
     hidden: Tensor
     sample: float
     future: Future[tuple[int, Tensor, Tensor, Tensor]]
+    queued_at: float = field(default_factory=time.monotonic)
+
+
+@dataclass(slots=True)
+class _WarmupRequest:
+    observations: dict[str, Tensor]
+    initial_state: Tensor
+    encoder_batch_size: int
+    reference_state: Tensor | None
+    handoff: dict[str, Tensor]
+    future: Future[Tensor]
 
 
 class InferenceScheduler:
@@ -121,13 +132,34 @@ class InferenceScheduler:
         max_batch: int,
         batch_delay: float,
         deterministic: bool = False,
+        transfer_mode: str = "legacy",
     ) -> None:
+        if max_batch <= 0 or batch_delay < 0:
+            raise ValueError("max_batch must be positive and batch_delay nonnegative")
+        if transfer_mode not in {"legacy", "packed"}:
+            raise ValueError("transfer_mode must be legacy or packed")
         self.model = model
         self.device = device
         self.max_batch = max_batch
         self.batch_delay = batch_delay
         self.deterministic = deterministic
-        self._queue: queue.Queue[_InferenceRequest | None] = queue.Queue()
+        self.transfer_mode = transfer_mode
+        self._host_buffers: dict[str, Tensor] = {}
+        self._device_buffers: dict[str, Tensor] = {}
+        self.stats: dict[str, Any] = {
+            "transfer_mode": transfer_mode,
+            "requests": 0,
+            "batches": 0,
+            "batch_histogram": {},
+            "queue_seconds": 0.0,
+            "input_pack_seconds": 0.0,
+            "compute_and_return_seconds": 0.0,
+            "result_transfer_calls": 0,
+            "warmup_requests": 0,
+            "warmup_steps": 0,
+            "warmup_verified": 0,
+        }
+        self._queue: queue.Queue[_InferenceRequest | _WarmupRequest | None] = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="policy-inference", daemon=True)
         self._thread.start()
 
@@ -152,16 +184,113 @@ class InferenceScheduler:
         )
         return future.result()
 
+    def warmup(
+        self,
+        observations: list[dict[str, np.ndarray]],
+        initial_state: Tensor,
+        encoder_batch_size: int,
+        reference_state: Tensor | None,
+        handoff: dict[str, np.ndarray],
+    ) -> Tensor:
+        future: Future[Tensor] = Future()
+        self._queue.put(
+            _WarmupRequest(
+                {
+                    key: torch.from_numpy(np.stack([row[key] for row in observations]))
+                    for key in observations[0]
+                },
+                initial_state,
+                encoder_batch_size,
+                reference_state,
+                {
+                    key: torch.from_numpy(np.asarray(value)).unsqueeze(0)
+                    for key, value in handoff.items()
+                },
+                future,
+            )
+        )
+        return future.result()
+
+    def _run_warmup(self, request: _WarmupRequest) -> None:
+        try:
+            state = warm_recurrent_state_batched(
+                self.model,
+                request.observations,
+                request.initial_state,
+                encoder_batch_size=request.encoder_batch_size,
+            )
+            if request.reference_state is not None:
+                with torch.inference_mode():
+                    torch.testing.assert_close(state, request.reference_state, rtol=2e-4, atol=2e-5)
+                    handoff = {key: value.to(self.device) for key, value in request.handoff.items()}
+                    actual_logits, actual_value, _ = self.model.step(handoff, state)
+                    reference_logits, reference_value, _ = self.model.step(
+                        handoff, request.reference_state
+                    )
+                    torch.testing.assert_close(
+                        actual_logits.softmax(-1),
+                        reference_logits.softmax(-1),
+                        rtol=2e-4,
+                        atol=2e-5,
+                    )
+                    torch.testing.assert_close(actual_value, reference_value, rtol=2e-4, atol=2e-5)
+                self.stats["warmup_verified"] += 1
+            self.stats["warmup_requests"] += 1
+            self.stats["warmup_steps"] += len(request.observations["previous_action"])
+            request.future.set_result(state)
+        except BaseException as error:
+            request.future.set_exception(error)
+
     def close(self) -> None:
         self._queue.put(None)
         self._thread.join()
 
+    def _packed_inputs(self, batch: list[_InferenceRequest]) -> dict[str, Tensor]:
+        """Reuse pinned staging and device buffers; previous batch is complete.
+
+        The blocking result copy below finishes all input transfers before the
+        staging buffers can be overwritten for the next batch.
+        """
+        first = batch[0]
+        fields = {
+            **first.observation,
+            "previous_action": np.asarray(first.previous_action, dtype=np.int64),
+            "previous_reward": np.asarray(first.previous_reward, dtype=np.float32),
+        }
+        size = len(batch)
+        result = {}
+        for key, prototype in fields.items():
+            shape = (self.max_batch, *prototype.shape)
+            dtype = torch.from_numpy(np.asarray(prototype)).dtype
+            host = self._host_buffers.get(key)
+            if host is None or host.shape != shape or host.dtype != dtype:
+                host = torch.empty(shape, dtype=dtype, pin_memory=self.device.type == "cuda")
+                self._host_buffers[key] = host
+                self._device_buffers[key] = torch.empty(shape, dtype=dtype, device=self.device)
+            array = host.numpy()
+            for index, request in enumerate(batch):
+                if key == "previous_action":
+                    array[index] = request.previous_action
+                elif key == "previous_reward":
+                    array[index] = request.previous_reward
+                else:
+                    array[index] = request.observation[key]
+            destination = self._device_buffers[key][:size]
+            destination.copy_(host[:size], non_blocking=self.device.type == "cuda")
+            result[key] = destination
+        return result
+
     def _run(self) -> None:
         self.model.eval()
+        pending = None
         while True:
-            first = self._queue.get()
+            first = self._queue.get() if pending is None else pending
+            pending = None
             if first is None:
                 return
+            if isinstance(first, _WarmupRequest):
+                self._run_warmup(first)
+                continue
             batch = [first]
             deadline = time.monotonic() + self.batch_delay
             while len(batch) < self.max_batch:
@@ -175,25 +304,41 @@ class InferenceScheduler:
                 if request is None:
                     self._queue.put(None)
                     break
+                if isinstance(request, _WarmupRequest):
+                    pending = request
+                    break
                 batch.append(request)
             try:
-                observation = {
-                    key: torch.from_numpy(
-                        np.stack([request.observation[key] for request in batch])
-                    ).to(self.device)
-                    for key in first.observation
-                }
-                observation["previous_action"] = torch.tensor(
-                    [request.previous_action for request in batch],
-                    dtype=torch.long,
-                    device=self.device,
+                batch_started = time.monotonic()
+                self.stats["requests"] += len(batch)
+                self.stats["batches"] += 1
+                histogram = self.stats["batch_histogram"]
+                histogram[str(len(batch))] = histogram.get(str(len(batch)), 0) + 1
+                self.stats["queue_seconds"] += sum(batch_started - r.queued_at for r in batch)
+                observation = (
+                    self._packed_inputs(batch)
+                    if self.transfer_mode == "packed"
+                    else {
+                        key: torch.from_numpy(
+                            np.stack([request.observation[key] for request in batch])
+                        ).to(self.device)
+                        for key in first.observation
+                    }
                 )
-                observation["previous_reward"] = torch.tensor(
-                    [request.previous_reward for request in batch],
-                    dtype=torch.float32,
-                    device=self.device,
-                )
+                if self.transfer_mode == "legacy":
+                    observation["previous_action"] = torch.tensor(
+                        [request.previous_action for request in batch],
+                        dtype=torch.long,
+                        device=self.device,
+                    )
+                    observation["previous_reward"] = torch.tensor(
+                        [request.previous_reward for request in batch],
+                        dtype=torch.float32,
+                        device=self.device,
+                    )
                 hidden = torch.cat([request.hidden for request in batch]).to(self.device)
+                packed_at = time.monotonic()
+                self.stats["input_pack_seconds"] += packed_at - batch_started
                 with torch.inference_mode():
                     logits, values, next_hidden = self.model.step(observation, hidden)
                     distribution = Categorical(logits=logits)
@@ -212,15 +357,33 @@ class InferenceScheduler:
                             .clamp_max(probabilities.shape[-1] - 1)
                         )
                     log_probs = distribution.log_prob(actions)
+                packed_results = None
+                if self.transfer_mode == "packed":
+                    packed_results = (
+                        torch.stack((actions.to(values.dtype), log_probs, values), dim=1)
+                        .detach()
+                        .cpu()
+                    )
+                    self.stats["result_transfer_calls"] += 1
                 for index, request in enumerate(batch):
+                    if packed_results is None:
+                        action_result = int(actions[index].cpu())
+                        log_prob_result = log_probs[index].detach().cpu()
+                        value_result = values[index].detach().cpu()
+                        self.stats["result_transfer_calls"] += 3
+                    else:
+                        action_result = int(packed_results[index, 0])
+                        log_prob_result = packed_results[index, 1]
+                        value_result = packed_results[index, 2]
                     request.future.set_result(
                         (
-                            int(actions[index].cpu()),
-                            log_probs[index].detach().cpu(),
-                            values[index].detach().cpu(),
+                            action_result,
+                            log_prob_result,
+                            value_result,
                             next_hidden[index : index + 1].detach(),
                         )
                     )
+                self.stats["compute_and_return_seconds"] += time.monotonic() - packed_at
             except BaseException as error:
                 for request in batch:
                     request.future.set_exception(error)
@@ -237,6 +400,7 @@ class VersionedAsyncRolloutCollector:
         device: torch.device,
         seed: int,
         batch_delay: float = 0.002,
+        inference_transfer_mode: str = "legacy",
         telemetry_callback: Any | None = None,
         action_contract: str = "current",
         initial_policy_version: int = 0,
@@ -251,6 +415,8 @@ class VersionedAsyncRolloutCollector:
         guide_reward_config: RewardConfig | None = None,
         policy_feedback_config: RewardConfig | None = None,
         trace_prefix: QualifiedTracePrefixBank | None = None,
+        trace_prefix_warmup_batch_size: int = 0,
+        trace_prefix_warmup_verify: bool = False,
     ) -> None:
         self.environment = environment
         self.model = model
@@ -270,6 +436,17 @@ class VersionedAsyncRolloutCollector:
         if natural_prefix is not None and trace_prefix is not None:
             raise ValueError("natural and trace prefixes are mutually exclusive")
         self.trace_prefix = trace_prefix
+        if trace_prefix_warmup_batch_size < 0:
+            raise ValueError("trace prefix warm-up batch size cannot be negative")
+        if trace_prefix_warmup_verify and not trace_prefix_warmup_batch_size:
+            raise ValueError("warm-up verification requires batched warm-up")
+        if trace_prefix_warmup_batch_size and (
+            trace_prefix is None or trace_prefix.recurrent_state_mode != "warm"
+        ):
+            raise ValueError("batched warm-up requires a warm trace prefix")
+        self.trace_prefix_warmup_batch_size = trace_prefix_warmup_batch_size
+        self.trace_prefix_warmup_verify = trace_prefix_warmup_verify
+        self.inference_transfer_mode = inference_transfer_mode
         self.guide_reward_config = guide_reward_config
         self.policy_feedback_config = policy_feedback_config
         self.action_contract = action_contract
@@ -342,6 +519,7 @@ class VersionedAsyncRolloutCollector:
         self.completed_episodes: list[dict[str, Any]] = []
         self.last_reward_components: dict[str, float] = {}
         self.last_runtime_metrics: dict[str, Any] = {}
+        self._stage_timings: list[dict[str, float]] = [{} for _ in self.states]
         self.policy_version = int(initial_policy_version)
         self._recovery_lock = threading.Lock()
         self._recovery_counts: dict[str, int] = {}
@@ -356,6 +534,7 @@ class VersionedAsyncRolloutCollector:
                 device=device,
                 max_batch=environment.num_envs,
                 batch_delay=batch_delay,
+                transfer_mode=inference_transfer_mode,
                 deterministic=bool(natural_prefix and natural_prefix.deterministic_guide),
             )
         )
@@ -373,9 +552,7 @@ class VersionedAsyncRolloutCollector:
         if bank is None:
             return False
         matching_traces = [
-            trace
-            for trace in bank.traces
-            if trace.reset_spec.as_dict() == reset_spec.as_dict()
+            trace for trace in bank.traces if trace.reset_spec.as_dict() == reset_spec.as_dict()
         ]
         if not matching_traces:
             return False
@@ -386,6 +563,18 @@ class VersionedAsyncRolloutCollector:
             )
         return True
 
+    def _measure(self, index: int, stage: str, function: Any, *args: Any, **kwargs: Any) -> Any:
+        """Per-slot wall time; actor threads only write their own slot."""
+        started = time.monotonic()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            timings = self._stage_timings[index]
+            timings[stage + "_seconds"] = timings.get(stage + "_seconds", 0.0) + (
+                time.monotonic() - started
+            )
+            timings[stage + "_calls"] = timings.get(stage + "_calls", 0.0) + 1.0
+
     def _publish_telemetry(
         self,
         index: int,
@@ -395,7 +584,16 @@ class VersionedAsyncRolloutCollector:
         reward: float | None,
     ) -> None:
         if self.telemetry_callback is not None:
-            self.telemetry_callback(index, observation, info, action, reward)
+            self._measure(
+                index,
+                "telemetry",
+                self.telemetry_callback,
+                index,
+                observation,
+                info,
+                action,
+                reward,
+            )
 
     def _seed(self, index: int, reset_spec: EpisodeResetSpec) -> int:
         if isinstance(self.seed_schedule, ResetConditionedTrainingSeedSchedule):
@@ -462,6 +660,7 @@ class VersionedAsyncRolloutCollector:
             device=self.device,
             max_batch=self.environment.num_envs,
             batch_delay=self.batch_delay,
+            transfer_mode=self.inference_transfer_mode,
         )
         started = time.monotonic()
         futures = [
@@ -487,6 +686,9 @@ class VersionedAsyncRolloutCollector:
             recovery_counts = self._recovery_counts.copy()
             last_recovery_error = self._last_recovery_error
         self.last_runtime_metrics = {
+            "inference_scheduler": dict(scheduler.stats),
+            "performance_timing_version": 1,
+            "worker_stage_timings": [dict(fragment.metrics) for fragment in fragments],
             "policy_version": float(self.policy_version),
             "collector_seconds": elapsed,
             "collector_steps_per_second": length * len(fragments) / max(elapsed, 1e-9),
@@ -649,13 +851,18 @@ class VersionedAsyncRolloutCollector:
         max_remembered_hazards = 0
         natural_prefix_failures = 0
         started = time.monotonic()
+        self._stage_timings[index] = {}
         for fragment_step in range(length):
             while state.prefix_pending:
                 try:
                     state = (
-                        self._run_trace_prefix(index, state, scheduler)
+                        self._measure(
+                            index, "prefix_total", self._run_trace_prefix, index, state, scheduler
+                        )
                         if self.trace_prefix is not None
-                        else self._run_natural_prefix(index, state, scheduler)
+                        else self._measure(
+                            index, "prefix_total", self._run_natural_prefix, index, state, scheduler
+                        )
                     )
                 except NaturalPrefixError as error:
                     natural_prefix_failures += 1
@@ -703,7 +910,10 @@ class VersionedAsyncRolloutCollector:
                             },
                         ) from error
                     next_seed, next_spec = self._next_reset(index)
-                    next_observation, next_info = worker.reset(
+                    next_observation, next_info = self._measure(
+                        index,
+                        "learner_reset",
+                        worker.reset,
                         seed=next_seed,
                         options=next_spec.reset_options(),
                     )
@@ -711,9 +921,7 @@ class VersionedAsyncRolloutCollector:
                         next_spec, int(next_info.get("seed", next_seed))
                     )
                     if not prefix_pending:
-                        next_observation = self.contract_memory.reset_slot(
-                            index, next_observation
-                        )
+                        next_observation = self.contract_memory.reset_slot(index, next_observation)
                     state = ActorState(
                         next_observation,
                         next_info,
@@ -729,7 +937,10 @@ class VersionedAsyncRolloutCollector:
             starts.append(torch.tensor(state.episode_start))
             hiddens.append(state.hidden.squeeze(0).detach().cpu())
             inference_started = time.monotonic()
-            action, log_prob, value, next_hidden = scheduler.infer(
+            action, log_prob, value, next_hidden = self._measure(
+                index,
+                "learner_inference",
+                scheduler.infer,
                 state.observation,
                 state.previous_action,
                 state.previous_reward,
@@ -744,7 +955,9 @@ class VersionedAsyncRolloutCollector:
             )
             inference_wait += time.monotonic() - inference_started
             environment_started = time.monotonic()
-            raw_next_observation, reward, terminated, truncated, info = worker.step(action)
+            raw_next_observation, reward, terminated, truncated, info = self._measure(
+                index, "learner_environment", worker.step, action
+            )
             contract_diagnostic = self.contract_memory.observe(
                 index,
                 state.observation,
@@ -797,7 +1010,10 @@ class VersionedAsyncRolloutCollector:
                 # A client time limit is not an MDP terminal. Bootstrap the
                 # critic from the real final observation, then stop the GAE
                 # trace at the reset boundary.
-                _, _, terminal_value, _ = scheduler.infer(
+                _, _, terminal_value, _ = self._measure(
+                    index,
+                    "learner_inference",
+                    scheduler.infer,
                     next_observation,
                     action,
                     policy_feedback,
@@ -853,7 +1069,10 @@ class VersionedAsyncRolloutCollector:
                     state.reset_spec, str(info.get("episode_status", "unknown"))
                 )
                 next_seed, next_spec = self._next_reset(index)
-                next_observation, next_info = worker.reset(
+                next_observation, next_info = self._measure(
+                    index,
+                    "learner_reset",
+                    worker.reset,
                     seed=next_seed,
                     options=next_spec.reset_options(),
                 )
@@ -892,6 +1111,7 @@ class VersionedAsyncRolloutCollector:
             completed_episodes=episodes,
             reward_components=components,
             metrics={
+                **self._stage_timings[index],
                 "fragment_seconds": time.monotonic() - started,
                 "inference_wait_seconds": inference_wait,
                 "environment_wait_seconds": environment_wait,
@@ -947,6 +1167,7 @@ class VersionedAsyncRolloutCollector:
         episode_index = self.seed_schedule.draw_count(index) - 1
         tail_actions = bank.tail_for_episode(index, episode_index)
         prefix_actions = trace.actions[:-tail_actions]
+        recorded_inputs = []
 
         for turn, action in enumerate(prefix_actions, start=1):
             if not bool(observation["action_mask"][action]):
@@ -957,15 +1178,30 @@ class VersionedAsyncRolloutCollector:
                     f"qualified action {action} is masked",
                 )
             next_learner_hidden = learner_hidden
-            if bank.recurrent_state_mode == "warm":
-                _, _, _, next_learner_hidden = learner_scheduler.infer(
+            if self.trace_prefix_warmup_batch_size:
+                recorded_inputs.append(
+                    {
+                        **{key: value.copy() for key, value in observation.items()},
+                        "previous_action": np.asarray(previous_action, dtype=np.int64),
+                        "previous_reward": np.asarray(learner_previous_reward, dtype=np.float32),
+                    }
+                )
+            if bank.recurrent_state_mode == "warm" and (
+                not self.trace_prefix_warmup_batch_size or self.trace_prefix_warmup_verify
+            ):
+                _, _, _, next_learner_hidden = self._measure(
+                    index,
+                    "prefix_inference",
+                    learner_scheduler.infer,
                     observation,
                     previous_action,
                     learner_previous_reward,
                     learner_hidden,
                     0.5,
                 )
-            raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
+            raw_next_observation, reward, terminated, truncated, next_info = self._measure(
+                index, "prefix_environment", worker.step, action
+            )
             next_info = dict(next_info)
             next_info["trace_prefix_stage"] = "guide"
             next_info["trace_prefix_turn"] = turn
@@ -1027,6 +1263,21 @@ class VersionedAsyncRolloutCollector:
             if warm
             else self.contract_memory.reset_slot(index, handed_observation)
         )
+        if recorded_inputs:
+            learner_hidden = self._measure(
+                index,
+                "prefix_batched_warmup",
+                learner_scheduler.warmup,
+                recorded_inputs,
+                self.model.initial_state(1, device=self.device),
+                self.trace_prefix_warmup_batch_size,
+                learner_hidden if self.trace_prefix_warmup_verify else None,
+                {
+                    **effective_observation,
+                    "previous_action": np.asarray(previous_action, dtype=np.int64),
+                    "previous_reward": np.asarray(learner_previous_reward, dtype=np.float32),
+                },
+            )
         self._policy_feedback_trackers[index] = learner_feedback_tracker
         return ActorState(
             effective_observation,
@@ -1083,7 +1334,10 @@ class VersionedAsyncRolloutCollector:
                     attempt,
                     guide_turn,
                 )
-                action, _, _, next_guide_hidden = guide_scheduler.infer(
+                action, _, _, next_guide_hidden = self._measure(
+                    index,
+                    "guide_inference",
+                    guide_scheduler.infer,
                     observation,
                     previous_action,
                     guide_previous_reward,
@@ -1092,14 +1346,19 @@ class VersionedAsyncRolloutCollector:
                 )
                 next_learner_hidden = learner_hidden
                 if config.recurrent_state_mode == "warm":
-                    _, _, _, next_learner_hidden = learner_scheduler.infer(
+                    _, _, _, next_learner_hidden = self._measure(
+                        index,
+                        "prefix_inference",
+                        learner_scheduler.infer,
                         observation,
                         previous_action,
                         learner_previous_reward,
                         learner_hidden,
                         0.5,
                     )
-                raw_next_observation, reward, terminated, truncated, next_info = worker.step(action)
+                raw_next_observation, reward, terminated, truncated, next_info = self._measure(
+                    index, "prefix_environment", worker.step, action
+                )
                 total_guide_turns += 1
                 next_info = dict(next_info)
                 next_info["natural_prefix_stage"] = "guide"
@@ -1194,7 +1453,10 @@ class VersionedAsyncRolloutCollector:
                 }
             )
             if attempt + 1 < config.max_attempts:
-                observation, info = worker.reset(
+                observation, info = self._measure(
+                    index,
+                    "prefix_reset",
+                    worker.reset,
                     seed=seed,
                     options=state.reset_spec.reset_options(),
                 )

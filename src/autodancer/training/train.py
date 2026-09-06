@@ -538,9 +538,7 @@ def train(arguments: argparse.Namespace) -> None:
         if not training_seed_pool and training_seed_pools is None:
             raise ValueError("trace-prefix training requires explicit finite seed pools")
         missing_trace_seeds = (
-            sorted(set(training_seed_pool) - set(trace_prefix.seeds))
-            if training_seed_pool
-            else []
+            sorted(set(training_seed_pool) - set(trace_prefix.seeds)) if training_seed_pool else []
         )
         if missing_trace_seeds:
             raise ValueError(
@@ -558,8 +556,7 @@ def train(arguments: argparse.Namespace) -> None:
         else "uniform-finite-pool-v1"
     )
     training_distribution_version = (
-        arguments.training_level_distribution_version
-        or inferred_training_distribution_version
+        arguments.training_level_distribution_version or inferred_training_distribution_version
     )
     imitation_config = (
         None
@@ -612,8 +609,7 @@ def train(arguments: argparse.Namespace) -> None:
                 raise ValueError("curriculum mixture has no reset eligible for trace replay")
             for entry in matching_entries:
                 missing = sorted(
-                    set(training_seed_pools[entry.spec.id])
-                    - trace_seeds_by_reset[entry.spec]
+                    set(training_seed_pools[entry.spec.id]) - trace_seeds_by_reset[entry.spec]
                 )
                 if missing:
                     raise ValueError(
@@ -641,9 +637,7 @@ def train(arguments: argparse.Namespace) -> None:
     seed_checkpoint_metadata = (
         {
             "training_seed_schedule": "reset-conditioned-uniform-pools-v1",
-            "training_seed_pools": {
-                key: list(value) for key, value in training_seed_pools.items()
-            },
+            "training_seed_pools": {key: list(value) for key, value in training_seed_pools.items()},
         }
         if training_seed_pools is not None
         else {
@@ -722,6 +716,10 @@ def train(arguments: argparse.Namespace) -> None:
                 "max_turns": arguments.max_turns,
                 "architecture": arguments.architecture,
                 "ppo": asdict(ppo_config),
+                "sequence_encoding_batch_size": arguments.sequence_encoding_batch_size,
+                "inference_transfer_mode": arguments.inference_transfer_mode,
+                "trace_prefix_warmup_batch_size": arguments.trace_prefix_warmup_batch_size,
+                "trace_prefix_warmup_verify": arguments.trace_prefix_warmup_verify,
                 "reward": reward_config.specification(),
                 "reward_lineage_version": arguments.reward_lineage_version,
                 "reward_config": (
@@ -796,9 +794,7 @@ def train(arguments: argparse.Namespace) -> None:
             )
             if training_seed_pool:
                 tracker.validate_component_versions(
-                    {
-                        "training-level-distribution": training_distribution_version
-                    },
+                    {"training-level-distribution": training_distribution_version},
                     require_declared=True,
                 )
         except BaseException as error:
@@ -864,9 +860,7 @@ def train(arguments: argparse.Namespace) -> None:
                         ),
                         "action_contract": arguments.action_contract,
                         "max_turns": arguments.max_turns,
-                        "training_level_distribution_version": (
-                            training_distribution_version
-                        ),
+                        "training_level_distribution_version": (training_distribution_version),
                         **seed_checkpoint_metadata,
                         **curriculum_metadata,
                         **(
@@ -897,6 +891,7 @@ def train(arguments: argparse.Namespace) -> None:
                     },
                 )
                 resume_metrics: dict[str, Any] = {}
+                algorithm.sequence_encoding_batch_size = arguments.sequence_encoding_batch_size
                 if arguments.resume:
                     resume_metrics = algorithm.load(arguments.resume)
                 elif arguments.initialize_from:
@@ -956,6 +951,7 @@ def train(arguments: argparse.Namespace) -> None:
                     seed=arguments.seed,
                     telemetry_callback=telemetry_callback,
                     batch_delay=arguments.inference_batch_delay_ms / 1000.0,
+                    inference_transfer_mode=arguments.inference_transfer_mode,
                     action_contract=arguments.action_contract,
                     initial_policy_version=algorithm.updates,
                     training_seed_pool=training_seed_pool,
@@ -969,6 +965,8 @@ def train(arguments: argparse.Namespace) -> None:
                     guide_reward_config=guide_reward,
                     policy_feedback_config=policy_feedback_config,
                     trace_prefix=trace_prefix,
+                    trace_prefix_warmup_batch_size=arguments.trace_prefix_warmup_batch_size,
+                    trace_prefix_warmup_verify=arguments.trace_prefix_warmup_verify,
                 )
                 started = time.monotonic()
                 process_start_step = algorithm.global_step
@@ -992,9 +990,18 @@ def train(arguments: argparse.Namespace) -> None:
                     ):
                         base_frozen = algorithm.updates < arguments.freeze_base_updates
                         model.set_base_trainable(not base_frozen)
+                    update_started = time.monotonic()
                     update_metrics = algorithm.update(rollout)
+                    update_metrics["ppo_update_seconds"] = time.monotonic() - update_started
+                    update_metrics["sequence_encoding_batch_size"] = (
+                        algorithm.sequence_encoding_batch_size
+                    )
                     if imitation_updater is not None:
+                        imitation_started = time.monotonic()
                         update_metrics.update(imitation_updater.update(algorithm.updates - 1))
+                        update_metrics["imitation_update_seconds"] = (
+                            time.monotonic() - imitation_started
+                        )
                     elapsed = max(time.monotonic() - started, 1.0e-6)
                     metrics = {
                         "global_step": algorithm.global_step,
@@ -1021,6 +1028,7 @@ def train(arguments: argparse.Namespace) -> None:
                         ),
                     }
                     if next_evaluation is not None and algorithm.global_step >= next_evaluation:
+                        evaluation_started = time.monotonic()
                         if dashboard_state is not None:
                             dashboard_state.set_status("evaluating")
                         metrics.update(
@@ -1049,6 +1057,7 @@ def train(arguments: argparse.Namespace) -> None:
                             seed=arguments.seed,
                             telemetry_callback=telemetry_callback,
                             batch_delay=arguments.inference_batch_delay_ms / 1000.0,
+                            inference_transfer_mode=arguments.inference_transfer_mode,
                             action_contract=arguments.action_contract,
                             initial_policy_version=algorithm.updates,
                             training_seed_pool=training_seed_pool,
@@ -1061,10 +1070,15 @@ def train(arguments: argparse.Namespace) -> None:
                             guide_reward_config=guide_reward,
                             policy_feedback_config=policy_feedback_config,
                             trace_prefix=trace_prefix,
+                            trace_prefix_warmup_batch_size=arguments.trace_prefix_warmup_batch_size,
+                            trace_prefix_warmup_verify=arguments.trace_prefix_warmup_verify,
                         )
                         metrics["training_seed_schedule_state"] = collector.seed_schedule_state()
                         metrics["curriculum_schedule_state"] = collector.curriculum_schedule_state()
                         next_evaluation += arguments.evaluation_interval
+                        metrics["evaluation_and_reset_seconds"] = (
+                            time.monotonic() - evaluation_started
+                        )
                     if collector.completed_episodes:
                         with episodes_path.open("a", encoding="utf-8") as handle:
                             for episode in collector.completed_episodes:
@@ -1105,6 +1119,12 @@ def train(arguments: argparse.Namespace) -> None:
                     json.dumps(
                         {
                             "ppo": asdict(ppo_config),
+                            "sequence_encoding_batch_size": arguments.sequence_encoding_batch_size,
+                            "inference_transfer_mode": arguments.inference_transfer_mode,
+                            "trace_prefix_warmup_batch_size": (
+                                arguments.trace_prefix_warmup_batch_size
+                            ),
+                            "trace_prefix_warmup_verify": arguments.trace_prefix_warmup_verify,
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
                             "policy_feedback_reward": (
@@ -1119,9 +1139,7 @@ def train(arguments: argparse.Namespace) -> None:
                                 "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
                             ),
                             "training_seed_pool": list(training_seed_pool),
-                            "training_level_distribution_version": (
-                                training_distribution_version
-                            ),
+                            "training_level_distribution_version": (training_distribution_version),
                             "curriculum_start_level": arguments.curriculum_start_level,
                             "curriculum_target_level": arguments.curriculum_target_level,
                             "curriculum_profile": arguments.curriculum_profile,
@@ -1231,6 +1249,18 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollout-length", type=int, default=128)
     parser.add_argument("--sequence-length", type=int, default=32)
+    parser.add_argument(
+        "--inference-transfer-mode",
+        choices=("legacy", "packed"),
+        default="legacy",
+        help="Inference staging/result transport; packed reuses pinned input buffers",
+    )
+    parser.add_argument(
+        "--sequence-encoding-batch-size",
+        type=int,
+        default=0,
+        help="Optional PPO encoder batch size across time (0 keeps the historical loop)",
+    )
     parser.add_argument(
         "--gamma",
         type=float,
@@ -1343,6 +1373,17 @@ def main() -> int:
         type=Path,
         help="fresh-launch live replay qualification report for --trace-prefix-bank",
     )
+    parser.add_argument(
+        "--trace-prefix-warmup-batch-size",
+        type=int,
+        default=0,
+        help="batch learner encoding over actual guide inputs; 0 keeps online warm-up",
+    )
+    parser.add_argument(
+        "--trace-prefix-warmup-verify",
+        action="store_true",
+        help="also run online warm-up and fail on hidden-state/handoff parity errors",
+    )
     parser.add_argument("--trace-prefix-tail-actions", type=int, default=16)
     parser.add_argument(
         "--trace-prefix-tail-window",
@@ -1422,6 +1463,8 @@ def main() -> int:
         default=Path("runs/controller-qualification/qualification.json"),
     )
     arguments = parser.parse_args()
+    if arguments.sequence_encoding_batch_size < 0:
+        parser.error("--sequence-encoding-batch-size cannot be negative")
     if arguments.mod_dir is None:
         parser.error("--mod-dir is required when LOCALAPPDATA is unavailable")
     if arguments.total_steps <= 0 or arguments.num_instances <= 0:
@@ -1476,6 +1519,14 @@ def main() -> int:
             parser.error("natural-prefix training does not yet support curriculum mixtures")
         if arguments.natural_prefix_max_turns <= 0 or arguments.natural_prefix_max_attempts <= 0:
             parser.error("natural-prefix turn and attempt limits must be positive")
+    if arguments.trace_prefix_warmup_batch_size < 0:
+        parser.error("--trace-prefix-warmup-batch-size cannot be negative")
+    if arguments.trace_prefix_warmup_verify and not arguments.trace_prefix_warmup_batch_size:
+        parser.error("--trace-prefix-warmup-verify requires a positive warm-up batch size")
+    if arguments.trace_prefix_warmup_batch_size and (
+        arguments.trace_prefix_bank is None or arguments.trace_prefix_recurrent_state != "warm"
+    ):
+        parser.error("batched warm-up requires --trace-prefix-bank and warm recurrent state")
     trace_parts = (arguments.trace_prefix_bank, arguments.trace_prefix_qualification)
     if any(value is not None for value in trace_parts) and not all(
         value is not None for value in trace_parts
@@ -1485,9 +1536,7 @@ def main() -> int:
         if arguments.natural_prefix_guide is not None:
             parser.error("natural and trace prefixes are mutually exclusive")
         if arguments.curriculum_mixture is not None and arguments.training_seed_pools is None:
-            parser.error(
-                "trace-prefix curriculum mixtures require --training-seed-pools"
-            )
+            parser.error("trace-prefix curriculum mixtures require --training-seed-pools")
         if arguments.training_seed_pool is None and arguments.training_seed_pools is None:
             parser.error("trace-prefix training requires explicit finite seed pools")
         if arguments.trace_prefix_tail_actions <= 0:

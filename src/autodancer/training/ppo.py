@@ -6,6 +6,7 @@ import hashlib
 import os
 import random
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from autodancer.training.model import (
     PolicyModel,
     actor_and_critic_parameters,
     current_representation_gradient_norms,
+    evaluate_sequence_batched,
     is_critic_parameter,
 )
 
@@ -150,6 +152,7 @@ class RecurrentPPO:
         self.checkpoint_metadata = dict(checkpoint_metadata or {})
         self.global_step = 0
         self.updates = 0
+        self.sequence_encoding_batch_size = 0
 
     def update(self, rollout: RolloutBatch) -> dict[str, float]:
         config = self.config
@@ -216,12 +219,18 @@ class RecurrentPPO:
                     [rollout.hiddens[start, worker] for worker, start in selected]
                 ).to(self.device)
                 stored_hiddens = self._chunks(rollout.hiddens, selected).to(self.device)
-                log_probs, entropy, values = self.model.evaluate_sequence(
+                evaluator = self.model.evaluate_sequence
+                evaluator_options: dict[str, Any] = {}
+                if self.sequence_encoding_batch_size:
+                    evaluator = partial(evaluate_sequence_batched, self.model)
+                    evaluator_options["encoder_batch_size"] = self.sequence_encoding_batch_size
+                log_probs, entropy, values = evaluator(
                     observation,
                     actions,
                     initial_hidden,
                     episode_starts,
                     stored_hiddens,
+                    **evaluator_options,
                 )
                 log_ratio = log_probs - old_log_probs
                 ratio = log_ratio.exp()

@@ -710,6 +710,86 @@ class ProjectedAdapterActorCritic(nn.Module):
 PolicyModel = RecurrentActorCritic | AdapterActorCritic | ProjectedAdapterActorCritic
 
 
+@torch.inference_mode()
+def warm_recurrent_state_batched(
+    model: PolicyModel,
+    observation: dict[str, Tensor],
+    initial_state: Tensor,
+    *,
+    encoder_batch_size: int = 16,
+) -> Tensor:
+    """Warm one uninterrupted episode from actual CPU inputs shaped [time, ...]."""
+    if encoder_batch_size <= 0:
+        raise ValueError("encoder_batch_size must be positive")
+    if model.training:
+        raise ValueError("recurrent warm-up requires an evaluation-mode model")
+    base = model if isinstance(model, RecurrentActorCritic) else model.base
+    state = initial_state
+    length = observation["previous_action"].shape[0]
+    for start in range(0, length, encoder_batch_size):
+        encoded = model.encode(
+            {
+                key: value[start : start + encoder_batch_size].to(state.device)
+                for key, value in observation.items()
+            }
+        )
+        for features in encoded.split(1):
+            hidden, cell = base.lstm(features, (state[:, 0], state[:, 1]))
+            state = torch.stack((hidden, cell), dim=1)
+    return state
+
+
+def evaluate_sequence_batched(
+    model: PolicyModel,
+    observation: dict[str, Tensor],
+    actions: Tensor,
+    initial_state: Tensor,
+    episode_starts: Tensor,
+    stored_states: Tensor | None = None,
+    *,
+    encoder_batch_size: int = 16,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Batch independent encoders while retaining the exact recurrent boundaries.
+
+    Runtime-only optimization: no parameters or checkpoint architecture change.
+    Chunking bounds individual encoder workspaces, not total saved autograd state.
+    Different GEMM/convolution batch sizes can introduce floating-point differences.
+    """
+    if encoder_batch_size <= 0:
+        raise ValueError("encoder_batch_size must be positive")
+    batch, length = actions.shape
+    flat = {key: value.flatten(0, 1) for key, value in observation.items()}
+    encoded = torch.cat(
+        [
+            model.encode(
+                {key: value[start : start + encoder_batch_size] for key, value in flat.items()}
+            )
+            for start in range(0, batch * length, encoder_batch_size)
+        ]
+    ).reshape(batch, length, -1)
+    base = model if isinstance(model, RecurrentActorCritic) else model.base
+    state = initial_state
+    hidden_sequence = []
+    for step in range(length):
+        boundary = episode_starts[:, step].reshape(-1, 1, 1)
+        state = (
+            state * (~boundary).float()
+            if stored_states is None
+            else torch.where(boundary, stored_states[:, step], state)
+        )
+        hidden, cell = base.lstm(encoded[:, step], (state[:, 0], state[:, 1]))
+        state = torch.stack((hidden, cell), dim=1)
+        hidden_sequence.append(hidden)
+    hidden = torch.stack(hidden_sequence, dim=1)
+    logits = base.actor(hidden).masked_fill(~observation["action_mask"].bool(), -1.0e9)
+    distribution = Categorical(logits=logits)
+    return (
+        distribution.log_prob(actions),
+        distribution.entropy(),
+        base.critic(hidden).squeeze(-1),
+    )
+
+
 def is_critic_parameter(name: str) -> bool:
     """Return whether a named policy parameter belongs exclusively to the critic."""
     return name.startswith("critic.") or name.startswith("base.critic.")

@@ -451,7 +451,8 @@ def trace_prefix_bank(
     )
 
 
-def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
+@pytest.mark.parametrize("warmup_batch,verify", [(0, False), (2, False), (2, True)])
+def test_async_collector_replays_qualified_trace_prefix_before_ppo(warmup_batch, verify) -> None:
     environment = PrefixEnvironment()
     for worker in environment.environments.values():
         worker.slot = 0
@@ -474,6 +475,8 @@ def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
         training_seed_pool=pool,
         curriculum_entries=(WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),),
         trace_prefix=trace_prefix_bank({7: 0, 8: 0}),
+        trace_prefix_warmup_batch_size=warmup_batch,
+        trace_prefix_warmup_verify=verify,
     )
     try:
         rollout = collector.collect(1)
@@ -482,9 +485,21 @@ def test_async_collector_replays_qualified_trace_prefix_before_ppo() -> None:
     assert rollout.actions.shape == (1, 2)
     assert torch.all(rollout.episode_starts[0])
     assert torch.any(rollout.hiddens[0] != 0)
+    timings = collector.last_runtime_metrics["worker_stage_timings"]
+    assert collector.last_runtime_metrics["performance_timing_version"] == 1
+    for slot in timings:
+        assert slot["prefix_environment_calls"] == 2
+        assert slot.get("prefix_inference_calls", 0) == (2 if not warmup_batch or verify else 0)
+        assert slot.get("prefix_batched_warmup_calls", 0) == bool(warmup_batch)
+        assert slot["learner_environment_calls"] == 1
+        assert slot["learner_inference_calls"] == 1
+        assert slot["prefix_total_seconds"] >= slot["prefix_environment_seconds"]
     for worker in environment.environments.values():
         assert worker.actions[:2] == [0, 1]
         assert worker.handoffs[0]["learner_tail_actions"] == 1
+
+    scheduler = collector.last_runtime_metrics["inference_scheduler"]
+    assert scheduler["warmup_verified"] == (2 if verify else 0)
 
 
 def test_async_collector_balances_trace_window_by_slot() -> None:
@@ -507,21 +522,15 @@ def test_async_collector_balances_trace_window_by_slot() -> None:
         device=torch.device("cpu"),
         seed=831,
         training_seed_pool=(7, 8),
-        curriculum_entries=(
-            WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),
-        ),
+        curriculum_entries=(WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),),
         trace_prefix=trace_prefix_bank({7: 0, 8: 0}, tail_window=(1, 2)),
     )
     try:
         collector.collect(1)
     finally:
         collector.close()
-    assert environment.environments["worker-0000"].handoffs[0][
-        "learner_tail_actions"
-    ] == 1
-    assert environment.environments["worker-0001"].handoffs[0][
-        "learner_tail_actions"
-    ] == 2
+    assert environment.environments["worker-0000"].handoffs[0]["learner_tail_actions"] == 1
+    assert environment.environments["worker-0001"].handoffs[0]["learner_tail_actions"] == 2
     assert environment.environments["worker-0000"].actions[:2] == [0, 1]
     assert environment.environments["worker-0001"].actions[:1] == [0]
 
@@ -537,10 +546,7 @@ def test_async_collector_applies_trace_prefix_only_to_matching_reset() -> None:
     seed = next(
         candidate
         for candidate in range(1000)
-        if {
-            EpisodeCurriculumSchedule(candidate, 2, entries).next(slot).id
-            for slot in range(2)
-        }
+        if {EpisodeCurriculumSchedule(candidate, 2, entries).next(slot).id for slot in range(2)}
         == {"fixed", "normal"}
     )
     model = RecurrentActorCritic(
@@ -579,7 +585,8 @@ def test_async_collector_applies_trace_prefix_only_to_matching_reset() -> None:
     assert len(prefix_free[0].actions) == 1
 
 
-def test_async_collector_fails_closed_when_trace_prefix_digest_diverges() -> None:
+@pytest.mark.parametrize("warmup_batch", [0, 2])
+def test_async_collector_fails_closed_when_trace_prefix_digest_diverges(warmup_batch) -> None:
     environment = PrefixEnvironment()
     for worker in environment.environments.values():
         worker.slot = 0
@@ -602,6 +609,7 @@ def test_async_collector_fails_closed_when_trace_prefix_digest_diverges() -> Non
         training_seed_pool=pool,
         curriculum_entries=(WeightedResetSpec(EpisodeResetSpec("fixed", 4, 5, "player20"), 1.0),),
         trace_prefix=trace_prefix_bank({7: 0, 8: 0}, corrupt=True),
+        trace_prefix_warmup_batch_size=warmup_batch,
     )
     try:
         with pytest.raises(TracePrefixError, match="observation digest mismatch"):
