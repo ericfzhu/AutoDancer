@@ -229,3 +229,10 @@ experiments:
     status: planned
     historical: false
     registered_at: '2026-09-03T01:33:35.460244+00:00'
+  EXP-0035:
+    spec: experiments/EXP-0035/experiment.yaml
+    spec_sha256: 52dfd4fb61a99f6b5f57b579292541919f9096f65584b71083845c12e9c53d5a
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-07T22:22:14.478310+00:00'
+    updated_at: '2026-09-07T22:43:05.738359+00:00'

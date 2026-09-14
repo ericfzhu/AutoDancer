@@ -1,0 +1,59 @@
+schema_version: 1
+id: EXP-0035
+title: Bounded Death Metal learning-bottleneck diagnosis
+question: Does repeated versus varied encounter practice improve familiar and unseen assisted boss performance within a fixed wall-clock budget?
+hypothesis: Existing trace-tail competence may fail to transfer to direct encounter starts; only comparable starts with measurable initial competence justify the planned seed-diversity comparison.
+changed_blocks: [training-level-distribution, evaluation]
+component_versions:
+  training-level-distribution: bounded-bottleneck-v1
+  evaluation: bounded-bottleneck-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+invariants:
+  - Seven-hour total elapsed cap including preparation, startup, training, and evaluation; preparation gate has a one-hour cap.
+  - No architecture, reward, assistance, action-contract, or PPO hyperparameter sweep.
+  - Frozen source checkpoint is runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt; bind its hash in preparation manifest before gameplay.
+  - Use current hash-valid controller qualification and abort on controller faults; never score infrastructure failures as game failures.
+  - Assisted boss completion is not normal-start or full-game evidence.
+  - No policy outcome selection of game seeds; partition sorted Death Metal identities before gameplay.
+  - Final test outcomes remain unopened until the comparison protocol is complete; if preparation fails, do not run final test.
+arms:
+  - id: fixed
+    description: Repeat the first identity-selected training seed from a direct player20 level-4 start.
+  - id: varied
+    description: Uniform finite pool of the first 16 identity-selected training seeds, with identical direct starts.
+  - id: frozen
+    description: Frozen source preparation and learning-curve reference; known qualified trace tails are positive controls only.
+preparation:
+  candidate_seeds: {first: 214000, last: 214255}
+  identity_only_selection: First 40 sorted Death Metal seeds; first 16 training, next 8 development, final 16 final test. Reject insufficient coverage.
+  known_training_seeds: [92008, 92096, 92116]
+  profile: player20
+  start_level: 4
+  target_level: 5
+  max_learner_turns: 500
+  policy_streams: [215001, 215002]
+  source_screen: Evaluate all 16 training and 8 development seeds plus three historically familiar seeds, with both stochastic streams. Deterministic mode is a secondary diagnostic if budget permits.
+  positive_control: Frozen qualified trace handoff with tail 60 on the three familiar seeds, warm recurrent state, both stochastic streams.
+  gate: Direct-start completion on the 16 training seeds must lie in the closed 10--90 percent band aggregated across both streams; development outcomes do not choose difficulty or seeds. Initial fixed-seed ceiling or floor is reported, not used to reselect it.
+  fallback: If the gate fails or comparable starts cannot be qualified within one hour, finish the frozen direct-versus-known-handoff diagnosis, report why the learning comparison is inconclusive, and do not spend the training budget or implement snapshots. Do not mistake absent initial success for proof of inability to learn.
+training:
+  conditional_on: preparation gate passing
+  optimizer_seeds: [216001, 216002, 216003]
+  order: fixed-216001, varied-216001, varied-216002, fixed-216002, fixed-216003, varied-216003
+  seconds_per_run: 2700
+  checkpoints_seconds: [900, 1800, 2700]
+  num_workers: 8
+  sequence_encoding_batch_size: 16
+  inference_transfer_mode: legacy
+  initialization: Identical source weights and fresh optimizer per run; carry recurrence normally after reset.
+  timing: Count startup and resets; finish current update at checkpoints, record overshoot, shorten subsequent runs to maintain total cap.
+evaluation:
+  budget_seconds: 5400
+  development: Training and eight development seeds at source and saved checkpoints; fixed stochastic streams 215001 and 215002.
+  final_test: Six final checkpoints and frozen source on the reserved 16 seeds; once per checkpoint with the same two streams, no selection or retraining afterward.
+  budget_priority: Final checkpoint and source comparisons first; omit intermediate evaluations symmetrically if the measured cost would exceed the cap, disclose omissions.
+  primary: Curriculum completion fraction and improvement from frozen source, separately per game seed, pool, and optimizer trial.
+  secondary: Damage taken, episode turns, boss progress, shaped return, controller health, training losses, and success versus elapsed time and learner transitions.
+  time_accounting: Startup, resets, guide actions, learner actions, inference, PPO, evaluation; nested timings are not added as independent costs.
+decision_rule: Diagnose only. Familiar-only improvement supports a transfer investigation; broad steady improvement supports faster collection; flat curves justify a targeted learning diagnostic, not algorithm rejection. Guide/reset dominance supports investigating direct starts or snapshots. No promotion. If preparation gate fails, conclude the planned learning comparison is inconclusive and preserve the measured narrower result.
