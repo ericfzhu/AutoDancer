@@ -45,5 +45,7 @@ def observation_space() -> spaces.Dict:
                 dtype=np.int16,
             ),
             "action_mask": spaces.Box(0, 1, shape=(ACTION_COUNT,), dtype=np.int8),
+            "equipment_controls": spaces.Box(0, 1, shape=(3,), dtype=np.int8),
+            "bounded_loadout": spaces.Box(0, 1, shape=(2,), dtype=np.int8),
         }
     )

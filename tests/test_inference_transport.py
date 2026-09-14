@@ -41,6 +41,10 @@ def test_scheduler_preserves_outputs_and_retained_results_across_buffer_reuse(mo
         }
         for i in range(3)
     ]
+    # Additive telemetry must survive both transports without changing legacy
+    # policy outputs: only the opt-in action contract projects it into inventory.
+    for i, observation in enumerate(observations):
+        observation["equipment_controls"] = np.array([1, 1, i % 2], dtype=np.int8)
     hidden = model.initial_state(3, device=device)
     scheduler = InferenceScheduler(
         model,

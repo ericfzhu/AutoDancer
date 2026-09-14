@@ -19,16 +19,20 @@ from autodancer.constants import (
 )
 
 ACTION_CONTRACTS = (
+    "bounded-bard-v1",
+    "bounded-bard-navigation-v1",
     "current",
     "legacy-no-wait",
     "known-invalid-wall-v1",
     "map-navigation-prior-v1",
     "map-navigation-prior-v2",
+    "dagger-controls-v1",
 )
 _WALL_MEMORY_CONTRACTS = {
     "known-invalid-wall-v1",
     "map-navigation-prior-v1",
     "map-navigation-prior-v2",
+    "dagger-controls-v1",
 }
 
 _PLAYER_CONTROL_CHANNELS = (
@@ -42,6 +46,10 @@ _PLAYER_CONTROL_CHANNELS = (
     GridChannel.CHARGE_DIRECTION,
     GridChannel.SHIELD_DIRECTION,
 )
+
+
+class UnsupportedLoadoutError(RuntimeError):
+    """The episode escaped the declared research scope; never a gameplay loss."""
 
 
 def _state_signature(observation: dict[str, np.ndarray], action: Action) -> tuple[int, ...]:
@@ -71,6 +79,38 @@ def apply_action_contract[Array: np.ndarray](
     """Apply a stateless contract without mutating authoritative live telemetry."""
     if contract not in ACTION_CONTRACTS:
         raise ValueError(f"Unknown action contract: {contract}")
+    if contract in {"bounded-bard-v1", "bounded-bard-navigation-v1"}:
+        scope = observation.get("bounded_loadout")
+        if scope is None or np.any(scope[..., 0] != 1):
+            raise ValueError(f"{contract} requires bounded-loadout-v1 telemetry")
+        if np.any(scope[..., 1] != 1):
+            raise UnsupportedLoadoutError(
+                f"{contract} encountered equipment outside dagger/basic shovel/bombs; "
+                "invalidate this experiment, do not score it as a gameplay failure"
+            )
+        return apply_action_contract(observation, "dagger-controls-v1")
+    if contract == "dagger-controls-v1":
+        controls = observation.get("equipment_controls")
+        if controls is None or np.any(controls[..., 0] != 1):
+            raise ValueError("dagger-controls-v1 requires equipment-controls-v1 telemetry")
+        result = dict(observation)
+        inventory = observation["inventory"].copy()
+        supported = controls[..., 1].astype(bool)
+        armed = controls[..., 2].astype(bool)
+        # Versioned policy projection: this column remains toggle state for all
+        # other equipment. Legacy contracts see the original inventory unchanged.
+        inventory[..., 0, 7] = np.where(supported, armed, inventory[..., 0, 7])
+        mask = observation["action_mask"].copy()
+        # THROW is shared with equipment toggles/conversions. Only suppress a
+        # repeat for the bounded loadout (weapon, shovel, bombs); keep it available
+        # when any additional equipment could give that button another effect.
+        extra_equipment = np.any(inventory[..., [1, 2, 4, 5, 7, 8, 9, 10, 11, 12], 0] != 0, axis=-1)
+        mask[..., int(Action.THROW)] = np.where(
+            armed & ~extra_equipment, 0, mask[..., int(Action.THROW)]
+        )
+        result["inventory"] = inventory
+        result["action_mask"] = mask
+        return result
     if contract in {"current", "known-invalid-wall-v1", "map-navigation-prior-v1"}:
         return observation
     result = dict(observation)
@@ -89,6 +129,7 @@ class ActionContractMemory:
     _blocked: list[set[tuple[int, ...]]] = field(init=False, repr=False)
     _hazards: list[set[tuple[int, int]]] = field(init=False, repr=False)
     _hazard_levels: list[tuple[int, int] | None] = field(init=False, repr=False)
+    _navigation: ActionContractMemory | None = field(init=False, repr=False, default=None)
 
     def __post_init__(self) -> None:
         if self.contract not in ACTION_CONTRACTS:
@@ -98,6 +139,8 @@ class ActionContractMemory:
         self._blocked = [set() for _ in range(self.slots)]
         self._hazards = [set() for _ in range(self.slots)]
         self._hazard_levels = [None for _ in range(self.slots)]
+        if self.contract == "bounded-bard-navigation-v1":
+            self._navigation = ActionContractMemory("dagger-controls-v1", self.slots)
 
     def _check_slot(self, slot: int) -> None:
         if not 0 <= slot < self.slots:
@@ -105,6 +148,8 @@ class ActionContractMemory:
 
     def clear(self, slot: int) -> None:
         self._check_slot(slot)
+        if self._navigation is not None:
+            self._navigation.clear(slot)
         self._blocked[slot].clear()
         self._hazards[slot].clear()
         self._hazard_levels[slot] = None
@@ -122,6 +167,12 @@ class ActionContractMemory:
 
     def masked_directions(self, slot: int, observation: dict[str, np.ndarray]) -> tuple[int, ...]:
         self._check_slot(slot)
+        if self._navigation is not None:
+            return self._navigation.masked_directions(
+                slot, apply_action_contract(observation, self.contract)
+            )
+        if self._armed(observation):
+            return ()
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return ()
         base_mask = observation["action_mask"]
@@ -134,11 +185,19 @@ class ActionContractMemory:
 
     def apply_slot(self, slot: int, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         self._check_slot(slot)
+        if self._navigation is not None:
+            return self._navigation.apply_slot(
+                slot, apply_action_contract(observation, self.contract)
+            )
+        if self.contract == "dagger-controls-v1":
+            observation = apply_action_contract(observation, self.contract)
+            if self._armed(observation):
+                return observation
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return apply_action_contract(observation, self.contract)
         self._update_hazards(slot, observation)
         wall_masked = self.masked_directions(slot, observation)
-        if self.contract == "map-navigation-prior-v1":
+        if self.contract in {"map-navigation-prior-v1", "dagger-controls-v1"}:
             navigation_preferred = _navigation_preferred_directions(observation, wall_masked)
         elif self.contract == "map-navigation-prior-v2":
             navigation_preferred = _navigation_preferred_directions_v2(
@@ -166,6 +225,19 @@ class ActionContractMemory:
         return result
 
     def apply_batch(self, observation: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        if self._navigation is not None:
+            return self._navigation.apply_batch(apply_action_contract(observation, self.contract))
+        if self.contract == "dagger-controls-v1":
+            if int(observation["action_mask"].shape[0]) != self.slots:
+                raise ValueError("Batched action-mask capacity does not match contract slots")
+            rows = [
+                self.apply_slot(slot, {k: v[slot] for k, v in observation.items()})
+                for slot in range(self.slots)
+            ]
+            result = dict(observation)
+            for key in ("inventory", "action_mask"):
+                result[key] = np.stack([row[key] for row in rows])
+            return result
         if self.contract not in _WALL_MEMORY_CONTRACTS:
             return apply_action_contract(observation, self.contract)
         if int(observation["action_mask"].shape[0]) != self.slots:
@@ -195,11 +267,24 @@ class ActionContractMemory:
     ) -> dict[str, Any]:
         """Learn only authoritative wall no-ops and report the next effective mask."""
         self._check_slot(slot)
+        if self._navigation is not None:
+            result = self._navigation.observe(
+                slot,
+                apply_action_contract(before, self.contract),
+                action,
+                apply_action_contract(after, self.contract),
+                info,
+            )
+            return {**result, "name": self.contract}
         newly_learned = False
+        if self.contract == "bounded-bard-v1":
+            apply_action_contract(before, self.contract)
+            apply_action_contract(after, self.contract)
         category = str((info.get("action_outcome") or {}).get("category", ""))
         selected = Action(int(action))
         if (
             self.contract in _WALL_MEMORY_CONTRACTS
+            and not self._armed(before)
             and selected in DIRECTION_DELTAS
             and category == "wall_attempt"
         ):
@@ -208,7 +293,9 @@ class ActionContractMemory:
             self._blocked[slot].add(signature)
         masked = self.masked_directions(slot, after)
         self._update_hazards(slot, after)
-        if self.contract == "map-navigation-prior-v1":
+        if self._armed(after):
+            navigation_preferred = ()
+        elif self.contract in {"map-navigation-prior-v1", "dagger-controls-v1"}:
             navigation_preferred = _navigation_preferred_directions(after, masked)
         elif self.contract == "map-navigation-prior-v2":
             navigation_preferred = _navigation_preferred_directions_v2(
@@ -240,6 +327,14 @@ class ActionContractMemory:
             "navigation_preferred_directions": list(navigation_preferred),
             "navigation_masked_directions": list(navigation_masked),
         }
+
+    def _armed(self, observation: dict[str, np.ndarray]) -> bool:
+        if self.contract != "dagger-controls-v1":
+            return False
+        controls = observation.get("equipment_controls")
+        if controls is None or int(controls[0]) != 1:
+            raise ValueError("dagger-controls-v1 requires equipment-controls-v1 telemetry")
+        return bool(controls[1] and controls[2])
 
     def _update_hazards(self, slot: int, observation: dict[str, np.ndarray]) -> None:
         if self.contract != "map-navigation-prior-v2":

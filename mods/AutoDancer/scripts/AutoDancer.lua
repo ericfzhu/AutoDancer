@@ -611,6 +611,11 @@ end
 local function buildObservation()
     local player = Player.getPlayerEntity(1)
     local result = emptyObservation()
+    -- Additive, versioned extension: version, qualified starting dagger, armed.
+    -- Keep legacy inventory and engine action availability unchanged.
+    result.equipment_controls = {1, 0, 0}
+    -- Exact names avoid the lossy type-ID hash when enforcing a research scope.
+    result.bounded_loadout = {1, 1}
     local grid = result.grid
     local playerValues = result.player
     local inventory = result.inventory
@@ -678,6 +683,30 @@ local function buildObservation()
         playerValues[14] = currentBossType()
 
         local slots = player.inventory and player.inventory.itemSlots or {}
+        local boundedLoadout = true
+        local allowedLoadout = {
+            weapon = {WeaponDagger = true},
+            shovel = {ShovelBasic = true},
+            bomb = {Bomb = true, Bomb3 = true},
+        }
+        for slotName, slotItems in pairs(slots) do
+            for _, entityID in ipairs(slotItems) do
+                local item = Entities.getEntityByID(entityID)
+                if not item or not (allowedLoadout[slotName]
+                    and allowedLoadout[slotName][item.name]) then
+                    boundedLoadout = false
+                end
+            end
+        end
+        result.bounded_loadout[2] = boundedLoadout and 1 or 0
+        local controlWeaponID = slots.weapon and slots.weapon[1]
+        local controlWeapon = controlWeaponID and Entities.getEntityByID(controlWeaponID)
+        if controlWeapon and controlWeapon.name == "WeaponDagger"
+            and hasComponent(controlWeapon, "weaponThrowable")
+            and hasComponent(controlWeapon, "itemActivable") then
+            result.equipment_controls[2] = 1
+            result.equipment_controls[3] = controlWeapon.itemActivable.active and 1 or 0
+        end
         encodeInventoryItem(inventory, 1, slots.weapon and slots.weapon[1])
         encodeInventoryItem(inventory, 2, slots.action and slots.action[1])
         encodeInventoryItem(inventory, 3, slots.action and slots.action[2])

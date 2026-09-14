@@ -34,6 +34,7 @@ class ActionOutcome:
     target_terrain_after: int | None = None
     descent_source: str | None = None
     event_kinds: tuple[str, ...] = ()
+    equipment_action: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -49,9 +50,7 @@ def _position(observation: dict[str, np.ndarray]) -> tuple[int, int, int, int]:
     )
 
 
-def _target_cell(
-    observation: dict[str, np.ndarray], action: Action
-) -> tuple[int, int] | None:
+def _target_cell(observation: dict[str, np.ndarray], action: Action) -> tuple[int, int] | None:
     delta = DIRECTION_DELTAS.get(action)
     if delta is None:
         return None
@@ -89,6 +88,27 @@ def classify_action_outcome(
             terrain_after = int(after["grid"][row, column, GridChannel.TERRAIN_CLASS])
 
     descent_source = None
+    equipment_action = None
+    before_controls = before.get("equipment_controls", (0, 0, 0))
+    after_controls = after.get("equipment_controls", (0, 0, 0))
+    if (
+        action == Action.BOMB
+        and before.get("bounded_loadout", (0, 0))[1]
+        and not floor_changed
+        and before["inventory"][6, 2] > after["inventory"][6, 2]
+        and np.any(after["grid"][..., GridChannel.STATUS] & 1)
+    ):
+        equipment_action = "bomb_placed"
+    if before_controls[0] == after_controls[0] == 1 and not floor_changed:
+        same_weapon = np.array_equal(before["inventory"][0, :2], after["inventory"][0, :2])
+        if before_controls[1] and after_controls[1] and same_weapon and action == Action.THROW:
+            if not before_controls[2] and after_controls[2]:
+                equipment_action = "throw_prepared"
+            elif before_controls[2] and after_controls[2]:
+                equipment_action = "throw_already_armed"
+        elif before_controls[1] and before_controls[2] and target is not None:
+            if not position_changed and after["inventory"][0, 0] == 0:
+                equipment_action = "weapon_thrown"
     if floor_changed:
         category = "floor_transition"
         if trap_before == int(TrapKind.TRAPDOOR):
@@ -101,10 +121,14 @@ def classify_action_outcome(
         category = "combat"
     elif events & INTERACTION_EVENTS:
         category = "interaction"
+    elif equipment_action is not None:
+        category = equipment_action
     elif action == Action.WAIT:
         category = "wait"
-    elif target is not None and terrain_before == int(Terrain.WALL) and (
-        position_changed or terrain_after != terrain_before
+    elif (
+        target is not None
+        and terrain_before == int(Terrain.WALL)
+        and (position_changed or terrain_after != terrain_before)
     ):
         category = "dig"
     elif position_changed:
@@ -129,4 +153,5 @@ def classify_action_outcome(
         target_terrain_after=terrain_after,
         descent_source=descent_source,
         event_kinds=event_kinds,
+        equipment_action=equipment_action,
     )

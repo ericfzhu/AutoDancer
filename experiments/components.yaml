@@ -40,11 +40,13 @@ blocks:
       A8: Zero-projected staged residual, inconclusive.
   observation:
     versions:
+      bounded-bard-controls-v1: Additive versioned dagger-armed and exact-name loadout-scope telemetry; legacy policy input dimensions remain unchanged.
       legacy-A2: Local grid, player, inventory, entities, and action mask.
       schema9-rich: Persistent floor memory and richer stacked cell semantics.
       schema10-corrected-memory-boss: Correct current visibility, retain a complete 65x65 floor in 129x129 player-relative memory, and expose official boss type plus boss-objective telemetry without expanding A2's input width.
   controller:
     versions:
+      schema10-bounded-refresh-v1: Fresh current-artifact controller conformance, replay, recovery, collector checks and a 32768-transition short soak; not a replacement claim for the historical million-transition endurance run.
       historical-live: Live bridge predating the schema-10 hard qualification.
       schema10-qualified: Launch-bound duplex pipe controller qualified for one million turns.
       schema10-requalified-current-hashes: Schema-10 controller requalified for one million transitions with experiment startup bound to exact mod hashes.
@@ -64,6 +66,8 @@ blocks:
       boss-objective-v3: Critic-health diagnostics plus separate boss, boss-add, and generic-enemy damage and kill attribution, official boss identity, curriculum completion, and episode-horizon lineage.
   action-contract:
     versions:
+      bounded-bard-navigation-v1: Bounded Bard loadout guard and corrected dagger projection with the existing dagger-controls-v1 navigation and invalid-wall memory restored.
+      bounded-bard-v1: Basic dagger, basic shovel and finite bombs only; reject scope violations, expose dagger arming, suppress redundant arming, and preserve all engine-available directions without a walking navigation prior.
       legacy-11: Earlier eleven-action masking behavior.
       current-11: Current qualified eleven-action contract.
       known-invalid-wall-v1: Episode-local memory masks an exact directional state only after the live game authoritatively reports a wall no-op; changed structure, control state, or inventory reopens it.

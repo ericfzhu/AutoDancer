@@ -397,6 +397,13 @@ class EpisodeAccumulator:
             self.productive_stationary_interaction_turns += 1
             self._last_unchanged_direction = None
             self._repeated_direction_streak = 0
+        elif (info.get("action_outcome") or {}).get("equipment_action") in {
+            "throw_prepared",
+            "weapon_thrown",
+            "bomb_placed",
+        }:
+            self._last_unchanged_direction = None
+            self._repeated_direction_streak = 0
         elif unchanged and int(Action.UP) <= action <= int(Action.LEFT):
             self.unchanged_direction_turns += 1
             if action == self._last_unchanged_direction:

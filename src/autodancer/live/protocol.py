@@ -232,6 +232,25 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
     }
 
     grid = observation["grid"]
+    controls = _integer_array(
+        payload.get("equipment_controls", [0, 0, 0]),
+        "equipment_controls",
+        (3,),
+        np.dtype(np.int8),
+    )
+    if (
+        np.any((controls < 0) | (controls > 1))
+        or (controls[0] == 0 and np.any(controls[1:]))
+        or (controls[2] and not controls[1])
+    ):
+        raise ProtocolError("Invalid equipment-controls-v1 state")
+    observation["equipment_controls"] = controls
+    scope = _integer_array(
+        payload.get("bounded_loadout", [0, 0]), "bounded_loadout", (2,), np.dtype(np.int8)
+    )
+    if np.any((scope < 0) | (scope > 1)) or (scope[0] == 0 and scope[1]):
+        raise ProtocolError("Invalid bounded-loadout-v1 state")
+    observation["bounded_loadout"] = scope
     channel_ranges = {
         GridChannel.TERRAIN_CLASS: (0, len(Terrain) - 1),
         GridChannel.TERRAIN_TYPE: (0, 4095),

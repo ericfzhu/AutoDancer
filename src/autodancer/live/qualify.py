@@ -906,7 +906,7 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
                     explorer.reset_level()
                     previous_zone = int(info.get("zone") or 0)
                     previous_floor = int(info.get("floor") or 0)
-                if (transition + 1) % 1000 == 0:
+                if (transition + 1) % getattr(arguments, "memory_sample_interval", 1000) == 0:
                     handle = supervisor.workers[worker_id]
                     process = psutil.Process(handle.pid)
                     memory.append(int(process.memory_info().rss))
@@ -997,6 +997,11 @@ def natural_soak(arguments: argparse.Namespace) -> dict[str, Any]:
             "stable_memory": all(
                 worker["sustained_memory_growth_second_half"] <= 0.05
                 for worker in workers
+            ),
+            "sufficient_memory_samples": all(
+                arguments.transitions_per_worker
+                // getattr(arguments, "memory_sample_interval", 1000) >= 20
+                for _ in workers
             ),
             "mechanic_coverage": REQUIRED_MECHANICS <= global_mechanics,
             "exact_capacity": len(supervisor._worker_processes) == arguments.num_instances,
@@ -1095,6 +1100,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             "mod_dir": str(arguments.mod_dir),
             "num_instances": arguments.num_instances,
             "transitions_per_worker": arguments.transitions_per_worker,
+            "memory_sample_interval": getattr(arguments, "memory_sample_interval", 1000),
             "device": arguments.device,
             "steam_presence_worker": getattr(arguments, "steam_presence_worker", None),
         },
@@ -1113,6 +1119,7 @@ def main() -> int:
     parser.add_argument("--mod-dir", type=Path, required=True)
     parser.add_argument("--num-instances", type=int, default=8)
     parser.add_argument("--transitions-per-worker", type=int, default=125_000)
+    parser.add_argument("--memory-sample-interval", type=int, default=1000)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--startup-timeout", type=float, default=60.0)
@@ -1126,6 +1133,8 @@ def main() -> int:
         parser.error("controller qualification requires exactly eight workers")
     if arguments.transitions_per_worker <= 0:
         parser.error("--transitions-per-worker must be positive")
+    if arguments.memory_sample_interval <= 0:
+        parser.error("--memory-sample-interval must be positive")
     if arguments.steam_presence_worker is not None and not (
         0 <= arguments.steam_presence_worker < arguments.num_instances
     ):
