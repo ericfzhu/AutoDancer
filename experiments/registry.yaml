@@ -236,3 +236,10 @@ experiments:
     historical: false
     registered_at: '2026-09-07T22:22:14.478310+00:00'
     updated_at: '2026-09-07T22:43:05.738359+00:00'
+  EXP-0036:
+    spec: experiments/EXP-0036/experiment.yaml
+    spec_sha256: 5fa6f5e9aa401b0864748c91f58d675e6f7e889be505eb3e9112ec117db05393
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-08T04:04:43.412523+00:00'
+    updated_at: '2026-09-08T04:38:36.279800+00:00'

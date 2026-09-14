@@ -94,6 +94,7 @@ blocks:
       A8-full-boss-v5-fresh-critic-v1: Preserve the exact A8 actor and recurrent function from EXP-0022 seed-86002, reset critic and optimizer for terminal-canceling full-boss returns, freeze inherited actor/recurrent base parameters for ten updates, then optimize jointly.
   training-level-distribution:
     versions:
+      bounded-direct-pilot-v1: Direct assisted Death Metal starts on the fixed 16-seed training pool, one 16384-transition pilot with a 20-minute training cap and no guides.
       bounded-bottleneck-v1: Fixed versus varied identity-selected Death Metal direct starts, conditional on frozen competence.
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
       uniform-finite-pool-v1: Each worker samples from one declared finite seed pool; independent streams and exact next-draw state are checkpointed.
@@ -124,6 +125,7 @@ blocks:
       async-native-pipe-v1: Versioned asynchronous native-pipe actor collection.
   evaluation:
     versions:
+      bounded-direct-pilot-v1: Paired frozen-source and final-policy stochastic evaluation on 16 training and 8 development seeds with two fixed streams; no final-test gameplay or policy promotion.
       bounded-bottleneck-v1: Time-bounded frozen-start qualification and conditional seed-diversity learning diagnosis.
       heldout-live-v1: Deterministic held-out live-game episodes with gameplay metrics.
       schema10-async-v1: Qualified asynchronous deterministic evaluation.
