@@ -125,6 +125,7 @@ blocks:
       async-native-pipe-v1: Versioned asynchronous native-pipe actor collection.
   evaluation:
     versions:
+      bounded-navigation-ablation-v1: Frozen original source on the same 24 seeds and two policy streams as EXP-0036; reuse hash-bound no-navigation control reports and run 48 navigation-assisted episodes with no optimizer or final-test gameplay.
       bounded-direct-pilot-v1: Paired frozen-source and final-policy stochastic evaluation on 16 training and 8 development seeds with two fixed streams; no final-test gameplay or policy promotion.
       bounded-bottleneck-v1: Time-bounded frozen-start qualification and conditional seed-diversity learning diagnosis.
       heldout-live-v1: Deterministic held-out live-game episodes with gameplay metrics.

@@ -1,0 +1,88 @@
+schema_version: 1
+id: EXP-0037
+title: Frozen bounded navigation assistance comparison
+question: Does restoring navigation assistance improve direct-start performance of
+  the frozen source under corrected dagger controls?
+hypothesis: Navigation assistance reduces wall attempts and increases boss contact;
+  combat success is evaluated separately.
+changed_blocks:
+- action-contract
+- evaluation
+component_versions:
+  observation: bounded-bard-controls-v1
+  action-contract: bounded-bard-v1
+  evaluation: bounded-navigation-ablation-v1
+  controller: schema10-bounded-refresh-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+invariants:
+- Original EXP-0036 source checkpoint, not its fine-tuned final checkpoint; no optimizer,
+  guide actions, architecture or reward changes.
+- Exactly eight workers, Bard player20, direct level 4 to level 5, 500 turns, fixed
+  24 seeds and two stochastic policy streams; no final-test gameplay.
+- Reuse the 48 completed EXP-0036 frozen control episodes, binding their reports and
+  original source manifest. The only changed runtime Python source allowed for reuse
+  is the additive action-contract wrapper; all other runtime Python and Lua hashes
+  must match.
+- Refresh scoped live mechanics qualification and pass targeted contract tests before
+  evaluation. The new wrapper delegates navigation to dagger-controls-v1; the old
+  no-navigation contract is retained.
+- Whole new evaluation has a twenty-minute hard cap, each stream ten minutes. Source
+  drift, unexpected equipment, infrastructure errors or incomplete seed coverage invalidates
+  the attempt with no seed replacement.
+- Navigation assistance includes learned invalid-wall masking and the existing exploration/stair
+  prior; this experiment does not attribute their effects separately.
+arms:
+- id: control
+  description: Reuse EXP-0036 frozen bounded-bard-v1 reports, 48 episodes.
+- id: navigation
+  description: Same frozen checkpoint with bounded-bard-navigation-v1, 48 new episodes.
+  component_versions:
+    action-contract: bounded-bard-navigation-v1
+source:
+  checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+  controller_qualification: runs/controller-qualification-bounded-bard-v1/qualification.json
+  gameplay_qualification: runs/bounded-navigation-mechanics-refresh/result.json
+  control_root: runs/bounded-learning-exp0036-complete
+evaluation:
+  training_seeds:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  development_seeds:
+  - 214064
+  - 214071
+  - 214085
+  - 214089
+  - 214100
+  - 214102
+  - 214103
+  - 214105
+  policy_streams:
+  - 215001
+  - 215002
+  policy_mode: stochastic
+  episodes_per_checkpoint: 48
+  max_turns: 500
+  primary: Paired completion and boss damage by training and development pools.
+  secondary: Wall-attempt rate, navigation activity, remembered wall states, deaths,
+    turns, controller health and time.
+  episodes_per_arm: 48
+decision_rule: Diagnostic only, no policy promotion. A reduction in wall attempts
+  together with positive boss damage supports navigation dependence. Completion is
+  reported independently; zero completions does not establish learning inability.
+  Any scope, controller, source or budget failure invalidates the new arm. Always
+  record the paired results without selecting seeds or checkpoints.

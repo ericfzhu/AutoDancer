@@ -243,3 +243,10 @@ experiments:
     historical: false
     registered_at: '2026-09-08T04:04:43.412523+00:00'
     updated_at: '2026-09-08T04:38:36.279800+00:00'
+  EXP-0037:
+    spec: experiments/EXP-0037/experiment.yaml
+    spec_sha256: f33f8deb23d1d2877ace4e59079d82f1ee15e0d15ef0c1f70ef2c18fbb4e7f42
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-08T06:22:47.377530+00:00'
+    updated_at: '2026-09-08T06:33:12.704345+00:00'
