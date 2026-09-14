@@ -1,0 +1,4830 @@
+{
+  "schema_version": 1,
+  "game_version": "v4.2.1-b5713",
+  "steam_build": "22938426",
+  "scope": "Installed weapon families plus registered item prototypes in the current training configuration; not a loot simulator",
+  "evidence_sha256": {
+    "active-prototypes.json": "a1cee3836b64cecf78413264c99455e193c715cd59de075dad7e91fac1ed9481",
+    "definitions.json": "d3778f8b7a1424e5f5a917c0243d9a656b801010a4931e8e294ed1148e4b1f4d",
+    "supplemental-definitions.json": "a7a72966f48b2f82bc9cbdfb54e8ecefbecee4b3f792f67c397b076874e54abe",
+    "game.log": "e8140e00bafeb40c50c3bcd6d3dfae089de161eab1448feb4666dc5d28641e69"
+  },
+  "core_weapon_families": [
+    {
+      "family": "Axe",
+      "source": "scripts/necro/game/data/item/weapon/shape/Axe.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Installed shape definition; not registered in the sampled training configuration."
+    },
+    {
+      "family": "Blunderbuss",
+      "source": "scripts/necro/game/data/item/weapon/shape/Blunderbuss.lua",
+      "archive": "versions/v4.2.1.wsp",
+      "registered_variants": [
+        "WeaponBlunderbuss"
+      ],
+      "controls": "Reloadable; sampled prototype starts with 1/1 ammo and reloads 1 per activation."
+    },
+    {
+      "family": "Bow",
+      "source": "scripts/necro/game/data/item/weapon/shape/Bow.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponBow",
+        "WeaponTitaniumBow",
+        "WeaponObsidianBow",
+        "WeaponGoldenBow",
+        "WeaponBloodBow",
+        "WeaponGlassBow"
+      ],
+      "controls": "Directional weapon attack; no throw/reload component on sampled variants."
+    },
+    {
+      "family": "Broadsword",
+      "source": "scripts/necro/game/data/item/weapon/shape/Broadsword.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponBroadsword",
+        "WeaponTitaniumBroadsword",
+        "WeaponObsidianBroadsword",
+        "WeaponGoldenBroadsword",
+        "WeaponBloodBroadsword",
+        "WeaponGlassBroadsword"
+      ],
+      "controls": "Directional weapon attack; no throw/reload component on sampled variants."
+    },
+    {
+      "family": "Cat",
+      "source": "scripts/necro/game/data/item/weapon/shape/Cat.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponCat",
+        "WeaponTitaniumCat",
+        "WeaponObsidianCat",
+        "WeaponGoldenCat",
+        "WeaponBloodCat",
+        "WeaponGlassCat"
+      ],
+      "controls": "Cat O Nine Tails; directional attack/movement pattern needs its own action interpretation."
+    },
+    {
+      "family": "Crossbow",
+      "source": "scripts/necro/game/data/item/weapon/shape/Crossbow.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponCrossbow",
+        "WeaponTitaniumCrossbow",
+        "WeaponObsidianCrossbow",
+        "WeaponGoldenCrossbow",
+        "WeaponBloodCrossbow",
+        "WeaponGlassCrossbow"
+      ],
+      "controls": "Reloadable; sampled base prototype starts with 3/3 ammo and reloads 3 per activation."
+    },
+    {
+      "family": "Cutlass",
+      "source": "scripts/necro/game/data/item/weapon/shape/Cutlass.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Installed shape definition; not registered in the sampled training configuration."
+    },
+    {
+      "family": "Dagger",
+      "source": "scripts/necro/game/data/item/weapon/shape/Dagger.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponDagger",
+        "WeaponDaggerShard",
+        "WeaponTitaniumDagger",
+        "WeaponObsidianDagger",
+        "WeaponGoldenDagger",
+        "WeaponBloodDagger",
+        "WeaponGlassDagger",
+        "WeaponDaggerJeweled",
+        "WeaponDaggerFrost",
+        "WeaponDaggerPhasing",
+        "WeaponDaggerDad",
+        "WeaponDaggerTutorial"
+      ],
+      "controls": "THROW arms; direction releases. Starting dagger verified live; other variants not tested."
+    },
+    {
+      "family": "Flail",
+      "source": "scripts/necro/game/data/item/weapon/shape/Flail.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponFlail",
+        "WeaponTitaniumFlail",
+        "WeaponObsidianFlail",
+        "WeaponGoldenFlail",
+        "WeaponBloodFlail",
+        "WeaponGlassFlail"
+      ],
+      "controls": "Directional weapon attack; inspect knockback and target pattern separately from damage."
+    },
+    {
+      "family": "Flower",
+      "source": "scripts/necro/game/data/item/weapon/shape/Flower.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponFlower"
+      ],
+      "controls": "Special weapon definition; treat character rules separately from ordinary damaging weapons."
+    },
+    {
+      "family": "GoldenLute",
+      "source": "scripts/necro/game/data/item/weapon/shape/GoldenLute.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Special weapon definition; character-specific directional/combat rules need separate validation."
+    },
+    {
+      "family": "Harp",
+      "source": "scripts/necro/game/data/item/weapon/shape/Harp.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Installed shape definition; not registered in the sampled training configuration."
+    },
+    {
+      "family": "Longsword",
+      "source": "scripts/necro/game/data/item/weapon/shape/Longsword.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponLongsword",
+        "WeaponTitaniumLongsword",
+        "WeaponObsidianLongsword",
+        "WeaponGoldenLongsword",
+        "WeaponBloodLongsword",
+        "WeaponGlassLongsword"
+      ],
+      "controls": "Directional weapon attack; no throw/reload component on sampled variants."
+    },
+    {
+      "family": "Rapier",
+      "source": "scripts/necro/game/data/item/weapon/shape/Rapier.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponRapier",
+        "WeaponTitaniumRapier",
+        "WeaponObsidianRapier",
+        "WeaponGoldenRapier",
+        "WeaponBloodRapier",
+        "WeaponGlassRapier"
+      ],
+      "controls": "Directional attack with movement-related pattern behavior; do not assume a direction means one-tile walking."
+    },
+    {
+      "family": "Rifle",
+      "source": "scripts/necro/game/data/item/weapon/shape/Rifle.lua",
+      "archive": "versions/v4.2.1.wsp",
+      "registered_variants": [
+        "WeaponRifle"
+      ],
+      "controls": "Reloadable; sampled prototype starts with 0/3 ammo and reloads 1 per activation."
+    },
+    {
+      "family": "Spear",
+      "source": "scripts/necro/game/data/item/weapon/shape/Spear.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponSpear",
+        "WeaponTitaniumSpear",
+        "WeaponObsidianSpear",
+        "WeaponGoldenSpear",
+        "WeaponBloodSpear",
+        "WeaponGlassSpear"
+      ],
+      "controls": "Throwable component; armed/directional semantics need a spear live check."
+    },
+    {
+      "family": "Staff",
+      "source": "scripts/necro/game/data/item/weapon/shape/Staff.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Installed shape definition; not registered in the sampled training configuration."
+    },
+    {
+      "family": "Warhammer",
+      "source": "scripts/necro/game/data/item/weapon/shape/Warhammer.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [],
+      "controls": "Installed shape definition; not registered in the sampled training configuration."
+    },
+    {
+      "family": "Whip",
+      "source": "scripts/necro/game/data/item/weapon/shape/Whip.lua",
+      "archive": "NecroDancer.wsp",
+      "registered_variants": [
+        "WeaponWhip",
+        "WeaponTitaniumWhip",
+        "WeaponObsidianWhip",
+        "WeaponGoldenWhip",
+        "WeaponBloodWhip",
+        "WeaponGlassWhip"
+      ],
+      "controls": "Directional weapon attack; no throw/reload component on sampled variants."
+    }
+  ],
+  "additional_definitions": [
+    {
+      "name": "Trident",
+      "source": "mods/Sync/item/WeaponTrident.lua",
+      "scope": "Synchrony",
+      "controls": "Separate shape and attack behavior; validate special-action capabilities."
+    },
+    {
+      "name": "Plasma Cannon",
+      "source": "mods/Sync/item/WeaponPlasmaCannon.lua",
+      "scope": "Synchrony",
+      "controls": "Reloadable; source sets ammo 0, capacity 3, reload increment 1; attack depends on ammo."
+    },
+    {
+      "name": "Lantern",
+      "source": "mods/Sync/item/WeaponLantern.lua",
+      "scope": "Synchrony / possession",
+      "controls": "Source explicitly disables weaponThrowable and attaches possession-on-kill behavior."
+    },
+    {
+      "name": "Zweihänder",
+      "source": "mods/Sync/character/Klarinetta.lua",
+      "scope": "Klarinetta",
+      "controls": "Rotating sword; selected control mode can remap ITEM_2 and THROW to rotation."
+    },
+    {
+      "name": "Lance",
+      "source": "mods/Sync/character/Suzu.lua",
+      "scope": "Suzu",
+      "controls": "Source describes dash on kill; character charge/movement state matters."
+    },
+    {
+      "name": "Spring Onion",
+      "source": "mods/Coldsteel/Coldsteel.lua",
+      "scope": "Hatsune Miku",
+      "controls": "Character-specific weapon; base and phasing prototypes appeared in the sample."
+    },
+    {
+      "name": "Electric / Phasing Spring Onion",
+      "source": "mods/Coldsteel/ColdsteelEnchant.lua",
+      "scope": "Hatsune Miku",
+      "controls": "Explicit enchantment variants; electric variant absent from sampled prototypes."
+    },
+    {
+      "name": "Shovel Blade",
+      "source": "mods/Goldman/GoldmanEntities.lua",
+      "scope": "Shovel Knight",
+      "controls": "Hybrid character/shovel combat mechanism; not an ordinary weapon-slot-only abstraction."
+    }
+  ],
+  "registered_weapon_items": [
+    {
+      "id": "WeaponFlower",
+      "name": "Flower",
+      "family": "Flower",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 0
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponInflictConfusion": {
+          "duration": 8
+        },
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponNoDamage": [],
+        "weaponOverrideBeatDelay": [],
+        "weaponPattern": [],
+        "weaponTickle": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDagger",
+      "name": "Dagger",
+      "family": "Dagger",
+      "material": "Base",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "live-tested starting dagger"
+    },
+    {
+      "id": "WeaponDaggerShard",
+      "name": "Glass Shard",
+      "family": "Dagger",
+      "material": "Base",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumDagger",
+      "name": "Titanium Dagger",
+      "family": "Dagger",
+      "material": "Titanium",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianDagger",
+      "name": "Obsidian Dagger",
+      "family": "Dagger",
+      "material": "Obsidian",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenDagger",
+      "name": "Golden Dagger",
+      "family": "Dagger",
+      "material": "Gold",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodDagger",
+      "name": "Blood Dagger",
+      "family": "Dagger",
+      "material": "Blood",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassDagger",
+      "name": "Glass Dagger",
+      "family": "Dagger",
+      "material": "Glass",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDaggerJeweled",
+      "name": "Jeweled Dagger",
+      "family": "Dagger",
+      "material": "Jeweled",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 5
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Jeweled"
+        },
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDaggerFrost",
+      "name": "Dagger Of Frost",
+      "family": "Dagger",
+      "material": "Frost",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Frost"
+        },
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDaggerPhasing",
+      "name": "Dagger Of Phasing",
+      "family": "Dagger",
+      "material": "Phasing",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponMaterial": {
+          "name": "Phasing"
+        },
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBroadsword",
+      "name": "Broadsword",
+      "family": "Broadsword",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumBroadsword",
+      "name": "Titanium Broadsword",
+      "family": "Broadsword",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianBroadsword",
+      "name": "Obsidian Broadsword",
+      "family": "Broadsword",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenBroadsword",
+      "name": "Golden Broadsword",
+      "family": "Broadsword",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodBroadsword",
+      "name": "Blood Broadsword",
+      "family": "Broadsword",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassBroadsword",
+      "name": "Glass Broadsword",
+      "family": "Broadsword",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Broadsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponLongsword",
+      "name": "Longsword",
+      "family": "Longsword",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumLongsword",
+      "name": "Titanium Longsword",
+      "family": "Longsword",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop",
+        "itemPoolUrn",
+        "itemPoolVault"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianLongsword",
+      "name": "Obsidian Longsword",
+      "family": "Longsword",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolUrn"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenLongsword",
+      "name": "Golden Longsword",
+      "family": "Longsword",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodLongsword",
+      "name": "Blood Longsword",
+      "family": "Longsword",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassLongsword",
+      "name": "Glass Longsword",
+      "family": "Longsword",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Longsword"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponWhip",
+      "name": "Whip",
+      "family": "Whip",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumWhip",
+      "name": "Titanium Whip",
+      "family": "Whip",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianWhip",
+      "name": "Obsidian Whip",
+      "family": "Whip",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenWhip",
+      "name": "Golden Whip",
+      "family": "Whip",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodWhip",
+      "name": "Blood Whip",
+      "family": "Whip",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassWhip",
+      "name": "Glass Whip",
+      "family": "Whip",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Whip"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponSpear",
+      "name": "Spear",
+      "family": "Spear",
+      "material": "Base",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumSpear",
+      "name": "Titanium Spear",
+      "family": "Spear",
+      "material": "Titanium",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianSpear",
+      "name": "Obsidian Spear",
+      "family": "Spear",
+      "material": "Obsidian",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenSpear",
+      "name": "Golden Spear",
+      "family": "Spear",
+      "material": "Gold",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodSpear",
+      "name": "Blood Spear",
+      "family": "Spear",
+      "material": "Blood",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassSpear",
+      "name": "Glass Spear",
+      "family": "Spear",
+      "material": "Glass",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Spear"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponRapier",
+      "name": "Rapier",
+      "family": "Rapier",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumRapier",
+      "name": "Titanium Rapier",
+      "family": "Rapier",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop",
+        "itemPoolUrn"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianRapier",
+      "name": "Obsidian Rapier",
+      "family": "Rapier",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponGrooveChainSwipeRow": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolUrn"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenRapier",
+      "name": "Golden Rapier",
+      "family": "Rapier",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodRapier",
+      "name": "Blood Rapier",
+      "family": "Rapier",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassRapier",
+      "name": "Glass Rapier",
+      "family": "Rapier",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Rapier"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolUrn"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBow",
+      "name": "Bow",
+      "family": "Bow",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumBow",
+      "name": "Titanium Bow",
+      "family": "Bow",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolUrn"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianBow",
+      "name": "Obsidian Bow",
+      "family": "Bow",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolUrn",
+        "itemPoolVault"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenBow",
+      "name": "Golden Bow",
+      "family": "Bow",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodBow",
+      "name": "Blood Bow",
+      "family": "Bow",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassBow",
+      "name": "Glass Bow",
+      "family": "Bow",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponType": {
+          "name": "Bow"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponCrossbow",
+      "name": "Crossbow",
+      "family": "Crossbow",
+      "material": "Base",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumCrossbow",
+      "name": "Titanium Crossbow",
+      "family": "Crossbow",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianCrossbow",
+      "name": "Obsidian Crossbow",
+      "family": "Crossbow",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop",
+        "itemPoolVault"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenCrossbow",
+      "name": "Golden Crossbow",
+      "family": "Crossbow",
+      "material": "Gold",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodCrossbow",
+      "name": "Blood Crossbow",
+      "family": "Crossbow",
+      "material": "Blood",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassCrossbow",
+      "name": "Glass Crossbow",
+      "family": "Crossbow",
+      "material": "Glass",
+      "throwable": false,
+      "reload": {
+        "ammo": 3,
+        "ammoPerReload": 3,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 3,
+          "ammoPerReload": 3,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Crossbow"
+        },
+        "weaponTypeCrossbow": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponFlail",
+      "name": "Flail",
+      "family": "Flail",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumFlail",
+      "name": "Titanium Flail",
+      "family": "Flail",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianFlail",
+      "name": "Obsidian Flail",
+      "family": "Flail",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenFlail",
+      "name": "Golden Flail",
+      "family": "Flail",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodFlail",
+      "name": "Blood Flail",
+      "family": "Flail",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassFlail",
+      "name": "Glass Flail",
+      "family": "Flail",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponKnockback": {
+          "distance": 1
+        },
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Flail"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponCat",
+      "name": "Cat O Nine Tails",
+      "family": "Cat",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponTitaniumCat",
+      "name": "Titanium Cat",
+      "family": "Cat",
+      "material": "Titanium",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Titanium"
+        },
+        "weaponMaterialTitanium": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponObsidianCat",
+      "name": "Obsidian Cat",
+      "family": "Cat",
+      "material": "Obsidian",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Obsidian"
+        },
+        "weaponMaterialObsidian": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGoldenCat",
+      "name": "Golden Cat",
+      "family": "Cat",
+      "material": "Gold",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Gold"
+        },
+        "weaponMaterialGold": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBloodCat",
+      "name": "Blood Cat",
+      "family": "Cat",
+      "material": "Blood",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Blood"
+        },
+        "weaponMaterialBlood": [],
+        "weaponOverlaySpriteOnConditionalDamage": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanEli",
+        "itemBanHealthlocked",
+        "itemBanPacifist",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponGlassCat",
+      "name": "Glass Cat",
+      "family": "Cat",
+      "material": "Glass",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 4
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponConsumeOnThrow": [],
+        "weaponMaterial": {
+          "name": "Glass"
+        },
+        "weaponMaterialGlass": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Cat"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolEnchant",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret"
+      ],
+      "ban_markers": [
+        "itemBanDiamond",
+        "itemBanTempo",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponBlunderbuss",
+      "name": "Blunderbuss",
+      "family": "Blunderbuss",
+      "material": "Base",
+      "throwable": false,
+      "reload": {
+        "ammo": 1,
+        "ammoPerReload": 1,
+        "maximumAmmo": 1
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 2
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponReloadable": {
+          "ammo": 1,
+          "ammoPerReload": 1,
+          "maximumAmmo": 1
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponScreenFlash": [],
+        "weaponType": {
+          "name": "Blunderbuss"
+        }
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop",
+        "itemPoolUrn",
+        "itemPoolVault"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanDorian",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponRifle",
+      "name": "Rifle",
+      "family": "Rifle",
+      "material": "Base",
+      "throwable": false,
+      "reload": {
+        "ammo": 0,
+        "ammoPerReload": 1,
+        "maximumAmmo": 3
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponAmmoCounterHUD": [],
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponRanged": [],
+        "weaponReloadable": {
+          "ammo": 0,
+          "ammoPerReload": 1,
+          "maximumAmmo": 3
+        },
+        "weaponReloadableAmmoSprite": [],
+        "weaponType": {
+          "name": "Rifle"
+        },
+        "weaponTypeRifle": []
+      },
+      "pool_markers": [
+        "itemPoolBlackChest",
+        "itemPoolChest",
+        "itemPoolLockedShop",
+        "itemPoolNeed",
+        "itemPoolSecret",
+        "itemPoolShop",
+        "itemPoolUrn",
+        "itemPoolVault"
+      ],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanDorian",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "Coldsteel_WeaponLeek",
+      "name": "Spring Onion",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponPattern": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "Coldsteel_WeaponLeekPhasing",
+      "name": "Phasing Spring Onion",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponPattern": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "BellHammer",
+      "name": "Mallet Of The Dad",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": {
+        "ammo": 0,
+        "ammoPerReload": 1,
+        "maximumAmmo": 1
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 8
+        },
+        "weaponPattern": [],
+        "weaponReloadable": {
+          "ammo": 0,
+          "ammoPerReload": 1,
+          "maximumAmmo": 1
+        },
+        "weaponThrowHolder": {
+          "distance": 100
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanDorian",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "Club",
+      "name": "Clonking Stick",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": {
+        "ammo": 0,
+        "ammoPerReload": 1,
+        "maximumAmmo": 1
+      },
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCastOnAttack": [],
+        "weaponPattern": [],
+        "weaponReloadable": {
+          "ammo": 0,
+          "ammoPerReload": 1,
+          "maximumAmmo": 1
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanDiagonal",
+        "itemBanDorian",
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "Piston",
+      "name": "Squishy Piston",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponPattern": [],
+        "weaponShove": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WandConfusion",
+      "name": "Wand Of Inversion",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCastOnAttack": [],
+        "weaponNoDamage": [],
+        "weaponPattern": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WandWind",
+      "name": "Wand Of Attraction",
+      "family": "special",
+      "material": null,
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCastOnAttack": [],
+        "weaponNoDamage": [],
+        "weaponPattern": []
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDaggerDad",
+      "name": "Dagger",
+      "family": "Dagger",
+      "material": "Base",
+      "throwable": true,
+      "reload": null,
+      "activable": true,
+      "control_components": {
+        "itemActivable": {
+          "active": false
+        },
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponThrowable": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    },
+    {
+      "id": "WeaponDaggerTutorial",
+      "name": "Dagger",
+      "family": "Dagger",
+      "material": "Base",
+      "throwable": false,
+      "reload": null,
+      "activable": false,
+      "control_components": {
+        "itemSlot": {
+          "name": "weapon"
+        },
+        "weapon": {
+          "damage": 1
+        },
+        "weaponCheckOriginCollision": [],
+        "weaponMaterial": {
+          "name": "Base"
+        },
+        "weaponMaterialBase": [],
+        "weaponPattern": [],
+        "weaponType": {
+          "name": "Dagger"
+        }
+      },
+      "pool_markers": [],
+      "ban_markers": [
+        "itemBanWeaponlocked"
+      ],
+      "availability": "registered prototype; natural loot eligibility not established",
+      "behavior_evidence": "prototype only"
+    }
+  ],
+  "mechanics": [
+    {
+      "mechanic": "Armed throws",
+      "examples": "Dagger, spear",
+      "inputs": "THROW then direction",
+      "required_state": "Throwable capability; armed state; direction",
+      "current_gap": "Inventory lacks itemActivable.active; redundant THROW remains allowed",
+      "evidence": "Dagger live; spear definition"
+    },
+    {
+      "mechanic": "Reloading and charge",
+      "examples": "Crossbow, rifle, blunderbuss, plasma cannon",
+      "inputs": "THROW / directional attack",
+      "required_state": "Ammo, capacity, reload increment, loaded attack",
+      "current_gap": "Inventory does not expose weaponReloadable ammo",
+      "evidence": "Prototypes + installed code; no live gun test"
+    },
+    {
+      "mechanic": "Shared special-action resolution",
+      "examples": "Weapons, toggle boots, convertible items",
+      "inputs": "THROW",
+      "required_state": "Which equipped item the game resolves for the action",
+      "current_gap": "Mask checks weapon presence, rather than the resolved action item",
+      "evidence": "Installed ActionItem/MovementItem/Weapon code"
+    },
+    {
+      "mechanic": "Toggle movement equipment",
+      "examples": "Boots of Leaping, Boots of Lunging",
+      "inputs": "Shared activation; directions",
+      "required_state": "Toggle state, distance, hazards, activation routing",
+      "current_gap": "Toggle bit exists, but availability and movement assumptions need validation",
+      "evidence": "Current prototypes + MovementItem code"
+    },
+    {
+      "mechanic": "Weapon storage / swap",
+      "examples": "Holster; bag/backpack behavior",
+      "inputs": "ITEM_2 in installed action-item handlers",
+      "required_state": "Container contents, slot ownership, swap state",
+      "current_gap": "Flat inventory lacks stored contents; verify which holder owns the item action",
+      "evidence": "Holster prototype + ActionItem code; bag behavior not live-tested"
+    },
+    {
+      "mechanic": "Item conversion",
+      "examples": "Items carrying itemConvertible",
+      "inputs": "THROW in conversion handler",
+      "required_state": "Current form, target form, eligibility",
+      "current_gap": "Weapon-presence mask is not a general conversion-availability test",
+      "evidence": "Installed ActionItem code; no sampled convertible item asserted"
+    },
+    {
+      "mechanic": "Consumable slots",
+      "examples": "Food, holy water, scrolls, heart transplants",
+      "inputs": "ITEM_1 / ITEM_2",
+      "required_state": "Item identity, charges, consumption, target rules",
+      "current_gap": "Quantity is present; usability mostly means cooldown counters are zero",
+      "evidence": "Current item prototypes"
+    },
+    {
+      "mechanic": "Combo and health-cost items",
+      "examples": "War Drum, Blood Drum",
+      "inputs": "Item activation then follow-up actions",
+      "required_state": "Combo progress, next-attack modifier, health cost",
+      "current_gap": "Neither drum combo nor activation health cost is explicitly encoded",
+      "evidence": "Current prototypes"
+    },
+    {
+      "mechanic": "Spell recharge / blood magic",
+      "examples": "Fireball, freeze, heal, bomb, shield, transmute, charm",
+      "inputs": "SPELL_1 / SPELL_2",
+      "required_state": "Kill/time recharge, blood-cast eligibility and health cost",
+      "current_gap": "Cooldowns exist; mask may exclude valid blood casts and needs a live eligibility test",
+      "evidence": "Current spell-item prototypes"
+    },
+    {
+      "mechanic": "Directional or delayed spells",
+      "examples": "Fireball; installed dash and berserk abilities",
+      "inputs": "Spell input plus facing/direction or later actions",
+      "required_state": "Aim/facing, pending cast, charge/duration",
+      "current_gap": "No general pending-action state; exact controls require per-ability validation",
+      "evidence": "Installed spell definitions; behavior not live-tested"
+    },
+    {
+      "mechanic": "Bomb-slot substitution",
+      "examples": "Bomb stacks, infinite bombs; Miku Sing",
+      "inputs": "BOMB",
+      "required_state": "Resolved slot action, quantity, effect and timing",
+      "current_gap": "Current mask tests bomb-slot occupancy; occupied slot need not mean an explosive",
+      "evidence": "Current prototypes; Miku Sing occupies bomb slot"
+    },
+    {
+      "mechanic": "Character-specific remapping",
+      "examples": "Klarinetta, Suzu, Chaunter, Miku, Shovel Knight",
+      "inputs": "Directions and shared special buttons",
+      "required_state": "Character, selected control mode, rotation, possession, charge, pogo/combo state",
+      "current_gap": "Current environment trains Bard; its 11-action contract is not certified for these characters",
+      "evidence": "Installed character scripts"
+    },
+    {
+      "mechanic": "Rhythm / time control",
+      "examples": "Bard; rhythm-based characters; heart transplant",
+      "inputs": "Every turn / timed item use",
+      "required_state": "Beat phase, missed-beat rules, temporary timing changes",
+      "current_gap": "Bard experiments do not establish correctness for rhythm-based play",
+      "evidence": "Bridge character restriction + installed definitions"
+    },
+    {
+      "mechanic": "Contextual movement",
+      "examples": "Digging, attacks, ice/sliding, confusion, knockback, stairs",
+      "inputs": "Directions",
+      "required_state": "Target cell, status effects, weapon mode, movement modifier",
+      "current_gap": "Some grid/status fields exist; navigation masking must respect action context",
+      "evidence": "Existing observation/contract/outcome code"
+    },
+    {
+      "mechanic": "Pickup and transaction effects",
+      "examples": "Shops, shrines, dropped gear, transmutation",
+      "inputs": "Movement/interactions",
+      "required_state": "Price, health/currency, inventory replacement and item bans",
+      "current_gap": "Some prices/flags exist; action eligibility cannot be inferred from occupancy alone",
+      "evidence": "Existing rich observation and installed item rules"
+    },
+    {
+      "mechanic": "Passive automatic effects",
+      "examples": "Potion, frost protection, movement-triggered equipment",
+      "inputs": "No dedicated button / triggered by another action",
+      "required_state": "Remaining item, trigger condition, effect duration",
+      "current_gap": "Do not invent an active action for a passive item",
+      "evidence": "Current prototypes; exact triggers need dedicated tests"
+    }
+  ],
+  "current_item_slots": [
+    {
+      "id": "AddchestBlack",
+      "name": "+1 Black Chest Per Run",
+      "slot": "innate"
+    },
+    {
+      "id": "AddchestRed",
+      "name": "+1 Red Chest Per Run",
+      "slot": "innate"
+    },
+    {
+      "id": "AddchestWhite",
+      "name": "+1 Purple Chest Per Run",
+      "slot": "innate"
+    },
+    {
+      "id": "ArmorChainmail",
+      "name": "Chainmail",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorHeavyplate",
+      "name": "Heavy Plate",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorLeather",
+      "name": "Leather Armor",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorPlatemail",
+      "name": "Plate Armor",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorPlatemailDorian",
+      "name": "Plate Armor",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorGi",
+      "name": "Karate Gi",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorGlass",
+      "name": "Glass Armor",
+      "slot": "body"
+    },
+    {
+      "id": "ArmorObsidian",
+      "name": "Obsidian Armor",
+      "slot": "body"
+    },
+    {
+      "id": "CoinsX15",
+      "name": "Coin Multiplier +0.5",
+      "slot": "innate"
+    },
+    {
+      "id": "CoinsX2",
+      "name": "Coin Multiplier +1",
+      "slot": "innate"
+    },
+    {
+      "id": "FeetBalletShoes",
+      "name": "Ballet Shoes",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsSpeed",
+      "name": "Boots Of Speed",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsWinged",
+      "name": "Winged Boots",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsExplorers",
+      "name": "Explorers Boots",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsLead",
+      "name": "Lead Boots",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsLeaping",
+      "name": "Boots Of Leaping",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsLunging",
+      "name": "Boots Of Lunging",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsPain",
+      "name": "Boots Of Pain",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetGreaves",
+      "name": "Hargreaves",
+      "slot": "feet"
+    },
+    {
+      "id": "FeetBootsStrength",
+      "name": "Boots Of Strength",
+      "slot": "feet"
+    },
+    {
+      "id": "Food1",
+      "name": "Apple",
+      "slot": "action"
+    },
+    {
+      "id": "Food2",
+      "name": "Cheese",
+      "slot": "action"
+    },
+    {
+      "id": "Food3",
+      "name": "Drumstick",
+      "slot": "action"
+    },
+    {
+      "id": "Food4",
+      "name": "Ham",
+      "slot": "action"
+    },
+    {
+      "id": "HolyWater",
+      "name": "Holy Water",
+      "slot": "action"
+    },
+    {
+      "id": "LordCrown",
+      "name": "Lord Crown",
+      "slot": "action"
+    },
+    {
+      "id": "Bomb",
+      "name": "Bomb",
+      "slot": "bomb"
+    },
+    {
+      "id": "BombInfinity",
+      "name": "Infinite bombs",
+      "slot": "bomb"
+    },
+    {
+      "id": "Bomb3",
+      "name": "3 Bombs",
+      "slot": "bomb"
+    },
+    {
+      "id": "WarDrum",
+      "name": "War Drum",
+      "slot": "action"
+    },
+    {
+      "id": "BloodDrum",
+      "name": "Blood Drum",
+      "slot": "action"
+    },
+    {
+      "id": "DoubleHeartTransplant",
+      "name": "Double Heart Transplant",
+      "slot": "action"
+    },
+    {
+      "id": "HeartTransplant",
+      "name": "Heart Transplant",
+      "slot": "action"
+    },
+    {
+      "id": "HeadCrownOfThorns",
+      "name": "Crown Of Thorns",
+      "slot": "head"
+    },
+    {
+      "id": "HeadCrownOfGreed",
+      "name": "Crown Of Greed",
+      "slot": "head"
+    },
+    {
+      "id": "HeadCrownOfTeleportation",
+      "name": "Crown Of Teleportation",
+      "slot": "head"
+    },
+    {
+      "id": "HeadCircletTelepathy",
+      "name": "Circlet Of Telepathy",
+      "slot": "head"
+    },
+    {
+      "id": "HeadMinersCap",
+      "name": "Miner's Cap",
+      "slot": "head"
+    },
+    {
+      "id": "HeadMonocle",
+      "name": "Monocle",
+      "slot": "head"
+    },
+    {
+      "id": "HeadNinjaMask",
+      "name": "Ninja Mask",
+      "slot": "head"
+    },
+    {
+      "id": "HeadHelm",
+      "name": "Helm",
+      "slot": "head"
+    },
+    {
+      "id": "HeadGlassJaw",
+      "name": "Glass Jaw",
+      "slot": "head"
+    },
+    {
+      "id": "HeadBlastHelm",
+      "name": "Blast Helm",
+      "slot": "head"
+    },
+    {
+      "id": "HeadSunglasses",
+      "name": "Sunglasses",
+      "slot": "head"
+    },
+    {
+      "id": "HudBackpack",
+      "name": "Backpack",
+      "slot": "hud"
+    },
+    {
+      "id": "Holster",
+      "name": "Holster",
+      "slot": "hud"
+    },
+    {
+      "id": "BagHolding",
+      "name": "Pack Of Holding",
+      "slot": "hud"
+    },
+    {
+      "id": "MiscCompass",
+      "name": "Compass",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscCoupon",
+      "name": "Coupon",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscGoldenKey",
+      "name": "Golden Key",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscGoldenKey2",
+      "name": "Golden Key",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscGoldenKey3",
+      "name": "Golden Key",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscGlassKey",
+      "name": "Glass Key",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscHeartContainer",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "MiscHeartContainer2",
+      "name": "Double Heart Container",
+      "slot": null
+    },
+    {
+      "id": "MiscHeartContainerEmpty",
+      "name": "Empty Heart Container",
+      "slot": null
+    },
+    {
+      "id": "MiscHeartContainerEmpty2",
+      "name": "Empty Double Heart Container",
+      "slot": null
+    },
+    {
+      "id": "MiscKey",
+      "name": "Key",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscMagnet",
+      "name": "Gold Magnet",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscMap",
+      "name": "Map",
+      "slot": "misc"
+    },
+    {
+      "id": "MiscPotion",
+      "name": "Potion",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmFrost",
+      "name": "Frost Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmGluttony",
+      "name": "Gluttony Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmLuck",
+      "name": "Lucky Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmNazar",
+      "name": "Nazar Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmProtection",
+      "name": "Protection Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmRisk",
+      "name": "Risk Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "CharmStrength",
+      "name": "Strength Charm",
+      "slot": "misc"
+    },
+    {
+      "id": "PermHeart2",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "PermHeart3",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "PermHeart4",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "PermHeart5",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "PermHeart6",
+      "name": "Heart Container",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin0",
+      "name": "0 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin1",
+      "name": "Coin",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin2",
+      "name": "2 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin3",
+      "name": "3 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin4",
+      "name": "4 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin5",
+      "name": "5 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin6",
+      "name": "6 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin7",
+      "name": "7 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin8",
+      "name": "8 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin9",
+      "name": "9 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin10",
+      "name": "10 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin50",
+      "name": "+50 Coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin100",
+      "name": "+100 Coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceCoin150",
+      "name": "+150 Coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceDiamond",
+      "name": "Diamond",
+      "slot": null
+    },
+    {
+      "id": "ResourceDiamond2",
+      "name": "2 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceDiamond3",
+      "name": "3 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceDiamond4",
+      "name": "4 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoard1",
+      "name": "+5 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoard2",
+      "name": "+10 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoard3",
+      "name": "+15 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoard4",
+      "name": "+20 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoardGoldSmall",
+      "name": "25 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoardGold",
+      "name": "50 coins",
+      "slot": null
+    },
+    {
+      "id": "RingCourage",
+      "name": "Ring Of Courage",
+      "slot": "ring"
+    },
+    {
+      "id": "RingWar",
+      "name": "Ring Of War",
+      "slot": "ring"
+    },
+    {
+      "id": "RingPeace",
+      "name": "Ring Of Peace",
+      "slot": "ring"
+    },
+    {
+      "id": "RingMana",
+      "name": "Ring Of Mana",
+      "slot": "ring"
+    },
+    {
+      "id": "RingShadows",
+      "name": "Ring Of Shadows",
+      "slot": "ring"
+    },
+    {
+      "id": "RingMight",
+      "name": "Ring Of Might",
+      "slot": "ring"
+    },
+    {
+      "id": "RingCharisma",
+      "name": "Ring Of Charisma",
+      "slot": "ring"
+    },
+    {
+      "id": "RingLuck",
+      "name": "Ring Of Luck",
+      "slot": "ring"
+    },
+    {
+      "id": "RingGold",
+      "name": "Ring Of Gold",
+      "slot": "ring"
+    },
+    {
+      "id": "RingPhasing",
+      "name": "Ring Of Phasing",
+      "slot": "ring"
+    },
+    {
+      "id": "RingRegeneration",
+      "name": "Ring Of Regeneration",
+      "slot": "ring"
+    },
+    {
+      "id": "RingProtection",
+      "name": "Ring Of Protection",
+      "slot": "ring"
+    },
+    {
+      "id": "RingShielding",
+      "name": "Ring Of Shielding",
+      "slot": "ring"
+    },
+    {
+      "id": "RingBecoming",
+      "name": "Ring Of Becoming",
+      "slot": "ring"
+    },
+    {
+      "id": "RingWonder",
+      "name": "Ring Of Wonder",
+      "slot": "ring"
+    },
+    {
+      "id": "ScrollEarthquake",
+      "name": "Earthquake Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollFear",
+      "name": "Fear Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollFireball",
+      "name": "Fireball Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollFreezeEnemies",
+      "name": "Freeze Enemies Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollGigantism",
+      "name": "Gigantism Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollRiches",
+      "name": "Riches Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollShield",
+      "name": "Shield Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollEnchantWeapon",
+      "name": "Enchant Weapon Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollNeed",
+      "name": "Scroll Of Need",
+      "slot": "action"
+    },
+    {
+      "id": "ScrollTransmute",
+      "name": "Transmute Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "ShovelCrystal",
+      "name": "Crystal Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelTitanium",
+      "name": "Titanium Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelBlood",
+      "name": "Blood Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelObsidian",
+      "name": "Obsidian Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelGlass",
+      "name": "Glass Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelShard",
+      "name": "Glass Shard",
+      "slot": "shovel"
+    },
+    {
+      "id": "ShovelBasic",
+      "name": "Shovel",
+      "slot": "shovel"
+    },
+    {
+      "id": "Pickaxe",
+      "name": "Pickaxe",
+      "slot": "shovel"
+    },
+    {
+      "id": "SpellFireball",
+      "name": "Fireball Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellFreezeEnemies",
+      "name": "Freeze Enemies Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellHeal",
+      "name": "Heal Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellBomb",
+      "name": "Bomb Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellShield",
+      "name": "Shield Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellTransmute",
+      "name": "Transmute Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "SpellCharm",
+      "name": "Charm Spell",
+      "slot": "spell"
+    },
+    {
+      "id": "Torch1",
+      "name": "Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "Torch2",
+      "name": "Bright Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "Torch3",
+      "name": "Luminous Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "TorchForesight",
+      "name": "Torch Of Foresight",
+      "slot": "torch"
+    },
+    {
+      "id": "TorchGlass",
+      "name": "Glass Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "TorchInfernal",
+      "name": "Infernal Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "TorchObsidian",
+      "name": "Obsidian Torch",
+      "slot": "torch"
+    },
+    {
+      "id": "WeaponFlower",
+      "name": "Flower",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenLute",
+      "name": "Golden Lute",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDagger",
+      "name": "Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerShard",
+      "name": "Glass Shard",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumDagger",
+      "name": "Titanium Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianDagger",
+      "name": "Obsidian Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenDagger",
+      "name": "Golden Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodDagger",
+      "name": "Blood Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassDagger",
+      "name": "Glass Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerJeweled",
+      "name": "Jeweled Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerFrost",
+      "name": "Dagger Of Frost",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerPhasing",
+      "name": "Dagger Of Phasing",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBroadsword",
+      "name": "Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumBroadsword",
+      "name": "Titanium Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianBroadsword",
+      "name": "Obsidian Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenBroadsword",
+      "name": "Golden Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodBroadsword",
+      "name": "Blood Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassBroadsword",
+      "name": "Glass Broadsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponLongsword",
+      "name": "Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumLongsword",
+      "name": "Titanium Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianLongsword",
+      "name": "Obsidian Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenLongsword",
+      "name": "Golden Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodLongsword",
+      "name": "Blood Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassLongsword",
+      "name": "Glass Longsword",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponWhip",
+      "name": "Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumWhip",
+      "name": "Titanium Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianWhip",
+      "name": "Obsidian Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenWhip",
+      "name": "Golden Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodWhip",
+      "name": "Blood Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassWhip",
+      "name": "Glass Whip",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponSpear",
+      "name": "Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumSpear",
+      "name": "Titanium Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianSpear",
+      "name": "Obsidian Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenSpear",
+      "name": "Golden Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodSpear",
+      "name": "Blood Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassSpear",
+      "name": "Glass Spear",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponRapier",
+      "name": "Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumRapier",
+      "name": "Titanium Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianRapier",
+      "name": "Obsidian Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenRapier",
+      "name": "Golden Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodRapier",
+      "name": "Blood Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassRapier",
+      "name": "Glass Rapier",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBow",
+      "name": "Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumBow",
+      "name": "Titanium Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianBow",
+      "name": "Obsidian Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenBow",
+      "name": "Golden Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodBow",
+      "name": "Blood Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassBow",
+      "name": "Glass Bow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponCrossbow",
+      "name": "Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumCrossbow",
+      "name": "Titanium Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianCrossbow",
+      "name": "Obsidian Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenCrossbow",
+      "name": "Golden Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodCrossbow",
+      "name": "Blood Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassCrossbow",
+      "name": "Glass Crossbow",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponFlail",
+      "name": "Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumFlail",
+      "name": "Titanium Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianFlail",
+      "name": "Obsidian Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenFlail",
+      "name": "Golden Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodFlail",
+      "name": "Blood Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassFlail",
+      "name": "Glass Flail",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponCat",
+      "name": "Cat O Nine Tails",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponTitaniumCat",
+      "name": "Titanium Cat",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponObsidianCat",
+      "name": "Obsidian Cat",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGoldenCat",
+      "name": "Golden Cat",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBloodCat",
+      "name": "Blood Cat",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponGlassCat",
+      "name": "Glass Cat",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponBlunderbuss",
+      "name": "Blunderbuss",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponRifle",
+      "name": "Rifle",
+      "slot": "weapon"
+    },
+    {
+      "id": "Goldman_ItemVirtualHelmet",
+      "name": "Goldman_ItemVirtualHelmet",
+      "slot": null
+    },
+    {
+      "id": "Goldman_ItemVirtualNoHelmet",
+      "name": "Goldman_ItemVirtualNoHelmet",
+      "slot": "innate"
+    },
+    {
+      "id": "Goldman_ShovelPogo",
+      "name": "Shovel Blade",
+      "slot": "innate"
+    },
+    {
+      "id": "Coldsteel_ArmorVirtual",
+      "name": "Virtual armor",
+      "slot": "body"
+    },
+    {
+      "id": "Coldsteel_ScrollEnchantLeek",
+      "name": "Enchant Leek Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "Coldsteel_SpellResonance",
+      "name": "Sing Spell",
+      "slot": "bomb"
+    },
+    {
+      "id": "Coldsteel_SpellResonanceInfinity",
+      "name": "Sing Spell",
+      "slot": "bomb"
+    },
+    {
+      "id": "Coldsteel_WeaponLeek",
+      "name": "Spring Onion",
+      "slot": "weapon"
+    },
+    {
+      "id": "Coldsteel_WeaponLeekPhasing",
+      "name": "Phasing Spring Onion",
+      "slot": "weapon"
+    },
+    {
+      "id": "BellHammer",
+      "name": "Mallet Of The Dad",
+      "slot": "weapon"
+    },
+    {
+      "id": "Club",
+      "name": "Clonking Stick",
+      "slot": "weapon"
+    },
+    {
+      "id": "Piston",
+      "name": "Squishy Piston",
+      "slot": "weapon"
+    },
+    {
+      "id": "ResourceCoin30",
+      "name": "30 coins",
+      "slot": null
+    },
+    {
+      "id": "ResourceHoard5",
+      "name": "+20 Diamonds",
+      "slot": null
+    },
+    {
+      "id": "ScrollDescend",
+      "name": "Descend Scroll",
+      "slot": "action"
+    },
+    {
+      "id": "WandConfusion",
+      "name": "Wand Of Inversion",
+      "slot": "weapon"
+    },
+    {
+      "id": "WandWind",
+      "name": "Wand Of Attraction",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerDad",
+      "name": "Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "WeaponDaggerTutorial",
+      "name": "Dagger",
+      "slot": "weapon"
+    },
+    {
+      "id": "quirks_DummyItem",
+      "name": null,
+      "slot": null
+    },
+    {
+      "id": "EnemyPlaceholder",
+      "name": null,
+      "slot": null
+    },
+    {
+      "id": "FollowerDove",
+      "name": "Dove Familiar",
+      "slot": "follower"
+    },
+    {
+      "id": "FollowerRat",
+      "name": "Rat Familiar",
+      "slot": "follower"
+    },
+    {
+      "id": "FollowerShield",
+      "name": "Shield Familiar",
+      "slot": "follower"
+    },
+    {
+      "id": "FollowerShopkeeper",
+      "name": "Shopkeeper Familiar",
+      "slot": "follower"
+    },
+    {
+      "id": "FollowerSnowbro",
+      "name": "Ice Spirit Familiar",
+      "slot": "follower"
+    },
+    {
+      "id": "FriendlyFireTeamChanger",
+      "name": null,
+      "slot": null
+    },
+    {
+      "id": "ItemPlaceholder",
+      "name": null,
+      "slot": null
+    },
+    {
+      "id": "ItemStash",
+      "name": null,
+      "slot": "stash"
+    },
+    {
+      "id": "Marv",
+      "name": null,
+      "slot": "follower"
+    },
+    {
+      "id": "NoReturnModeSquare",
+      "name": "No Return mode",
+      "slot": "shrine"
+    },
+    {
+      "id": "NoReturnShrineSquare",
+      "name": "Shrine of No Return",
+      "slot": "shrine"
+    },
+    {
+      "id": "ShrineMarkerRhythm",
+      "name": null,
+      "slot": "shrine"
+    },
+    {
+      "id": "SoulLinkCoop",
+      "name": null,
+      "slot": null
+    },
+    {
+      "id": "SoulLinkDad",
+      "name": null,
+      "slot": null
+    }
+  ],
+  "limitations": [
+    "Only starting-dagger control sequences tested live.",
+    "Prototype fields are a selected component/field inventory, not an exhaustive serialization.",
+    "Registration is not spawnability, ownership, unlock status, or Bard eligibility.",
+    "DLC-disabled entries were cataloged from definitions without enabling those DLCs.",
+    "Custom player mods and every editor/PvP-only weapon combination are outside the general-game family list."
+  ]
+}
