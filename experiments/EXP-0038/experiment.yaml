@@ -1,0 +1,122 @@
+schema_version: 1
+id: EXP-0038
+title: Bounded learning pilot with navigation assistance retained
+question: Does the same short PPO fine-tune improve direct-start combat when navigation
+  assistance remains enabled?
+hypothesis: The additional combat exposure created by navigation assistance may improve
+  final-policy boss damage or completion under an otherwise matched training budget.
+changed_blocks:
+- action-contract
+- evaluation
+component_versions:
+  observation: bounded-bard-controls-v1
+  action-contract: bounded-bard-navigation-v1
+  training-level-distribution: bounded-direct-pilot-v1
+  evaluation: bounded-navigation-learning-v1
+  controller: schema10-bounded-refresh-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+invariants:
+- One exploratory optimizer trial, seed 217001, exactly 16384 transitions and 16 PPO
+  updates. No replication, sweep, checkpoint selection or promotion.
+- Original EXP-0036 source weights including critic, fresh optimizer, no base or actor
+  freezing; same A8 architecture, reward and PPO settings.
+- Use bounded-bard-navigation-v1 throughout; eight workers, Bard player20, direct
+  level 4 to level 5, 500-turn episodes.
+- Reuse exactly the 48 EXP-0037 navigation episodes as the frozen reference after
+  verifying their hashes and unchanged runtime sources. All model, Lua and evaluation
+  code must match. No new baseline gameplay is needed.
+- Controller qualification and scoped mechanics qualification must pass with current
+  artifact hashes before launch.
+- Twenty-minute training cap, ten-minute cap per evaluation stream, forty-minute total
+  new execution cap. Unexpected equipment, recovery, nonfinite optimization metrics
+  or source drift invalidates the attempt and stops dependent stages.
+- No guides, demonstrations or final-test gameplay. Score the final checkpoint on
+  the same 16 training and 8 development seeds with streams 215001 and 215002.
+- EXP-0036 provides a historical comparison with navigation disabled, not an independent
+  replication. Development seeds have already informed this experiment design and
+  are not a final generalization test.
+arms:
+- id: frozen
+  description: Reuse the original source evaluated with bounded-bard-navigation-v1
+    in EXP-0037.
+- id: pilot
+  description: Original source fine-tuned for 16384 transitions with navigation assistance
+    retained; evaluate final checkpoint once.
+source:
+  checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+  controller_qualification: runs/controller-qualification-bounded-bard-v1/qualification.json
+  gameplay_qualification: runs/bounded-navigation-mechanics-refresh/result.json
+  hashes: Bind source, qualification, protocol, reward, runner and all Python/Lua
+    controller/training files in the runtime manifest before gameplay.
+  frozen_reference: runs/bounded-navigation-exp0037
+training:
+  seed_pool:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  optimizer_seed: 217001
+  total_steps: 16384
+  rollout_length: 128
+  sequence_length: 32
+  sequence_encoding_batch_size: 16
+  learning_rate: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  inference_transfer_mode: legacy
+  evaluation_interval: 0
+  checkpoint_interval: 4096
+evaluation:
+  training_seeds:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  development_seeds:
+  - 214064
+  - 214071
+  - 214085
+  - 214089
+  - 214100
+  - 214102
+  - 214103
+  - 214105
+  policy_streams:
+  - 215001
+  - 215002
+  policy_mode: stochastic
+  episodes_per_checkpoint: 48
+  max_turns: 500
+  primary: Completion fraction by training/development pool with paired per-seed outcomes.
+  secondary: Boss damage, deaths, episode turns, reward, action distribution, controller
+    health and elapsed time.
+decision_rule: Diagnostic only; no promotion. Development completion improvement of
+  at least 0.10 with nondecreasing training completion motivates replication. Otherwise
+  report paired boss damage, contact, deaths and wall attempts as inconclusive. Any
+  scope, controller, numeric, source or budget failure invalidates the attempt. Never
+  select an intermediate checkpoint or substitute seeds.

@@ -12,6 +12,9 @@ requested.
 
 ## Install
 
+See the [documentation index and Git policy](docs/README.md) for maintained
+references, historical evidence and the boundary between source and run artifacts.
+
 Install the project and training dependencies:
 
 ```powershell
@@ -24,6 +27,12 @@ and enable it under **Customize → Mods**. The supported initial game build is
 `v4.2.1-b5713`. Lua changes require a mod reload or a game restart.
 
 ## Train
+
+The proposed [Bard harness design](docs/harness-design.md) defines equipment,
+controls, observations and task boundaries before further experiments.
+
+For fixed trial-and-error tasks, paired sparse/exploration rewards, and the
+bounded Bard control scope, see [task and incentive contracts](docs/trial-and-error-contracts.md).
 
 Close every existing NecroDancer process first. The supervisor launches exactly
 `--num-instances` hidden, symbolic-only native workers:

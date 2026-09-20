@@ -1,0 +1,70 @@
+schema_version: 1
+id: EXP-0044
+title: Historical EXP-0034 missing-boundary retention supplement
+question: Do all three historical EXP-0034 final checkpoints retain the trained but
+  unscored tail56 boundary?
+hypothesis: The neighboring evaluated boundaries passed, but that does not prove tail56
+  retention without direct measurement.
+changed_blocks:
+- evaluation
+component_versions:
+  evaluation: historical-tail56-supplement-v1
+  reward: DeathMetalPotentialV5
+  architecture: A8
+  action-contract: map-navigation-prior-v1
+  observation: schema10-corrected-memory-boss
+  controller: schema10-requalified-current-hashes
+invariants:
+- No training, policy selection, reward change, new guide actions or final-test gameplay.
+  Preserve historical reports and inconclusive decision.
+- Use isolated clean Git worktree at 54302aee4747ece6ca207fe15bbb41cdea446a6e, the
+  recorded clean EXP-0034 runtime. Never swap files in the active workspace.
+- Verify installed game executable hash, mod hashes, original trace bank and qualification
+  identities against historical lineage. Python patch version may differ; report it.
+  Torch and CUDA versions must match historical lineage.
+- Freshly qualify the isolated mod path with eight workers and 4096 transitions each;
+  disclose that 32768-transition refresh is not a new million-transition soak. Do
+  not rewrite the original qualification to bypass its path guard.
+- Original trace bank, qualification, checkpoint metadata, effective action contract
+  and per-turn handoff digest validation remain unchanged. Any mismatch invalidates
+  the dependent evaluation.
+- Score tail56 on seeds92008,92096,92116 for each of three final checkpoints, deterministic
+  and streams98001/98002:27 episodes. Exactly eight workers, player20 level4 to5,128
+  learner turns,warm recurrence.
+- No concurrent gameplay with EXP-0043. Fifteen-minute qualification cap, ten-minute
+  per evaluation cap, forty-five-minute total execution cap. Stop on recovery, controller
+  fault, source drift or budget violation.
+arms:
+- id: historical-final
+  description: Three frozen final checkpoints at their missing trained boundary.
+source:
+  parent_experiment: EXP-0034
+  runtime_commit: 54302aee4747ece6ca207fe15bbb41cdea446a6e
+  root: runs/retained-death-metal-trace-window-5
+  trace_bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  trace_qualification: runs/qualified-death-metal-trace-search/qualification.json
+evaluation:
+  trials:
+  - 103001
+  - 103002
+  - 103003
+  seeds:
+  - 92008
+  - 92096
+  - 92116
+  tail: 56
+  modes:
+  - deterministic
+  - stochastic-98001
+  - stochastic-98002
+  policy_streams:
+  - 0
+  - 98001
+  - 98002
+  episodes: 27
+  max_turns: 128
+decision_rule: Require at least80 percent success for each of at least two checkpoints
+  and aggregate at least80 percent at tail56, with all qualification, identity and
+  controller gates passed. Combine this dated supplement with preserved historical
+  boundary evidence only when identities match. Report pass/fail without policy promotion.
+  Never describe these episodes as having occurred in the original historical run.

@@ -81,6 +81,8 @@ blocks:
       recurrent-ppo-v2-warm-boundary-state: Recurrent PPO with corrected time-limit bootstrap and exact stored LSTM state restoration at every ordinary or warm-prefix episode boundary inside each replay chunk.
   optimization-schedule:
     versions:
+      bounded-low-step-v1: Matched 16384-transition direct-start PPO pilot with joint actor-critic rate
+        3e-6, target KL 0.02 and no critic warmup.
       frozen-policy: No optimizer updates; evaluate the promoted checkpoint unchanged.
       default-ppo: All trainable parameters update from the first PPO update.
       A8-staged: Freeze the A2 base for ten updates, then jointly optimize.
@@ -94,6 +96,8 @@ blocks:
       A8-full-boss-v5-fresh-critic-v1: Preserve the exact A8 actor and recurrent function from EXP-0022 seed-86002, reset critic and optimizer for terminal-canceling full-boss returns, freeze inherited actor/recurrent base parameters for ten updates, then optimize jointly.
   training-level-distribution:
     versions:
+      bounded-two-trace-window-v1: Two current-contract replay-qualified historical seeds with balanced
+        tails 32 and 60, warm recurrence, 500 learner turns; diagnostic only.
       bounded-direct-pilot-v1: Direct assisted Death Metal starts on the fixed 16-seed training pool, one 16384-transition pilot with a 20-minute training cap and no guides.
       bounded-bottleneck-v1: Fixed versus varied identity-selected Death Metal direct starts, conditional on frozen competence.
       unbounded-random-v1: Each worker samples fresh 31-bit procedural seeds from an independent deterministic stream.
@@ -125,6 +129,24 @@ blocks:
       async-native-pipe-v1: Versioned asynchronous native-pipe actor collection.
   evaluation:
     versions:
+      bounded-low-step-retention-v1: Update-wise recurrent replay and whole-batch sampled-action KL diagnostics
+        plus paired final-policy contact retention and completion on the existing 24-seed development protocol.
+      saved-batch-stability-v1: Three predeclared joint PPO step sizes on the saved first batch and a separate
+        frozen-feature critic-head fit with worker holdout and observed-terminal-prefix diagnostics; no
+        live gameplay.
+      first-update-audit-v1: Capture one matched 1024-transition batch, check recurrent log-probability
+        replay parity and compare original PPO against a predeclared KL stop on identical inputs without
+        gameplay evaluation.
+      bounded-navigation-learning-v1: Reuse EXP-0037 navigation-assisted frozen reference and evaluate
+        the final 16384-transition matched PPO pilot on the same 24 seeds and two policy streams; no promotion
+        or final-test gameplay.
+      bounded-trace-requalification-v1: Replay historical successful trajectories under current bounded
+        navigation masks; report each rejection without repairing or relabeling traces.
+      bounded-curriculum-transfer-v1: Frozen and final conditional evaluation at both declared tails plus
+        48 direct-start final episodes; compare unchanged EXP-0041 direct-training control and frozen source.
+      historical-tail56-supplement-v1: Frozen tail56 evaluation of all three EXP-0034 finals under isolated
+        recorded runtime, current game executable hash match, fresh bounded controller qualification and
+        original trace qualification; explicitly dated supplement.
       bounded-navigation-ablation-v1: Frozen original source on the same 24 seeds and two policy streams as EXP-0036; reuse hash-bound no-navigation control reports and run 48 navigation-assisted episodes with no optimizer or final-test gameplay.
       bounded-direct-pilot-v1: Paired frozen-source and final-policy stochastic evaluation on 16 training and 8 development seeds with two fixed streams; no final-test gameplay or policy promotion.
       bounded-bottleneck-v1: Time-bounded frozen-start qualification and conditional seed-diversity learning diagnosis.

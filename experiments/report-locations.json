@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "purpose": "Relocation of documentation only; frozen specifications and decisions retain their original paths and bytes. Summary paths are not byte-identical substitutes for original reports. Local archives are ignored by Git and need separate backup.",
+  "reports": [
+    {
+      "original_path": "docs/bounded-learning-pilot.md",
+      "original_sha256": "278dd114c26a8ea55529415b254a760191a3267917cb3fd3406f26ed4b0e4540",
+      "summary_path": "experiments/EXP-0036/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/bounded-learning-pilot.md"
+    },
+    {
+      "original_path": "docs/bounded-navigation-comparison.md",
+      "original_sha256": "eb9af0d008dd127f93426bdec538f3124cef2eb823336c0e38cd1615757bca0c",
+      "summary_path": "experiments/EXP-0037/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/bounded-navigation-comparison.md"
+    },
+    {
+      "original_path": "docs/bounded-navigation-learning.md",
+      "original_sha256": "cffd77871218f65ebbe7026eb644637fec606c0944e1a3eda181c533d7b52007",
+      "summary_path": "experiments/EXP-0038/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/bounded-navigation-learning.md"
+    },
+    {
+      "original_path": "docs/reward-signal-audit.md",
+      "original_sha256": "3235a8aea4905c807335f668edb20aa40e7163f3956780483bdc9dd882079636",
+      "summary_path": "experiments/EXP-0039/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/reward-signal-audit.md"
+    },
+    {
+      "original_path": "docs/saved-batch-stability.md",
+      "original_sha256": "8c5e94b1d8a4c38fe2d73132eaf6412e1d3e1e0f45ab3404371708995eb53e14",
+      "summary_path": "experiments/EXP-0040/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/saved-batch-stability.md"
+    },
+    {
+      "original_path": "docs/stable-navigation-learning.md",
+      "original_sha256": "343b6dec246107dba22867a51db02394f0a4b93e54317eaa1ee587c2faab2518",
+      "summary_path": "experiments/EXP-0041/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/stable-navigation-learning.md"
+    },
+    {
+      "original_path": "docs/current-trace-qualification.md",
+      "original_sha256": "d1ed5379ae4e5f61998712d3057d28c24e85d2aa80c3693cd1e5204c49180519",
+      "summary_path": "experiments/EXP-0042/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/current-trace-qualification.md"
+    },
+    {
+      "original_path": "docs/bounded-curriculum-transfer.md",
+      "original_sha256": "e64cf6663445ce891c7b716e9e86b6cb5a8672831c109e15a963e4a5f9132573",
+      "summary_path": "experiments/EXP-0043/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/bounded-curriculum-transfer.md"
+    },
+    {
+      "original_path": "docs/learning-experiment-series.md",
+      "original_sha256": "4f7769a47a45632c8e0dab10a1dca0abe4634082756e44265f44947162359c2f",
+      "summary_path": "experiments/README.md",
+      "local_archive_path": "runs/documentation-archive-20260920/learning-experiment-series.md"
+    }
+  ]
+}

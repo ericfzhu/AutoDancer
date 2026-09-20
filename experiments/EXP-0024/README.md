@@ -10,3 +10,7 @@ The experiment asks whether removing renewable damage return is enough for an
 already competent local policy to convert contact into repeatable full clears.
 Even a pass is only a downstream acquisition result; assistance contraction,
 other Zone 1 bosses, earlier floors, and unseen normal starts remain mandatory.
+
+## Completion audit, 2026-09-18
+
+Retrospective audit: completed historical execution, rejected (0/216 trained evaluation wins). Comparator reproduced exactly. See decision.json and runs/experiment-completion-audit-20260918/historical-artifact-audit.json.

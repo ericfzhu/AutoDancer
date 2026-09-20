@@ -1,0 +1,39 @@
+schema_version: 1
+id: EXP-0042
+title: Current-contract demonstration requalification
+question: Which historical successful trajectories remain legal under corrected dagger
+  and navigation controls?
+hypothesis: Some raw successful traces may fail effective-mask qualification and cannot
+  be used unchanged for reverse curricula.
+changed_blocks:
+- evaluation
+component_versions:
+  evaluation: bounded-trace-requalification-v1
+  action-contract: bounded-bard-navigation-v1
+  reward: DeathMetalPotentialV5
+  architecture: A8
+invariants:
+- No optimizer steps, trace repairs, metadata relabeling, reward changes or final-test
+  gameplay.
+- Replay all three historical traces (92008,92096,92116) with recurrent capture and
+  current effective-mask checks.
+- Ten-minute execution cap, three workers, abort on infrastructure error or restart.
+  Preserve invalid gameplay/mask results as diagnostic evidence.
+- Bind input bank, sources, current Python/Lua files and runner before execution;
+  verify no drift afterward.
+arms:
+- id: replay
+  description: Exact historical actions with bounded-bard-navigation-v1 recurrent
+    capture.
+evaluation:
+  bank: runs/qualified-death-metal-trace-search/demonstration-bank.json
+  action_contract: bounded-bard-navigation-v1
+  seeds:
+  - 92008
+  - 92096
+  - 92116
+  cap_seconds: 600
+decision_rule: Report valid and incompatible traces individually. Only genuinely qualified
+  current-contract recordings may feed curriculum preparation. Failed requalification
+  requires replacement acquisition before the learning comparison; do not silently
+  waive its prerequisite.

@@ -157,9 +157,10 @@ experiments:
   EXP-0024:
     spec: experiments/EXP-0024/experiment.yaml
     spec_sha256: 1b0e003fe619bc607cacaa0db87c3f316ba05aa8c3995db09e3036dd0de88ae4
-    status: planned
+    status: rejected
     historical: false
     registered_at: '2026-08-30T10:52:47.9325633+00:00'
+    updated_at: '2026-09-18T06:26:31.447436+00:00'
   EXP-0025:
     spec: experiments/EXP-0025/experiment.yaml
     spec_sha256: 2a1f43c418151c1d31bdbc592fae1e979d707653800caa398165fdfa8d6cd2ce
@@ -226,9 +227,10 @@ experiments:
   EXP-0034:
     spec: experiments/EXP-0034/experiment.yaml
     spec_sha256: a6d37adbd8523ccf6788d5b313ba999b451c395740588d8b1b17a65a05b53a55
-    status: planned
+    status: inconclusive
     historical: false
     registered_at: '2026-09-03T01:33:35.460244+00:00'
+    updated_at: '2026-09-18T06:26:31.522588+00:00'
   EXP-0035:
     spec: experiments/EXP-0035/experiment.yaml
     spec_sha256: 52dfd4fb61a99f6b5f57b579292541919f9096f65584b71083845c12e9c53d5a
@@ -250,3 +252,52 @@ experiments:
     historical: false
     registered_at: '2026-09-08T06:22:47.377530+00:00'
     updated_at: '2026-09-08T06:33:12.704345+00:00'
+  EXP-0038:
+    spec: experiments/EXP-0038/experiment.yaml
+    spec_sha256: 284bea2e95e76e69e0b6c299c362ce001026e9af304570162c41a3301c5aa0e0
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T01:43:50.251051+00:00'
+    updated_at: '2026-09-18T02:03:50.340635+00:00'
+  EXP-0039:
+    spec: experiments/EXP-0039/experiment.yaml
+    spec_sha256: 9767b047df51ca2a39e92dd43d8d1db821f9acef42d2e353830b98ea958d928e
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T02:15:05.303246+00:00'
+    updated_at: '2026-09-18T02:24:23.789082+00:00'
+  EXP-0040:
+    spec: experiments/EXP-0040/experiment.yaml
+    spec_sha256: a81d15755fe9687e5d87af7506c995014834abb390a1901d0f41917ee3479462
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T02:27:37.331277+00:00'
+    updated_at: '2026-09-18T02:32:40.313597+00:00'
+  EXP-0041:
+    spec: experiments/EXP-0041/experiment.yaml
+    spec_sha256: f94df84bf20b19d94129f6246f410f70339354c736c02b3036de5997291b144d
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T05:44:33.096390+00:00'
+    updated_at: '2026-09-18T06:04:21.046012+00:00'
+  EXP-0042:
+    spec: experiments/EXP-0042/experiment.yaml
+    spec_sha256: d3e8a81baaac45260856a7726ca064dc4f3c8f4df24cab1d3e86dd4826e6468d
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T06:07:28.231355+00:00'
+    updated_at: '2026-09-18T06:10:00.813126+00:00'
+  EXP-0043:
+    spec: experiments/EXP-0043/experiment.yaml
+    spec_sha256: c07424c10972e635de1d016bffc004e795c632d218ecb0f83ea6b866ab6e7a14
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T06:11:49.381483+00:00'
+    updated_at: '2026-09-18T07:05:21.905553+00:00'
+  EXP-0044:
+    spec: experiments/EXP-0044/experiment.yaml
+    spec_sha256: 4eacb04156e957eddac9d0537df23e69d9634b3d2d83ad486bed648113c584e2
+    status: inconclusive
+    historical: false
+    registered_at: '2026-09-18T06:38:13.795290+00:00'
+    updated_at: '2026-09-18T06:42:44.353769+00:00'

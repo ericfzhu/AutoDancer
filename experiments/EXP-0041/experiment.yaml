@@ -1,0 +1,139 @@
+schema_version: 1
+id: EXP-0041
+title: Live low-step navigation-assisted retention pilot
+question: Does a 100x smaller joint PPO learning rate with the existing KL stop preserve
+  combat behavior and improve direct-start performance over the same short budget?
+hypothesis: The smaller rate selected by the saved-batch engineering screen may avoid
+  early destructive policy movement, though it may also slow learning.
+changed_blocks:
+- optimization-schedule
+- evaluation
+component_versions:
+  observation: bounded-bard-controls-v1
+  action-contract: bounded-bard-navigation-v1
+  training-level-distribution: bounded-direct-pilot-v1
+  evaluation: bounded-low-step-retention-v1
+  controller: schema10-bounded-refresh-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+  optimization-schedule: bounded-low-step-v1
+invariants:
+- One exploratory optimizer trial, seed 217001, exactly 16384 transitions and 16 PPO
+  updates. No replication, sweep, checkpoint selection or promotion.
+- Use bounded-bard-navigation-v1 throughout; eight workers, Bard player20, direct
+  level 4 to level 5, 500-turn episodes.
+- Reuse exactly the 48 EXP-0037 navigation episodes as the frozen reference after
+  verifying their hashes and unchanged runtime sources. All model, Lua and evaluation
+  code must match. No new baseline gameplay is needed.
+- Controller qualification and scoped mechanics qualification must pass with current
+  artifact hashes before launch.
+- Twenty-minute training cap, ten-minute cap per evaluation stream, forty-minute total
+  new execution cap. Unexpected equipment, recovery, nonfinite optimization metrics
+  or source drift invalidates the attempt and stops dependent stages.
+- No guides, demonstrations or final-test gameplay. Score the final checkpoint on
+  the same 16 training and 8 development seeds with streams 215001 and 215002.
+- EXP-0036 provides a historical comparison with navigation disabled, not an independent
+  replication. Development seeds have already informed this experiment design and
+  are not a final generalization test.
+- Keep original source weights and critic, fresh optimizer, A8, reward, navigation
+  assistance, seed pools, optimizer seed, 16384 transitions, 16 updates and all other
+  PPO settings matched to EXP-0038. Change only joint learning rate to 0.000003 and
+  target_kl to 0.02. No critic warmup.
+- Instrument each update with pre-update recurrent replay agreement and post-update
+  full-saved-batch sampled-action approximate KL. Pre-update log-probability mismatch
+  over 0.001 invalidates execution; post-update KL is reported rather than misrepresented
+  as a hard bound.
+- Save the first and final raw rollout batches and the initial learner checkpoint
+  for later signal analysis. Instrumentation must not change model parameters or RNG
+  used by the learner.
+- This is a stability and retention screen, not an independent replication or policy
+  promotion. Reduced learning rate can reduce both actor and critic learning speed.
+arms:
+- id: frozen
+  description: Reuse the original source evaluated with bounded-bard-navigation-v1
+    in EXP-0037.
+- id: pilot
+  description: Original source trained for 16384 transitions with navigation retained,
+    joint rate 3e-6 and KL stop 0.02.
+source:
+  checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+  controller_qualification: runs/controller-qualification-bounded-bard-v1/qualification.json
+  gameplay_qualification: runs/bounded-navigation-mechanics-refresh/result.json
+  hashes: Bind source, qualification, protocol, reward, runner and all Python/Lua
+    controller/training files in the runtime manifest before gameplay.
+  frozen_reference: runs/bounded-navigation-exp0037
+training:
+  seed_pool:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  optimizer_seed: 217001
+  total_steps: 16384
+  rollout_length: 128
+  sequence_length: 32
+  sequence_encoding_batch_size: 16
+  learning_rate: 3.0e-06
+  gamma: 0.99
+  gae_lambda: 0.95
+  inference_transfer_mode: legacy
+  evaluation_interval: 0
+  checkpoint_interval: 4096
+  target_kl: 0.02
+evaluation:
+  training_seeds:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  development_seeds:
+  - 214064
+  - 214071
+  - 214085
+  - 214089
+  - 214100
+  - 214102
+  - 214103
+  - 214105
+  policy_streams:
+  - 215001
+  - 215002
+  policy_mode: stochastic
+  episodes_per_checkpoint: 48
+  max_turns: 500
+  primary: Completion fraction by training/development pool with paired per-seed outcomes.
+  secondary: Boss damage, deaths, episode turns, reward, action distribution, controller
+    health and elapsed time.
+decision_rule: Diagnostic only; no promotion. Report update-wise full-batch policy
+  movement and paired boss damage, contact, completions and deaths. First require
+  retained development boss damage (at least the source total of 2) and retained total
+  contact episodes (at least 8/48); this is a descriptive screen, not statistical
+  proof. A development completion increase of at least 0.10 with nondecreasing training
+  completion motivates replication. If retention passes but learning remains flat,
+  investigate curriculum difficulty next with reward fixed. If retention fails, use
+  saved rollout diagnostics before further training. Scope, recovery, source, replay,
+  numerical or budget failures invalidate the attempt.

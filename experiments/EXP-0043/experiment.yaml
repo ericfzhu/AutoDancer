@@ -1,0 +1,112 @@
+schema_version: 1
+id: EXP-0043
+title: Bounded legal trace curriculum and direct-start transfer
+question: Does near-success practice with stable PPO yield successful learning and
+  transfer to direct starts?
+hypothesis: Qualified reachable starts provide success experience missing from direct
+  training, but may overfit the two familiar maps.
+changed_blocks:
+- training-level-distribution
+- evaluation
+component_versions:
+  training-level-distribution: bounded-two-trace-window-v1
+  evaluation: bounded-curriculum-transfer-v1
+  action-contract: bounded-bard-navigation-v1
+  observation: bounded-bard-controls-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+  optimization-schedule: bounded-low-step-v1
+  controller: schema10-bounded-refresh-v1
+invariants:
+- No reward, architecture, control, optimizer-setting or checkpoint sweep; no promotion
+  or final-test gameplay.
+- Source is the EXP-0041 saved initial learner; require model tensors bitwise equal
+  to historical original source, preserving actual metadata rather than editing checkpoint
+  identity.
+- Derive a new bank only from EXP-0042 successfully current-mask-replayed traces;
+  bind original bank, result and manifest. Do not alter historical actions or rejected
+  trace. Freshly replay and capture both included traces before handoff evaluation.
+- Require both fresh traces valid, no restart or infrastructure fault, exact observation
+  digests and valid recurrent handoffs. If qualification fails, stop dependent training.
+- Before training require at least one successful frozen continuation across the eight
+  declared conditional episodes; otherwise report failed acquisition gate without
+  training. Do not tune tails from results.
+- One optimizer seed 217001; 16384 transitions and 16 updates; eight workers; same
+  PPO settings as EXP-0041 (rate 3e-6, target KL .02), original source weights and
+  fresh optimizer.
+- Two training seeds 92008 and 92096; balanced tails 32 and 60; player20 level4 to5;
+  500 learner turns; online recurrent warmup. Prefix acquisition time counts in elapsed
+  training time.
+- Ten-minute fresh replay cap, ten-minute per evaluation invocation, thirty-minute
+  training cap, sixty-minute total cap. Hash drift, unsupported loadout, recovery,
+  replay disagreement or nonfinite metrics invalidate execution.
+- Historical EXP-0041 control uses different training seed distribution by design;
+  this is a curriculum package comparison, not an isolated causal effect of start
+  distance. Two historical successful seeds are selected demonstrations, not representative
+  maps.
+arms:
+- id: frozen
+  description: Original weights, eight conditional source episodes and reused direct
+    reference.
+- id: curriculum
+  description: Balanced two-trace tails, final conditional and direct evaluation.
+source:
+  checkpoint: runs/stable-navigation-learning-exp0041/initial-learner.pt
+  checkpoint_sha256: bffd10e6317d220ecf687793a30e82ed46c44e8409462c289876503940b1e3be
+  original_checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+  direct_control: runs/stable-navigation-learning-exp0041
+training:
+  seeds:
+  - 92008
+  - 92096
+  tail_window:
+  - 32
+  - 60
+  optimizer_seed: 217001
+  total_steps: 16384
+  max_turns: 500
+  learning_rate: 3.0e-06
+  target_kl: 0.02
+evaluation:
+  conditional_seeds:
+  - 92008
+  - 92096
+  tails:
+  - 32
+  - 60
+  streams:
+  - 215001
+  - 215002
+  direct_training_seeds:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  direct_development_seeds:
+  - 214064
+  - 214071
+  - 214085
+  - 214089
+  - 214100
+  - 214102
+  - 214103
+  - 214105
+  max_turns: 500
+decision_rule: Report qualification and handoff gates, conditional success separately
+  by tail/seed, all direct wins/contact/damage and deaths versus frozen source and
+  EXP-0041 control, measured update stability, and prefix-inclusive elapsed time.
+  No promotion. No direct completion improvement means transfer remains unproven even
+  if assisted success is high. Finish this bounded comparison without launching an
+  open-ended sweep.

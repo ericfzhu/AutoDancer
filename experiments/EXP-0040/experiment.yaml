@@ -1,0 +1,74 @@
+schema_version: 1
+id: EXP-0040
+title: Saved-batch step-size and critic-head diagnostics
+question: Do predeclared smaller PPO steps constrain first-update movement, and does
+  a policy-preserving critic-head fit improve predictions on unused workers and the
+  one observed terminal prefix?
+hypothesis: Smaller joint actor-critic step sizes may limit initial policy movement;
+  head-only fitting may reduce fixed-target error but need not improve outcome calibration.
+changed_blocks:
+- evaluation
+component_versions:
+  observation: bounded-bard-controls-v1
+  action-contract: bounded-bard-navigation-v1
+  training-level-distribution: bounded-direct-pilot-v1
+  evaluation: saved-batch-stability-v1
+  controller: schema10-bounded-refresh-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+invariants:
+- No live game collection, policy evaluation, reward change, production PPO change,
+  or policy promotion. Use only EXP-0039 initial.pt and rollout.pt with verified hashes.
+- Three PPO arms restore the same initial model, optimizer and RNG. All use target_kl=0.02;
+  learning rates are predeclared 0.0003, 0.00003 and 0.000003. Both actor and critic
+  use the given shared optimizer rate, so this is not an actor-only rate comparison.
+- Run one 16-minibatch-maximum PPO update per arm. Measure final sampled-action KL
+  and clip fraction on the whole saved batch, not only minibatch means.
+- 'Independent critic diagnostic: freeze every non-critic parameter, cache recurrent
+  features, fit only the head for exactly 32 full-training-split Adam steps at 0.0003
+  to fixed original GAE return targets. Fit workers 0-3; hold out workers 4-7. No
+  hyperparameter or stopping selection.'
+- Report fixed-target fit error separately from discounted observed returns for the
+  92 transitions ending at the single true terminal at [91,4]. These transitions are
+  one correlated failure trajectory, not 92 independent episodes.
+- Saved next observations are unavailable, so do not run a calibrated-critic PPO arm
+  with stale or fabricated bootstrap values. Validate that actor parameters and sampled
+  action log probabilities remain unchanged after head fitting.
+- Ten-minute offline execution cap; nonfinite metrics, replay mismatch, unexpected
+  parameter changes or source drift invalidate the diagnostic.
+arms:
+- id: guarded_original
+  description: Original joint learning rate 3e-4 with KL stop 0.02.
+- id: guarded_tenth
+  description: Joint learning rate 3e-5 with KL stop 0.02.
+- id: guarded_hundredth
+  description: Joint learning rate 3e-6 with KL stop 0.02.
+- id: critic_head
+  description: Separate frozen-feature head-only fixed-target diagnostic.
+source:
+  capture_root: runs/first-update-audit-exp0039
+  controller_qualification: runs/controller-qualification-bounded-bard-v1/qualification.json
+  checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+evaluation:
+  replay_logprob_tolerance: 0.001
+  policy_movement_diagnostic_threshold: 0.02
+  learning_rates:
+  - 0.0003
+  - 3.0e-05
+  - 3.0e-06
+  critic_steps: 32
+  critic_learning_rate: 0.0003
+  fit_workers:
+  - 0
+  - 1
+  - 2
+  - 3
+  heldout_workers:
+  - 4
+  - 5
+  - 6
+  - 7
+decision_rule: Report every arm, including fixed-target and observed-outcome errors.
+  A final same-batch KL below 0.02 is an engineering screen only, not evidence of
+  gameplay improvement or a universal safe setting. At most motivate a separately
+  specified short live follow-up; never promote a checkpoint based on this batch.

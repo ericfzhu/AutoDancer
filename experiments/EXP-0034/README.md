@@ -25,3 +25,7 @@ next harder boundary.
 
 This remains assisted training-seed evidence. Passing at tail 81 authorizes a
 separate prefix-free full-boss evaluation, not normal-start promotion.
+
+## Completion audit, 2026-09-18
+
+Retrospective audit: all 189 final episodes passed at the seven reported boundaries, but trained tail56 has no final evaluation. Complete-window retention is unproven; registry conclusion is inconclusive. Historical comparison remains unchanged. See decision.json and runs/experiment-completion-audit-20260918/historical-artifact-audit.json.

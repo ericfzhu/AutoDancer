@@ -12,6 +12,8 @@ build/
 dist/
 *.egg-info/
 runs/
+artifacts/
+experiments/EXP-*/artifacts/
 checkpoints/
 traces/live/
 screenshots/

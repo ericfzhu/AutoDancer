@@ -1,0 +1,81 @@
+schema_version: 1
+id: EXP-0039
+title: First-update signal and replay audit
+question: Can the zero-reward first-update behavior be reproduced, and how much policy
+  movement occurs with and without the existing KL guard on the same batch?
+hypothesis: Inherited values can create nonzero advantages despite zero observed rewards;
+  a KL stop may limit further policy movement without addressing reward sparsity.
+changed_blocks:
+- evaluation
+component_versions:
+  observation: bounded-bard-controls-v1
+  action-contract: bounded-bard-navigation-v1
+  training-level-distribution: bounded-direct-pilot-v1
+  evaluation: first-update-audit-v1
+  controller: schema10-bounded-refresh-v1
+  architecture: A8
+  reward: DeathMetalPotentialV5
+invariants:
+- Collect exactly one 1024-transition batch with the EXP-0038 source, optimizer seed,
+  8 workers, loadout guard, reward, seeds and recurrent settings. No development or
+  final-test gameplay.
+- Save observations, actions, old log probabilities, values, boundary flags, recurrent
+  states, initial model/optimizer and RNG before the update. This is a new capture,
+  not a claimed exact replay of lost historical data.
+- Audit pre-update log-probability parity; abort causal interpretation if maximum
+  absolute replay difference exceeds 0.001.
+- Apply the original update once; separately restore identical initial weights and
+  RNG and update the same batch with target_kl=0.02. This threshold is a diagnostic
+  intervention, not selected for gameplay performance.
+- Report sampled-action approximate KL over the entire saved batch after updating,
+  plus minibatch-averaged training metrics and advantage distribution by action. No
+  gameplay evaluation or policy promotion.
+- Ten-minute total execution cap; scope violation, recovery, nonfinite metrics or
+  source drift invalidates the diagnostic.
+arms:
+- id: capture
+  description: One live batch and the original PPO update; artifact capture and same-batch
+    counterfactual.
+source:
+  checkpoint: runs/retained-death-metal-trace-window-5/training/seed-103001/final.pt
+  controller_qualification: runs/controller-qualification-bounded-bard-v1/qualification.json
+  gameplay_qualification: runs/bounded-navigation-mechanics-refresh/result.json
+  hashes: Bind source, qualification, protocol, reward, runner and all Python/Lua
+    controller/training files in the runtime manifest before gameplay.
+  frozen_reference: runs/bounded-navigation-exp0037
+training:
+  seed_pool:
+  - 214001
+  - 214003
+  - 214004
+  - 214009
+  - 214012
+  - 214014
+  - 214017
+  - 214020
+  - 214031
+  - 214035
+  - 214037
+  - 214040
+  - 214041
+  - 214050
+  - 214058
+  - 214060
+  optimizer_seed: 217001
+  total_steps: 1024
+  rollout_length: 128
+  sequence_length: 32
+  sequence_encoding_batch_size: 16
+  learning_rate: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  inference_transfer_mode: legacy
+  evaluation_interval: 0
+  checkpoint_interval: 4096
+evaluation:
+  policy_evaluation: false
+  target_kl_intervention: 0.02
+  replay_logprob_max_abs_tolerance: 0.001
+decision_rule: Diagnostic only. Distinguish exact same-batch intervention effects
+  from hypotheses about historical failure. No checkpoint promotion or recommendation
+  of a gameplay-optimal KL threshold.
