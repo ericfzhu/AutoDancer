@@ -103,3 +103,12 @@ def test_curriculum_mixture_loader_validates_and_preserves_exact_weights(tmp_pat
 def test_episode_reset_spec_rejects_ambiguous_or_invalid_values(value, message) -> None:
     with pytest.raises(ValueError, match=message):
         EpisodeResetSpec.from_mapping(value)
+
+
+def test_trial_tasks_are_fixed_normal_reset_objectives():
+    for name, start, target in (("first-floor", 1, 2), ("zone-one", 1, 5), ("boss-floor", 4, 5)):
+        entries = load_curriculum_mixture(f"configs/task-{name}-v1.json")
+        assert len(entries) == 1
+        assert entries[0].spec.start_level == start
+        assert entries[0].spec.target_level == target
+        assert entries[0].spec.profile == "normal"

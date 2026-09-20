@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "zone-one",
+      "weight": 1.0,
+      "start_level": 1,
+      "target_level": 5,
+      "profile": "normal"
+    }
+  ]
+}

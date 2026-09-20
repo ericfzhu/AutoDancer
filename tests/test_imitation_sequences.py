@@ -8,6 +8,7 @@ import pytest
 from autodancer.constants import ACTION_COUNT
 from autodancer.observation import observation_space
 from autodancer.training.imitation_sequences import (
+    OBSERVATION_NAMES,
     RecurrentDemonstration,
     load_recurrent_demonstrations,
     manifest_path,
@@ -21,6 +22,7 @@ def demonstration(*, trace_id: str = "trace-a", seed: int = 7) -> RecurrentDemon
     observations = {
         name: np.zeros((length, *space.shape), dtype=space.dtype)
         for name, space in observation_space().spaces.items()
+        if name in OBSERVATION_NAMES
     }
     observations["action_mask"].fill(1)
     actions = np.asarray([0, 3, ACTION_COUNT - 1], dtype=np.int64)

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "boss-floor",
+      "weight": 1.0,
+      "start_level": 4,
+      "target_level": 5,
+      "profile": "normal"
+    }
+  ]
+}

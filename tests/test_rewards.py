@@ -9,9 +9,12 @@ from autodancer.constants import (
     GRID_SIZE,
     INVENTORY_FEATURES,
     INVENTORY_SLOTS,
+    MAP_CHANNELS,
+    MAP_SIZE,
     PLAYER_FEATURES,
     ActorKind,
     GridChannel,
+    MapChannel,
     PlayerFeature,
     Terrain,
 )
@@ -290,6 +293,7 @@ def test_floor_transition_resets_stair_potential_without_cross_floor_credit() ->
     tracker = RewardTracker(RewardConfig(turn=0, new_position=0, revisit=0, new_tile=0))
     initial = observation()
     initial["grid"][10, 11, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    initial["grid"][10, 11, GridChannel.VISIBILITY] = 1
     tracker.reset(initial, {"zone": 1, "floor": 1})
     next_floor = observation(x=20, y=20)
     reward, parts = tracker.score(
@@ -308,6 +312,7 @@ def test_time_limit_retains_stair_potential_and_is_not_an_abort() -> None:
     tracker = RewardTracker(config)
     state = observation()
     state["grid"][10, 12, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    state["grid"][10, 12, GridChannel.VISIBILITY] = 1
     tracker.reset(state, {"zone": 1, "floor": 1})
     reward, parts = tracker.score(
         state,
@@ -614,3 +619,45 @@ def test_checkpoint_reward_contract_round_trips_v4_and_v5_exactly() -> None:
         reward_config_from_specification(malformed)
     with pytest.raises(ValueError, match="requires Reward V5"):
         RewardConfig(profile_version=4, boss_progress_potential_per_damage=0.2)
+
+
+def test_stairs_use_revealed_map_memory_in_world_coordinates():
+    value = observation(x=30, y=-5)
+    value["map_memory"] = np.zeros((MAP_SIZE, MAP_SIZE, MAP_CHANNELS), dtype=np.int16)
+    centre = MAP_SIZE // 2
+    value["map_memory"][centre, centre + 12, MapChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    assert RewardTracker._stairs(value, 1, 2) == set()
+    value["map_memory"][centre, centre + 12, MapChannel.REVEAL_STATE] = 1
+    assert RewardTracker._stairs(value, 1, 2) == {(1, 2, 42, -5)}
+    tracker = RewardTracker()
+    tracker.reset(value, {"zone": 1, "floor": 2})
+    assert tracker.stair_potential == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize("field", ["new_position", "enemy_damage", "discount", "death"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_reward_weights_must_be_finite(field, value):
+    with pytest.raises(ValueError, match="finite"):
+        RewardConfig(**{field: value})
+
+
+def test_trial_profiles_share_objective_and_bound_exploration():
+    sparse = load_reward_config("configs/reward-trial-sparse-v5.json")
+    shaped = load_reward_config("configs/reward-trial-exploration-v5.json")
+    for field in ("floor_complete", "zone_complete", "victory", "death", "aborted"):
+        assert getattr(sparse, field) == getattr(shaped, field)
+    assert sparse.new_position == sparse.new_tile == sparse.stair_potential_max == 0
+    assert sparse.boss_progress_potential_per_damage == 0
+    tracker = RewardTracker(shaped)
+    info = {"zone": 1, "floor": 1, "episode_status": "running"}
+    tracker.reset(observation(), info)
+    total = 0.0
+    for x in range(1, 301):
+        reward, _ = tracker.score(observation(x=x), info, [], terminated=False, truncated=False)
+        total += reward
+    assert total == pytest.approx(0.5)
+    # Neither revisits nor waiting can replenish the bonus.
+    for x in (0, 1, 300, 300):
+        reward, _ = tracker.score(observation(x=x), info, [], terminated=False, truncated=False)
+        assert reward == 0
+    assert total < shaped.floor_complete

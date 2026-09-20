@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.constants import ActorKind, GridChannel, PlayerFeature, Terrain
+from autodancer.constants import ActorKind, GridChannel, MapChannel, PlayerFeature, Terrain
 
 REWARD_PROFILE_VERSION = 4
 
@@ -55,6 +56,9 @@ class RewardConfig:
     aborted: float = -1.0
 
     def __post_init__(self) -> None:
+        for name, value in asdict(self).items():
+            if isinstance(value, (int, float)) and not math.isfinite(value):
+                raise ValueError(f"{name} must be finite")
         for name in (
             "max_new_tiles_per_turn",
             "max_rewarded_damage_per_enemy",
@@ -183,12 +187,24 @@ class RewardTracker:
         grid = observation["grid"]
         px, py = cls._position(observation)
         centre = grid.shape[0] // 2
-        return {
+        stairs = {
             (zone, floor, px + int(column) - centre, py + int(row) - centre)
             for row, column in np.argwhere(
-                grid[..., GridChannel.TERRAIN_CLASS] == int(Terrain.STAIRS)
+                (grid[..., GridChannel.TERRAIN_CLASS] == int(Terrain.STAIRS))
+                & (grid[..., GridChannel.VISIBILITY] > 0)
             )
         }
+        memory = observation.get("map_memory")
+        if memory is not None:
+            centre = memory.shape[0] // 2
+            stairs.update(
+                (zone, floor, px + int(column) - centre, py + int(row) - centre)
+                for row, column in np.argwhere(
+                    (memory[..., MapChannel.TERRAIN_CLASS] == int(Terrain.STAIRS))
+                    & (memory[..., MapChannel.REVEAL_STATE] > 0)
+                )
+            )
+        return stairs
 
     @staticmethod
     def _nearest_stair_distance(

@@ -157,6 +157,7 @@ class DeathMetalPhaseTracker:
     boss_damage: int = 0
     observed_actor_types: set[int] = field(default_factory=set)
     observations_with_boss: int = 0
+    _previous_encounter: tuple[int, int] | None = None
 
     @staticmethod
     def _visible_bosses(observation: Mapping[str, np.ndarray]) -> list[tuple[int, int, int]]:
@@ -180,9 +181,18 @@ class DeathMetalPhaseTracker:
         observation: Mapping[str, np.ndarray],
         info: Mapping[str, Any] | None = None,
     ) -> None:
-        if int(observation["player"][PlayerFeature.TASK]) != self.config.boss_type:
+        player = observation["player"]
+        level = (int(player[PlayerFeature.ZONE]), int(player[PlayerFeature.FLOOR]))
+        task = int(player[PlayerFeature.TASK])
+        current_encounter = task == self.config.boss_type
+        # Events describe the action leading INTO this observation. A finishing
+        # hit can clear TASK immediately; accept that one same-floor transition,
+        # then close the encounter so later unrelated events cannot leak in.
+        finishing_transition = task == 0 and self._previous_encounter == level
+        self._previous_encounter = level if current_encounter else None
+        if not current_encounter and not finishing_transition:
             return
-        bosses = self._visible_bosses(observation)
+        bosses = self._visible_bosses(observation) if current_encounter else []
         if bosses:
             self.observations_with_boss += 1
             health = min(value[1] for value in bosses)

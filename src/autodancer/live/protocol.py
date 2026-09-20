@@ -198,6 +198,9 @@ def _integer_array(
         raise ProtocolError(f"Observation field {label!r} has shape {raw.shape}; expected {shape}")
     if not np.issubdtype(raw.dtype, np.integer):
         raise ProtocolError(f"Observation field {label!r} must contain integers")
+    bounds = np.iinfo(dtype)
+    if np.any(raw < bounds.min) or np.any(raw > bounds.max):
+        raise ProtocolError(f"Observation field {label!r} exceeds {dtype} storage range")
     return raw.astype(dtype, copy=False)
 
 

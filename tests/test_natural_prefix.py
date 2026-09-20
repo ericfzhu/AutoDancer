@@ -161,3 +161,29 @@ def test_natural_prefix_policy_sample_depends_on_seed_attempt_and_turn_only() ->
     assert sample != natural_prefix_policy_sample(17, 81001, 2, 10)
     with pytest.raises(ValueError, match="non-negative"):
         natural_prefix_policy_sample(17, 81001, -1, 9)
+
+
+def test_finishing_hit_is_counted_once_after_boss_identity_clears():
+    tracker = DeathMetalPhaseTracker(NaturalPrefixConfig())
+    tracker.observe(boss_observation(health=1, actor_type=41))
+    finished = boss_observation(health=0, actor_type=41)
+    finished["player"][PlayerFeature.TASK] = 0
+    tracker.observe(finished, damage(1, 41))
+    assert tracker.boss_damage == 1
+    assert tracker.minimum_health == 0
+    tracker.observe(finished, damage(9, 99))
+    assert tracker.boss_damage == 1
+    assert 99 not in tracker.observed_actor_types
+
+
+def test_boss_damage_does_not_cross_floor_or_boss_identity():
+    for change in ("floor", "boss"):
+        tracker = DeathMetalPhaseTracker(NaturalPrefixConfig())
+        tracker.observe(boss_observation(health=1, actor_type=41))
+        other = boss_observation(health=0, actor_type=99)
+        other["player"][PlayerFeature.TASK] = 0 if change == "floor" else 99
+        if change == "floor":
+            other["player"][PlayerFeature.FLOOR] += 1
+        tracker.observe(other, damage(9, 99))
+        assert tracker.boss_damage == 0
+        assert 99 not in tracker.observed_actor_types

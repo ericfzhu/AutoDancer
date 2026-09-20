@@ -29,6 +29,7 @@ from autodancer.live.protocol import (
     NativePipeTurnSource,
     ProtocolError,
     QueueTurnSource,
+    decode_observation,
     validate_record,
 )
 
@@ -972,3 +973,27 @@ def test_lua_waits_for_a_materialized_visible_world_before_reset_or_action() -> 
     assert "Vision.isVisible(player.position.x, player.position.y)" in telemetry
     assert 'return "world_not_ready"' in bridge
     assert r'\"world_ready\"' in bridge
+
+
+@pytest.mark.parametrize(
+    "field,index,value",
+    [
+        ("action_mask", (0,), 256),
+        ("equipment_controls", (0,), 256),
+        ("bounded_loadout", (0,), 256),
+        ("grid", (0, 0, int(GridChannel.HEALTH)), 65536),
+        ("inventory", (0, 1), 65536),
+        ("player", (int(PlayerFeature.HEALTH),), 2**32),
+        ("player", (int(PlayerFeature.X),), -(2**32)),
+    ],
+)
+def test_observation_rejects_overflow_before_narrowing(field, index, value):
+    payload = record(0, "reset")["observation"]
+    payload["equipment_controls"] = [1, 1, 0]
+    payload["bounded_loadout"] = [1, 1]
+    target = payload[field]
+    for component in index[:-1]:
+        target = target[component]
+    target[index[-1]] = value
+    with pytest.raises(ProtocolError, match="storage range"):
+        decode_observation(payload)
