@@ -77,7 +77,7 @@ def summarize_metrics(path: Path) -> dict[str, Any]:
 
 
 def benchmark_observations(
-    batch: int, length: int, device: torch.device
+    batch: int, length: int, device: torch.device, *, equipment_capacity: int | None = None
 ) -> dict[str, torch.Tensor]:
     """Synthetic nonempty inputs with production shapes; not gameplay evidence."""
     grid = torch.zeros(batch, length, GRID_SIZE, GRID_SIZE, GRID_CHANNELS, dtype=torch.int16)
@@ -93,11 +93,11 @@ def benchmark_observations(
     memory[..., :2] = 1
     player = torch.ones(batch, length, PLAYER_FEATURES, dtype=torch.int32)
     player[..., :2] = 6
-    inventory = torch.zeros(batch, length, INVENTORY_SLOTS, INVENTORY_FEATURES, dtype=torch.int16)
+    inventory = torch.zeros(batch, length, INVENTORY_SLOTS, INVENTORY_FEATURES, dtype=torch.int32)
     inventory[..., 1] = 123
     mask = torch.ones(batch, length, ACTION_COUNT, dtype=torch.bool)
     mask[..., -2:] = False
-    return {
+    result = {
         key: value.to(device)
         for key, value in {
             "grid": grid,
@@ -109,6 +109,21 @@ def benchmark_observations(
             "previous_reward": torch.linspace(-0.1, 0.1, batch * length).reshape(batch, length),
         }.items()
     }
+    if equipment_capacity is not None:
+        from autodancer.equipment_observation import equipment_spaces
+        from autodancer.equipment_state import equipment_registry
+
+        for key, space in equipment_spaces(equipment_capacity).items():
+            result[key] = torch.zeros(
+                (batch, length, *space.shape), dtype=torch.int32, device=device
+            )
+        result["equipment_current"] = result["equipment_current"].to(torch.int8)
+        result["equipment_current"].fill_(1)
+        result["equipment_world_current"] = result["equipment_world_current"].to(torch.int8)
+        result["equipment_world_current"].fill_(1)
+        result["equipment_items"][..., 0, 0] = equipment_registry()[0]["WeaponDagger"]
+        result["equipment_items"][..., 0, 1] = 1
+    return result
 
 
 def sequence_benchmark(
@@ -128,7 +143,10 @@ def sequence_benchmark(
     model = model_from_spec(payload["architecture"], initialize=False).to(device).train()
     model.load_state_dict(payload["model"])
     del payload
-    obs = benchmark_observations(batch, length, device)
+    equipment = model.architecture_spec().get("equipment", {})
+    obs = benchmark_observations(
+        batch, length, device, equipment_capacity=equipment.get("capacity")
+    )
     actions = torch.zeros(batch, length, device=device, dtype=torch.long)
     initial = model.initial_state(batch, device=device)
     starts = torch.zeros(batch, length, device=device, dtype=torch.bool)

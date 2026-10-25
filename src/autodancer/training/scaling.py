@@ -94,7 +94,10 @@ def measure(args: argparse.Namespace, capacity: int, mode: str) -> dict[str, Any
     model = model_from_spec(payload["architecture"], initialize=False).to(device).eval()
     model.load_state_dict(payload["model"])
     del payload
+    from autodancer.equipment_observation import equipment_environment_options
+
     config = SupervisorConfig(
+        **equipment_environment_options(model.architecture_spec()),
         game_dir=args.game_dir,
         mod_dir=args.mod_dir,
         num_instances=capacity,

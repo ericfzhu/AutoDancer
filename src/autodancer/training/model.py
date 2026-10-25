@@ -856,7 +856,7 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
         if isinstance(model, ProjectedAdapterActorCritic):
             groups.pop("adapter_gate")
             groups["adapter_projection"] = ("adapter_projection.",)
-    elif model.architecture_spec()["version"] == ARCHITECTURE_VERSION:
+    elif model.architecture_spec()["version"] in {ARCHITECTURE_VERSION, 9}:
         groups.update(
             {
                 "tactical_grid": (
@@ -878,6 +878,14 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
                 ),
             }
         )
+    if isinstance(model, EquipmentActorCritic):
+        groups["equipment"] = (
+            "equipment_identity.",
+            "equipment_token.",
+            "equipment_relation.",
+            "equipment_world_token.",
+            "equipment_output.",
+        )
     return groups
 
 
@@ -897,10 +905,131 @@ def current_representation_gradient_norms(model: PolicyModel) -> dict[str, float
     return result
 
 
+class EquipmentActorCritic(RecurrentActorCritic):
+    """A9: captured equipment with an explicit information-profile contract.
+
+    Item order carries no information. Parent indices are used only to gather
+    container features, so changing engine IDs or row order cannot change policy
+    semantics. Both heads receive the same equipment representation.
+    """
+
+    def __init__(
+        self,
+        config: ModelConfig | None = None,
+        *,
+        equipment_capacity: int = 64,
+        equipment_profile: str = "internal-v1",
+        initialize: bool = True,
+    ) -> None:
+        from autodancer.equipment_observation import (
+            EQUIPMENT_FACTS,
+            ITEM_FEATURES,
+            equipment_contract,
+        )
+        from autodancer.equipment_state import equipment_registry
+
+        super().__init__(config, initialize=initialize)
+        self.equipment_contract = equipment_contract(equipment_capacity, equipment_profile)
+        self.equipment_identity = nn.Embedding(len(equipment_registry()[0]) + 1, 32)
+        self.equipment_token = nn.Sequential(
+            nn.Linear(64 + ITEM_FEATURES - 3 + len(EQUIPMENT_FACTS) * 3, 128),
+            nn.LayerNorm(128),
+            nn.SiLU(),
+        )
+        self.equipment_relation = nn.Sequential(nn.Linear(256, 128), nn.SiLU())
+        self.equipment_world_token = nn.Sequential(nn.Linear(35, 64), nn.SiLU())
+        self.equipment_output = nn.Sequential(
+            nn.Linear(195 + len(self.equipment_contract["player_effects"]) * 3, self.hidden_size),
+            nn.LayerNorm(self.hidden_size),
+            nn.SiLU(),
+        )
+
+    def architecture_spec(self) -> dict[str, Any]:
+        return {
+            "version": 9,
+            "config": asdict(self.config),
+            "equipment": self.equipment_contract,
+        }
+
+    def encode_equipment(self, observation: dict[str, Tensor]) -> Tensor:
+        items = observation["equipment_items"]
+        facts = observation["equipment_facts"]
+        if items.shape[1] != self.equipment_contract["capacity"]:
+            raise ValueError("Equipment observation capacity differs from checkpoint")
+        valid = items[..., 0] != 0
+        # Parent references are graph joins, not numeric features.
+        numeric = torch.cat((items[..., 1:2], items[..., 4:]), dim=-1).float()
+        fact_features = torch.cat(
+            (self._scale(facts[..., :1].float()), facts[..., 1:].float()), dim=-1
+        ).flatten(2)
+        tokens = self.equipment_token(
+            torch.cat(
+                (
+                    self.equipment_identity(items[..., 0].long()),
+                    self.equipment_identity(items[..., 3].long()),
+                    self._scale(numeric),
+                    fact_features,
+                ),
+                dim=-1,
+            )
+        )
+        parent = items[..., 2].long()
+        padded = torch.cat((torch.zeros_like(tokens[:, :1]), tokens), dim=1)
+        parent_features = padded.gather(1, parent.unsqueeze(-1).expand(-1, -1, 128))
+        related = self.equipment_relation(torch.cat((tokens, parent_features), dim=-1))
+        count = valid.sum(1, keepdim=True).float()
+        pooled = (related * valid.unsqueeze(-1)).sum(1) / count.clamp_min(1)
+        current = observation["equipment_current"].float()
+        effects = observation["equipment_effects"].float()
+        effects = torch.cat((self._scale(effects[..., :1]), effects[..., 1:]), dim=-1).flatten(1)
+        world = observation["equipment_world"]
+        world_mask = world[..., 0] != 0
+        world_tokens = self.equipment_world_token(
+            torch.cat(
+                (
+                    self.equipment_identity(world[..., 1].long()),
+                    self._scale(torch.cat((world[..., :1], world[..., 2:]), dim=-1).float()),
+                ),
+                dim=-1,
+            )
+        )
+        world_pool = (world_tokens * world_mask.unsqueeze(-1)).sum(1) / world_mask.sum(
+            1, keepdim=True
+        ).clamp_min(1)
+        return self.equipment_output(
+            torch.cat(
+                (
+                    pooled,
+                    self._scale(count),
+                    current,
+                    effects,
+                    world_pool,
+                    observation["equipment_world_current"].float(),
+                ),
+                dim=-1,
+            )
+        )
+
+    def encode(self, observation: dict[str, Tensor]) -> Tensor:
+        return super().encode(observation) + self.encode_equipment(observation)
+
+
 def model_from_spec(spec: dict[str, Any], *, initialize: bool = True) -> PolicyModel:
     """Construct the exact model described by a checkpoint architecture spec."""
     version = int(spec.get("version", 0))
     config = dict(spec.get("config", {}))
+    if version == 9:
+        from autodancer.equipment_observation import equipment_contract
+
+        contract = spec.get("equipment", {})
+        if contract != equipment_contract(contract.get("capacity"), contract.get("profile")):
+            raise ValueError("Equipment checkpoint contract or registry does not match")
+        return EquipmentActorCritic(
+            ModelConfig(**config),
+            equipment_capacity=contract["capacity"],
+            equipment_profile=contract["profile"],
+            initialize=initialize,
+        )
     if version == 2:
         config["map_size"] = 0
         return RecurrentActorCritic(ModelConfig(**config), initialize=initialize)

@@ -37,6 +37,7 @@ from autodancer.training.imitation_sequences import load_recurrent_demonstration
 from autodancer.training.model import (
     START_ACTION,
     AdapterActorCritic,
+    EquipmentActorCritic,
     ModelConfig,
     PolicyModel,
     ProjectedAdapterActorCritic,
@@ -672,6 +673,9 @@ def train(arguments: argparse.Namespace) -> None:
         reset_timeout=arguments.reset_timeout,
         max_turns=arguments.max_turns,
         reward_config=reward_config,
+        input_mode="engine-input-v1" if arguments.equipment_profile != "legacy" else "legacy",
+        equipment_profile=arguments.equipment_profile,
+        equipment_capacity=arguments.equipment_capacity,
         telemetry_transport=arguments.telemetry_transport,
         worker_profile=arguments.worker_profile,
         affinity_policy=arguments.affinity,
@@ -845,6 +849,12 @@ def train(arguments: argparse.Namespace) -> None:
                     model = AdapterActorCritic(initialize=initialize)
                 elif arguments.architecture == 8:
                     model = ProjectedAdapterActorCritic(initialize=initialize)
+                elif arguments.architecture == 9:
+                    model = EquipmentActorCritic(
+                        equipment_capacity=arguments.equipment_capacity,
+                        equipment_profile=arguments.equipment_profile,
+                        initialize=initialize,
+                    )
                 else:
                     model = RecurrentActorCritic(ModelConfig(), initialize=initialize)
                 algorithm = RecurrentPPO(
@@ -1242,11 +1252,18 @@ def main() -> int:
     parser.add_argument(
         "--architecture",
         type=int,
-        choices=(2, 6, 7, 8),
+        choices=(2, 6, 7, 8, 9),
         default=6,
         help="policy architecture (A8 is the zero-projection staged adapter)",
     )
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--equipment-profile",
+        choices=("legacy", "internal-v1", "player-v1"),
+        default="legacy",
+        help="player-v1 uses HUD evidence; internal-v1 exposes privileged equipment state",
+    )
+    parser.add_argument("--equipment-capacity", type=int, default=64)
     parser.add_argument("--rollout-length", type=int, default=128)
     parser.add_argument("--sequence-length", type=int, default=32)
     parser.add_argument(
@@ -1463,6 +1480,12 @@ def main() -> int:
         default=Path("runs/controller-qualification/qualification.json"),
     )
     arguments = parser.parse_args()
+    if (arguments.architecture == 9) != (arguments.equipment_profile != "legacy"):
+        parser.error("Architecture 9 requires an explicit equipment profile, and vice versa")
+    if not 1 <= arguments.equipment_capacity <= 4096:
+        parser.error("--equipment-capacity must be in [1, 4096]")
+    if arguments.architecture == 9 and arguments.action_contract != "current":
+        parser.error("Architecture 9 currently requires --action-contract current")
     if arguments.sequence_encoding_batch_size < 0:
         parser.error("--sequence-encoding-batch-size cannot be negative")
     if arguments.mod_dir is None:

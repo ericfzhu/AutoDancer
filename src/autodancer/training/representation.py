@@ -71,9 +71,7 @@ def _base_observation(batch: int, generator: torch.Generator) -> Observation:
         "grid": grid,
         "map_memory": torch.zeros(batch, MAP_SIZE, MAP_SIZE, MAP_CHANNELS, dtype=torch.long),
         "player": torch.zeros(batch, PLAYER_FEATURES, dtype=torch.long),
-        "inventory": torch.zeros(
-            batch, INVENTORY_SLOTS, INVENTORY_FEATURES, dtype=torch.long
-        ),
+        "inventory": torch.zeros(batch, INVENTORY_SLOTS, INVENTORY_FEATURES, dtype=torch.long),
         "action_mask": torch.ones(batch, ACTION_COUNT, dtype=torch.bool),
         "previous_action": torch.randint(0, ACTION_COUNT + 1, (batch,), generator=generator),
         "previous_reward": torch.randn(batch, generator=generator),
@@ -101,13 +99,9 @@ def _local_actors(observation: Observation, _: torch.Generator) -> None:
     grid[..., int(GridChannel.ACTOR_TYPE)] = _pattern(
         grid[..., int(GridChannel.ACTOR_TYPE)].shape, TYPE_VOCAB_SIZE, offset=31
     )
-    grid[..., int(GridChannel.HEALTH)] = _pattern(
-        grid[..., int(GridChannel.HEALTH)].shape, 8
-    )
+    grid[..., int(GridChannel.HEALTH)] = _pattern(grid[..., int(GridChannel.HEALTH)].shape, 8)
     grid[..., int(GridChannel.MAX_HEALTH)] = 8
-    grid[..., int(GridChannel.STATUS)] = _pattern(
-        grid[..., int(GridChannel.STATUS)].shape, 3
-    )
+    grid[..., int(GridChannel.STATUS)] = _pattern(grid[..., int(GridChannel.STATUS)].shape, 3)
 
 
 def _local_items_traps(observation: Observation, _: torch.Generator) -> None:
@@ -159,9 +153,7 @@ def _extended_inventory(observation: Observation, _: torch.Generator) -> None:
     inventory = observation["inventory"]
     inventory[:, :8, 4:] = _pattern(inventory[:, :8, 4:].shape, 11)
     inventory[:, 8:, 0] = _pattern(inventory[:, 8:, 0].shape, len(ItemKind))
-    inventory[:, 8:, 1] = _pattern(
-        inventory[:, 8:, 1].shape, TYPE_VOCAB_SIZE, offset=73
-    )
+    inventory[:, 8:, 1] = _pattern(inventory[:, 8:, 1].shape, TYPE_VOCAB_SIZE, offset=73)
     inventory[:, 8:, 2:] = _pattern(inventory[:, 8:, 2:].shape, 11)
 
 
@@ -177,6 +169,24 @@ PERTURBATIONS: dict[str, Perturbation] = {
     "extended_player": _extended_player,
     "extended_inventory": _extended_inventory,
 }
+
+
+def _equipment(observation: Observation, _: torch.Generator) -> None:
+    if "equipment_items" not in observation:
+        return
+    from autodancer.equipment_observation import EQUIPMENT_FACTS
+    from autodancer.equipment_state import equipment_registry
+
+    observation["equipment_items"][:, 0, 0] = equipment_registry()[0]["WeaponCrossbow"]
+    observation["equipment_facts"][:, 0, EQUIPMENT_FACTS.index("ammo"), :] = 1
+    observation["equipment_effects"][:, :, :] = 1
+    observation["equipment_world"][:, 0, :] = torch.tensor(
+        [1, equipment_registry()[0]["RingWar"], 1, -1], device=observation["equipment_world"].device
+    )
+    observation["equipment_world_current"][:] = 1
+
+
+PERTURBATIONS["equipment"] = _equipment
 
 
 def _gradient_norms(
@@ -204,6 +214,16 @@ def analyze_model(
 ) -> dict[str, Any]:
     generator = torch.Generator().manual_seed(seed)
     observation = _base_observation(batch_size, generator)
+    equipment = model.architecture_spec().get("equipment")
+    if equipment is not None:
+        from autodancer.training.performance import benchmark_observations
+
+        synthetic = benchmark_observations(
+            batch_size, 1, torch.device("cpu"), equipment_capacity=equipment["capacity"]
+        )
+        observation.update(
+            {key: value[:, 0] for key, value in synthetic.items() if key.startswith("equipment_")}
+        )
     state = torch.randn(batch_size, 2, model.hidden_size, generator=generator) * 0.1
     model.eval()
     gradient_norms = _gradient_norms(model, observation, state)
@@ -211,7 +231,8 @@ def analyze_model(
         baseline = model.step(observation, state)
     supported = set(representation_parameter_groups(model))
     groups = {}
-    for index, name in enumerate(ALL_GROUPS):
+    names = (*ALL_GROUPS, "equipment") if equipment is not None else ALL_GROUPS
+    for index, name in enumerate(names):
         changed = {key: value.clone() for key, value in observation.items()}
         PERTURBATIONS[name](changed, torch.Generator().manual_seed(seed + index + 1))
         with torch.inference_mode():
@@ -311,9 +332,7 @@ def analyze_checkpoint(
     result["material_new_groups"] = [
         name for name in NEW_GROUPS if result["groups"][name]["material"]
     ]
-    result["all_new_groups_material"] = len(result["material_new_groups"]) == len(
-        NEW_GROUPS
-    )
+    result["all_new_groups_material"] = len(result["material_new_groups"]) == len(NEW_GROUPS)
     return result
 
 
@@ -338,11 +357,7 @@ def main() -> int:
         help="exit nonzero unless every checkpoint materially uses all four new groups",
     )
     arguments = parser.parse_args()
-    if (
-        arguments.batch_size <= 0
-        or arguments.tolerance < 0
-        or arguments.minimum_relative < 0
-    ):
+    if arguments.batch_size <= 0 or arguments.tolerance < 0 or arguments.minimum_relative < 0:
         parser.error("batch size must be positive and thresholds cannot be negative")
     report = {
         "schema_version": 1,

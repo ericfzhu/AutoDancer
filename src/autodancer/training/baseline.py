@@ -1731,6 +1731,8 @@ def validate_declared_source_reference(
 
 
 def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
+    from autodancer.equipment_observation import equipment_environment_options
+
     device = resolve_device(arguments.device)
     payload = torch.load(arguments.checkpoint, map_location=device, weights_only=False)
     architecture = payload.get("architecture", {})
@@ -1740,6 +1742,8 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
+    if architecture.get("version") == 9 and arguments.action_contract != "current":
+        raise ValueError("Architecture 9 currently requires action contract current")
     natural_prefix = (
         None
         if arguments.natural_prefix_guide is None
@@ -1806,6 +1810,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
             source_reference=bool(arguments.source_reference),
         )
     config = SupervisorConfig(
+        **equipment_environment_options(architecture),
         game_dir=arguments.game_dir,
         mod_dir=arguments.mod_dir,
         num_instances=arguments.num_instances,
