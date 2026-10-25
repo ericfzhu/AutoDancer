@@ -139,6 +139,19 @@ def classify_action_outcome(
         category = "wall_attempt"
     elif target is not None:
         category = "unchanged_direction"
+    elif "equipment_items" in before and "equipment_items" in after:
+        # A changed cooldown, toggle, container, holder status or visible target
+        # is an observed transition, not proof that a particular effect succeeded.
+        changed = any(
+            not np.array_equal(before[key], after[key])
+            for key in (
+                "equipment_items",
+                "equipment_facts",
+                "equipment_effects",
+                "equipment_world",
+            )
+        ) or not np.array_equal(before["player"][:4], after["player"][:4])
+        category = "special_state_changed" if changed else "special_no_observed_change"
     else:
         category = "special_no_effect"
     productive = category in {"floor_transition", "combat", "interaction", "dig", "move"}

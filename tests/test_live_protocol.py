@@ -887,7 +887,8 @@ def test_lua_reset_acknowledgement_waits_for_the_new_run() -> None:
     emit_turn = telemetry.index("local function emitTurn")
     begin = telemetry.index("local newRun = beginRunIfNeeded()", emit_turn)
     consume = telemetry.index("Bridge.consumeCompletedCommand(newRun)", begin)
-    assert begin < consume
+    terminal_guard = telemetry.index("if terminalEmitted then", begin)
+    assert begin < terminal_guard < consume
     assert 'completed.kind == "RESET" and not allowReset' in bridge
 
 
@@ -982,7 +983,7 @@ def test_lua_waits_for_a_materialized_visible_world_before_reset_or_action() -> 
         ("equipment_controls", (0,), 256),
         ("bounded_loadout", (0,), 256),
         ("grid", (0, 0, int(GridChannel.HEALTH)), 65536),
-        ("inventory", (0, 1), 65536),
+        ("inventory", (0, 1), 2**32),
         ("player", (int(PlayerFeature.HEALTH),), 2**32),
         ("player", (int(PlayerFeature.X),), -(2**32)),
     ],
@@ -997,3 +998,18 @@ def test_observation_rejects_overflow_before_narrowing(field, index, value):
     target[index[-1]] = value
     with pytest.raises(ProtocolError, match="storage range"):
         decode_observation(payload)
+
+
+
+def test_equipment_telemetry_waits_until_after_the_action_handler_returns() -> None:
+    # Live qualification reproduced stale dagger arming inside event.turn.
+    # Preserve the boundary: mark completion in turn, capture before next input.
+    root = Path(__file__).parents[1] / "mods/AutoDancer/scripts"
+    telemetry = (root / "AutoDancer.lua").read_text(encoding="utf-8")
+    bridge = (root / "Bridge.lua").read_text(encoding="utf-8")
+    assert 'event.turn.add("emitAutoDancerTelemetry"' not in telemetry
+    start = telemetry.index('event.tick.add("emitAutoDancerInitialObservation"')
+    tick = telemetry[start:]
+    assert 'order = "input"' in tick and "sequence = -100" in tick
+    assert "Bridge.hasCompletedCommand()" in tick and "emitTurn()" in tick
+    assert 'event.turn.add("completeAutoDancerBridgeCommand"' in bridge

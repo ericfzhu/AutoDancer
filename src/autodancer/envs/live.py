@@ -21,6 +21,13 @@ from autodancer.constants import (
     Terrain,
 )
 from autodancer.curriculum import EpisodeResetSpec
+from autodancer.equipment_observation import (
+    EQUIPMENT_PROFILES,
+    carried_item_counts,
+    equipment_contract,
+    project_equipment,
+)
+from autodancer.equipment_state import decode_equipment_snapshot
 from autodancer.live.bridge import (
     CURRICULUM_PROFILES,
     ActionBridge,
@@ -61,6 +68,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         session_id: str | None = None,
         launch_id: str | None = None,
         reward_config: RewardConfig | None = None,
+        input_mode: str = "legacy",
+        equipment_profile: str = "legacy",
+        equipment_capacity: int = 64,
         curriculum_start_level: int = 1,
         curriculum_target_level: int | None = None,
         curriculum_profile: str = "normal",
@@ -81,6 +91,16 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self.reset_timeout = float(reset_timeout if reset_timeout is not None else turn_timeout)
         self.attach_existing = bool(attach_existing)
         self.max_turns = int(max_turns)
+        if input_mode not in {"legacy", "engine-input-v1"}:
+            raise ValueError("input_mode must be legacy or engine-input-v1")
+        self.input_mode = input_mode
+        if equipment_profile not in EQUIPMENT_PROFILES:
+            raise ValueError("Unknown equipment observation profile")
+        if equipment_profile != "legacy" and input_mode != "engine-input-v1":
+            raise ValueError("Equipment observations require engine-input-v1")
+        equipment_contract(equipment_capacity)
+        self.equipment_profile = equipment_profile
+        self.equipment_capacity = equipment_capacity
         if self.max_turns <= 0:
             raise ValueError("max_turns must be positive")
         self.curriculum_start_level = int(curriculum_start_level)
@@ -109,7 +129,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         )
         self._active_reset_spec = self._default_reset_spec
         self.action_space = gym.spaces.Discrete(ACTION_COUNT)
-        self.observation_space = observation_space()
+        self.observation_space = observation_space(
+            equipment_capacity=equipment_capacity if equipment_profile != "legacy" else None
+        )
         self._last_observation: dict[str, np.ndarray] | None = None
         self._episode_steps = 0
         self._episode_done = False
@@ -264,7 +286,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         events = [dict(event) for event in record.get("events", [])]
         if previous_observation is not None:
             events = self._normalize_player_damage(events, previous_observation, observation)
-            events.extend(self._inventory_pickup_events(previous_observation, observation))
+            if record.get("equipment_events") != "engine-events-v1":
+                events.extend(self._inventory_pickup_events(previous_observation, observation))
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
         truncated = status == "aborted"
@@ -353,7 +376,10 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
     ) -> list[dict[str, Any]]:
         """Score actual Bard health loss instead of unbounded attack magnitude."""
         damage_indices = [
-            index for index, event in enumerate(events) if event.get("kind") == "player_damage"
+            index
+            for index, event in enumerate(events)
+            if event.get("kind") == "player_damage"
+            and (event.get("data") or {}).get("source") != "engine_health_loss"
         ]
         if not damage_indices:
             return events
@@ -380,6 +406,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         before: dict[str, np.ndarray], after: dict[str, np.ndarray]
     ) -> list[dict[str, Any]]:
         def counts(observation: dict[str, np.ndarray]) -> dict[int, int]:
+            if "equipment_items" in observation:
+                return carried_item_counts(observation)
             result: dict[int, int] = {}
             for item in observation["inventory"]:
                 item_type = int(item[InventoryFeature.ITEM_TYPE])
@@ -396,7 +424,12 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 "kind": "item_collected",
                 "amount": quantity - previous.get(item_type, 0),
                 "entity_id": 0,
-                "data": {"item_type": item_type, "source": "inventory_delta"},
+                "data": {
+                    "item_type": item_type,
+                    "source": "equipment_inventory_delta"
+                    if "equipment_items" in after
+                    else "inventory_delta",
+                },
             }
             for item_type, quantity in sorted(current.items())
             if quantity > previous.get(item_type, 0)
@@ -458,9 +491,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             if command.curriculum_profile not in (None, "normal"):
                 application = acknowledgement.get("curriculum_application")
                 if not isinstance(application, dict):
-                    raise ProtocolError(
-                        "Lua did not report the curriculum application evidence"
-                    )
+                    raise ProtocolError("Lua did not report the curriculum application evidence")
                 expected_health = int(command.curriculum_profile.removeprefix("player"))
                 if (
                     application.get("player_health") != expected_health
@@ -473,12 +504,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                     raise ProtocolError(
                         "Lua curriculum application did not preserve boss objective state"
                     )
-                if application.get("objectives_before") != application.get(
-                    "objectives_after"
-                ):
-                    raise ProtocolError(
-                        "Lua curriculum application changed boss or boss-add state"
-                    )
+                if application.get("objectives_before") != application.get("objectives_after"):
+                    raise ProtocolError("Lua curriculum application changed boss or boss-add state")
         if received != expected:
             raise ProtocolError(
                 f"Bridge acknowledgement mismatch: expected {expected}, received {received}"
@@ -501,6 +528,32 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         status = str(record["episode_status"])
         player[PlayerFeature.WON] = int(status == "won")
         player[PlayerFeature.DEAD] = int(status == "dead")
+        if self.input_mode == "engine-input-v1":
+            equipment = record["observation"].get("equipment_snapshot")
+            if not isinstance(equipment, dict) or equipment.get("version") not in {2, 3}:
+                raise ProtocolError("engine-input-v1 requires equipment snapshot v2")
+            if status == "running" and record.get("telemetry_timing") != "settled-input-v1":
+                raise ProtocolError("engine-input-v1 requires settled action capture")
+            # These are valid input attempts, not a prediction of item success.
+            # A cooldown, missing item or unaffordable effect may produce a no-op.
+            observation["action_mask"][:] = int(status == "running")
+        if self.equipment_profile != "legacy":
+            try:
+                state = decode_equipment_snapshot(record["observation"].get("equipment_snapshot"))
+                if state is None:
+                    raise ValueError("Missing equipment snapshot")
+                observation.update(
+                    project_equipment(state, self.equipment_capacity, self.equipment_profile)
+                )
+                if self.equipment_profile == "player-v1":
+                    # Legacy slots include fields without HUD visibility checks.
+                    observation["inventory"][:] = 0
+                    observation["equipment_controls"][:] = 0
+                    observation["bounded_loadout"][:] = 0
+                    observation["player"][PlayerFeature.WEAPON_DAMAGE] = 0
+                    observation["player"][PlayerFeature.BOMBS] = 0
+            except ValueError as exc:
+                raise ProtocolError(str(exc)) from exc
         observation["map_memory"] = self.map_memory.update(
             observation,
             record["observation"].get("revealed_map"),
@@ -530,6 +583,12 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             "launch_id": record["launch_id"],
             "run_id": record["run_id"],
             "sequence": record["sequence"],
+            "telemetry_timing": record.get("telemetry_timing"),
+            "equipment_observation_contract": (
+                equipment_contract(self.equipment_capacity, self.equipment_profile)
+                if self.equipment_profile != "legacy"
+                else None
+            ),
             "seed": record.get("seed"),
             "character": record.get("character"),
             "game": record["game"],
@@ -545,4 +604,8 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             "max_frame_bytes": int(getattr(self._source, "max_frame_bytes", 0)),
             **record.get("metrics", {}),
         }
+        info["equipment_state"] = decode_equipment_snapshot(
+            record["observation"].get("equipment_snapshot")
+        )
+        info["input_mode"] = self.input_mode
         return observation, info

@@ -83,6 +83,9 @@ class SupervisorConfig:
     profile_root: Path = Path(".runtime/live-profiles")
     diagnostic_root: Path = Path(".runtime/live-diagnostics")
     reward_config: RewardConfig = RewardConfig()
+    input_mode: str = "legacy"
+    equipment_profile: str = "legacy"
+    equipment_capacity: int = 64
     telemetry_transport: str = "native-pipe"
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
@@ -105,6 +108,15 @@ class SupervisorConfig:
             raise ValueError("timeouts must be positive")
         if self.telemetry_transport != "native-pipe":
             raise ValueError("live supervisors require telemetry_transport='native-pipe'")
+        if self.input_mode not in {"legacy", "engine-input-v1"}:
+            raise ValueError("input_mode must be legacy or engine-input-v1")
+        from autodancer.equipment_observation import EQUIPMENT_PROFILES, equipment_contract
+
+        if self.equipment_profile not in EQUIPMENT_PROFILES:
+            raise ValueError("Unknown equipment observation profile")
+        equipment_contract(self.equipment_capacity)
+        if self.equipment_profile != "legacy" and self.input_mode != "engine-input-v1":
+            raise ValueError("Equipment observations require engine-input-v1")
         if self.worker_profile != "symbolic":
             raise ValueError("the supported worker profile is 'symbolic'")
         if self.affinity_policy not in {"auto", "none", "spread"}:
@@ -472,6 +484,9 @@ class AutoDancerSupervisor:
             max_turns=self.config.max_turns,
             instance_id=worker_id,
             reward_config=self.config.reward_config,
+            input_mode=self.config.input_mode,
+            equipment_profile=self.config.equipment_profile,
+            equipment_capacity=self.config.equipment_capacity,
             session_id=self.session_id,
             launch_id=handle.launch_id,
             curriculum_start_level=self.config.curriculum_start_level,

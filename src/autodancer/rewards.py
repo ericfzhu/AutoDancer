@@ -163,7 +163,25 @@ class RewardTracker:
         }
 
     @staticmethod
-    def _inventory_types(observation: Mapping[str, np.ndarray]) -> set[int]:
+    def _inventory_types(observation: Mapping[str, np.ndarray], state=None) -> set[int]:
+        if "equipment_items" in observation:
+            if state is not None and state.get("version", 0) >= 2:
+                if not state["current"]:
+                    return set()
+                carried = set(state["owned"])
+                for _ in state["items"]:
+                    expanded = carried | {
+                        r["content_id"]
+                        for r in state["containers"]
+                        if r["item_id"] in carried and r["content_id"]
+                    }
+                    if expanded == carried:
+                        break
+                    carried = expanded
+                return {i["catalog_id"] for i in state["items"] if i["id"] in carried}
+            from autodancer.equipment_observation import carried_item_counts
+
+            return set(carried_item_counts(observation))
         return {int(value) for value in observation["inventory"][:, 1] if int(value) != 0}
 
     @staticmethod
@@ -243,7 +261,7 @@ class RewardTracker:
         self.seen_tiles = self._revealed_tiles(observation, self.zone, self.floor)
         x, y = self._position(observation)
         self.visited_positions = {(self.zone, self.floor, x, y)}
-        self.seen_item_types = self._inventory_types(observation)
+        self.seen_item_types = self._inventory_types(observation, info.get("equipment_state"))
         self.known_stairs = self._stairs(observation, self.zone, self.floor)
         self.stair_distance = self._nearest_stair_distance(
             (x, y), self.known_stairs, self.zone, self.floor
@@ -314,7 +332,7 @@ class RewardTracker:
                 self.exploration_reward += credit
             self.seen_tiles.update(revealed)
 
-        item_types = self._inventory_types(observation)
+        item_types = self._inventory_types(observation, info.get("equipment_state"))
         new_items = item_types - self.seen_item_types
         if new_items:
             credit = config.new_item_type * len(new_items)

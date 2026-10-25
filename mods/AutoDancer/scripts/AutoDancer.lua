@@ -4,6 +4,7 @@
 -- process-local native named pipe.
 
 local Bridge = require "AutoDancer.scripts.Bridge"
+local Equipment = require "AutoDancer.scripts.Equipment"
 
 local Music = require "necro.audio.Music"
 local AnimationTimer = require "necro.render.AnimationTimer"
@@ -96,7 +97,9 @@ local function jsonEncode(value)
     elseif valueType == "boolean" then
         return value and "true" or "false"
     elseif valueType == "number" then
-        return tostring(value)
+        -- Lua's default tostring rounds large exact integers. Storage prototype
+        -- handles must survive JSON as integers with their full precision.
+        return value == math.floor(value) and string.format("%.0f", value) or tostring(value)
     elseif valueType == "string" then
         return jsonEscape(value)
     elseif valueType ~= "table" then
@@ -611,6 +614,7 @@ end
 local function buildObservation()
     local player = Player.getPlayerEntity(1)
     local result = emptyObservation()
+    result.equipment_snapshot = Equipment.capture(player)
     -- Additive, versioned extension: version, qualified starting dagger, armed.
     -- Keep legacy inventory and engine action availability unchanged.
     result.equipment_controls = {1, 0, 0}
@@ -812,6 +816,11 @@ local function observationForStatus(observation, status)
     local result = observation or emptyObservation()
     result.player[15] = status == "won" and 1 or 0
     result.player[16] = status == "dead" and 1 or 0
+    -- Terminal records can retain the last running observation. Never advertise
+    -- those equipment owners as a fresh query of the terminal state.
+    if status ~= "running" and result.equipment_snapshot then
+        result.equipment_snapshot.current = false
+    end
     return result
 end
 
@@ -831,6 +840,8 @@ local function emitRecord(kind, status, observation, context, bridgeCommand)
         run_id = activeRunID,
         sequence = sequence,
         kind = kind,
+        telemetry_timing = kind == "terminal" and "terminal" or "settled-input-v1",
+        equipment_events = "engine-events-v1",
         game = {
             version = GAME_VERSION,
             steam_build = STEAM_BUILD,
@@ -887,6 +898,11 @@ local function emitTurn()
     -- final old-run turn after accepting RESET; that turn must not steal the
     -- acknowledgement intended for the new floor-1 observation.
     local newRun = beginRunIfNeeded()
+    -- runComplete may emit before a deferred turn capture. Suppress any later
+    -- running record for that episode; beginRunIfNeeded clears this on reset.
+    if terminalEmitted then
+        return
+    end
     local bridgeCommand = Bridge.consumeCompletedCommand(newRun)
     if not newRun and not bridgeCommand then
         return
@@ -909,17 +925,66 @@ local function emitTurn()
     )
 end
 
-event.objectDealDamage.add("captureAutoDancerDamage", {
-    order = "statistics",
-    sequence = 100,
+event.objectDealDamage.add("attributeAutoDancerDamage", {
+    order = "applyDamage",
+    sequence = -100,
 }, function(ev)
-    if ev.suppressed or (ev.damage or 0) <= 0 then
-        return
+    ev.autoDancerPlayerAttack = isLocalPlayer(ev.entity)
+end)
+
+-- Observe health reduction inside each hit, before revive/healing handlers.
+-- This includes environmental and equipment self-damage without an attacker.
+local function beforeAutoDancerHealthLoss(ev)
+    ev.autoDancerPlayerAttack = ev.autoDancerPlayerAttack or isLocalPlayer(ev.attacker)
+    if ev.entity and ev.entity.health and (isLocalPlayer(ev.entity)
+        or ev.autoDancerPlayerAttack and actorKind(ev.entity) ~= 0) then
+        ev.autoDancerHealthBefore = math.max(ev.entity.health.health, 0)
     end
-    if isLocalPlayer(ev.entity) and actorKind(ev.victim) ~= 0 then
-        queueEvent("enemy_damage", ev.damage, ev.victim, combatEventData(ev.victim))
-    elseif isLocalPlayer(ev.victim) then
-        queueEvent("player_damage", ev.damage, ev.entity, combatEventData(ev.entity))
+end
+local function captureAutoDancerHealthLoss(ev)
+    if ev.autoDancerHealthBefore then
+        local loss = ev.autoDancerHealthBefore - math.max(ev.entity.health.health, 0)
+        if loss > 0 then
+            if isLocalPlayer(ev.entity) then
+                queueEvent("player_damage", loss, ev.attacker, {
+                    source = "engine_health_loss", raw_damage = ev.damage,
+                })
+            elseif ev.autoDancerPlayerAttack then
+                local data = combatEventData(ev.entity)
+                data.source, data.raw_damage = "engine_health_loss", ev.damage
+                queueEvent("enemy_damage", loss, ev.entity, data)
+            end
+        end
+    end
+end
+for _,selector in ipairs({event.objectTakeDamage, event.objectEarthquake}) do
+    selector.add("beforeAutoDancerHealthLoss", {
+        order = "health", sequence = -100,
+    }, beforeAutoDancerHealthLoss)
+    selector.add("captureAutoDancerHealthLoss", {
+        order = "health", sequence = 100,
+    }, captureAutoDancerHealthLoss)
+end
+
+-- Capture the original identity/quantity before merging, consumption or conversion.
+event.objectTryCollectItem.add("beforeAutoDancerPickup", {
+    order = "checkItem", sequence = -100,
+}, function(ev)
+    if isLocalPlayer(ev.entity) and ev.item and ev.item.gameObject
+        and ev.item.gameObject.tangible then
+        ev.autoDancerPickup = {
+            item_name = ev.item.name,
+            quantity = ev.item.itemStack and ev.item.itemStack.quantity or 1,
+            source = "engine_pickup",
+        }
+    end
+end)
+event.objectTryCollectItem.add("captureAutoDancerPickup", {
+    order = "pickupEffects", sequence = 100,
+}, function(ev)
+    local ItemPickup = require "necro.game.item.ItemPickup"
+    if ev.autoDancerPickup and ev.result == ItemPickup.Result.SUCCESS then
+        queueEvent("item_collected", math.max(ev.autoDancerPickup.quantity, 1), ev.item, ev.autoDancerPickup)
     end
 end)
 
@@ -1003,11 +1068,11 @@ event.runComplete.add("emitAutoDancerRunComplete", {
     emitRecord("terminal", status, observation, context)
 end)
 
--- turnID is the last stable order key in the supported turn event.
-event.turn.add("emitAutoDancerTelemetry", {order = "turnID", sequence = -1}, emitTurn)
-
 -- Emit once when a playable level first appears, and once after each level
 -- transition. This carries RESET acknowledgements without requiring an action.
+-- Also emit completed actions here, BEFORE the next command is polled. The
+-- turn event can occur before the enclosing action finishes updating equipment
+-- (e.g. dagger arming). Capturing inside that event reports stale action state.
 event.tick.add("emitAutoDancerInitialObservation", {
     order = "input",
     sequence = -100,

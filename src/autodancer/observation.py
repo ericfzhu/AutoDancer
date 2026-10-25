@@ -17,8 +17,8 @@ from autodancer.constants import (
 )
 
 
-def observation_space() -> spaces.Dict:
-    return spaces.Dict(
+def observation_space(*, equipment_capacity: int | None = None) -> spaces.Dict:
+    result = spaces.Dict(
         {
             "grid": spaces.Box(
                 low=0,
@@ -40,12 +40,18 @@ def observation_space() -> spaces.Dict:
             ),
             "inventory": spaces.Box(
                 low=0,
-                high=32767,
+                high=2**31 - 1,
                 shape=(INVENTORY_SLOTS, INVENTORY_FEATURES),
-                dtype=np.int16,
+                dtype=np.int32,
             ),
             "action_mask": spaces.Box(0, 1, shape=(ACTION_COUNT,), dtype=np.int8),
             "equipment_controls": spaces.Box(0, 1, shape=(3,), dtype=np.int8),
             "bounded_loadout": spaces.Box(0, 1, shape=(2,), dtype=np.int8),
         }
     )
+    if equipment_capacity is not None:
+        from autodancer.equipment_observation import equipment_spaces
+
+        for name, space in equipment_spaces(equipment_capacity).items():
+            result[name] = space
+    return result

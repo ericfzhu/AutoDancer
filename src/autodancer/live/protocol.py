@@ -28,6 +28,7 @@ from autodancer.constants import (
     Terrain,
     TrapKind,
 )
+from autodancer.equipment_state import decode_equipment_snapshot
 
 LOG_MARKER = "AUTODANCER_JSON:"
 SCHEMA_VERSION = 10
@@ -224,7 +225,7 @@ def decode_observation(payload: Mapping[str, Any]) -> dict[str, np.ndarray]:
             payload.get("inventory"),
             "inventory",
             (INVENTORY_SLOTS, INVENTORY_FEATURES),
-            np.dtype(np.int16),
+            np.dtype(np.int32),
         ),
         "action_mask": _integer_array(
             payload.get("action_mask"),
@@ -419,6 +420,11 @@ def validate_record(record: Mapping[str, Any]) -> None:
     kind = record.get("kind")
     if kind not in RECORD_KINDS:
         raise ProtocolError(f"Record kind must be one of {sorted(RECORD_KINDS)}")
+    timing = record.get("telemetry_timing")
+    if record.get("equipment_events") not in {None, "engine-events-v1"}:
+        raise ProtocolError("Unsupported equipment event contract")
+    if timing is not None and timing != ("terminal" if kind == "terminal" else "settled-input-v1"):
+        raise ProtocolError("Unsupported telemetry capture timing")
     status = record.get("episode_status")
     if status not in EPISODE_STATUSES:
         raise ProtocolError(f"episode_status must be one of {sorted(EPISODE_STATUSES)}")
@@ -464,6 +470,12 @@ def validate_record(record: Mapping[str, Any]) -> None:
     if status == "running" and (zone < 1 or floor < 1):
         raise ProtocolError("Running records must have positive zone and floor")
     observation = decode_observation(record.get("observation", {}))
+    try:
+        equipment = decode_equipment_snapshot(record["observation"].get("equipment_snapshot"))
+        if equipment is not None and equipment["current"] != (status == "running"):
+            raise ValueError("Equipment snapshot freshness disagrees with episode status")
+    except ValueError as error:
+        raise ProtocolError(f"Invalid equipment snapshot: {error}") from error
     if status == "running" and (
         int(observation["player"][PlayerFeature.ZONE]) != zone
         or int(observation["player"][PlayerFeature.FLOOR]) != floor
