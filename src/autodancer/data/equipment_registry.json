@@ -1,0 +1,1260 @@
+{
+  "version": 1,
+  "profile": "bard-current-v4.2.1-b5713",
+  "game_version": "v4.2.1-b5713",
+  "steam_build": "22938426",
+  "scope": "Registered item identities, not a full-support or natural-loot allowlist",
+  "source_sha256": "ac61fdc9ffa935ba6fe62e9bd321a8415651da79f2025ebe6f23272fc3f758b1",
+  "items": [
+    {
+      "catalog_id": 1,
+      "name": "AddchestBlack",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 2,
+      "name": "AddchestRed",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 3,
+      "name": "AddchestWhite",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 4,
+      "name": "ArmorChainmail",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 5,
+      "name": "ArmorGi",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 6,
+      "name": "ArmorGlass",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 7,
+      "name": "ArmorHeavyplate",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 8,
+      "name": "ArmorLeather",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 9,
+      "name": "ArmorObsidian",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 10,
+      "name": "ArmorPlatemail",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 11,
+      "name": "ArmorPlatemailDorian",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 12,
+      "name": "BagHolding",
+      "slot": "hud"
+    },
+    {
+      "catalog_id": 13,
+      "name": "BellHammer",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 14,
+      "name": "BloodDrum",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 15,
+      "name": "Bomb",
+      "slot": "bomb"
+    },
+    {
+      "catalog_id": 16,
+      "name": "Bomb3",
+      "slot": "bomb"
+    },
+    {
+      "catalog_id": 17,
+      "name": "BombInfinity",
+      "slot": "bomb"
+    },
+    {
+      "catalog_id": 18,
+      "name": "CharmFrost",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 19,
+      "name": "CharmGluttony",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 20,
+      "name": "CharmLuck",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 21,
+      "name": "CharmNazar",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 22,
+      "name": "CharmProtection",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 23,
+      "name": "CharmRisk",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 24,
+      "name": "CharmStrength",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 25,
+      "name": "Club",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 26,
+      "name": "CoinsX15",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 27,
+      "name": "CoinsX2",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 28,
+      "name": "Coldsteel_ArmorVirtual",
+      "slot": "body"
+    },
+    {
+      "catalog_id": 29,
+      "name": "Coldsteel_ScrollEnchantLeek",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 30,
+      "name": "Coldsteel_SpellResonance",
+      "slot": "bomb"
+    },
+    {
+      "catalog_id": 31,
+      "name": "Coldsteel_SpellResonanceInfinity",
+      "slot": "bomb"
+    },
+    {
+      "catalog_id": 32,
+      "name": "Coldsteel_WeaponLeek",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 33,
+      "name": "Coldsteel_WeaponLeekPhasing",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 34,
+      "name": "DoubleHeartTransplant",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 35,
+      "name": "EnemyPlaceholder",
+      "slot": null
+    },
+    {
+      "catalog_id": 36,
+      "name": "FeetBalletShoes",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 37,
+      "name": "FeetBootsExplorers",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 38,
+      "name": "FeetBootsLead",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 39,
+      "name": "FeetBootsLeaping",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 40,
+      "name": "FeetBootsLunging",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 41,
+      "name": "FeetBootsPain",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 42,
+      "name": "FeetBootsSpeed",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 43,
+      "name": "FeetBootsStrength",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 44,
+      "name": "FeetBootsWinged",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 45,
+      "name": "FeetGreaves",
+      "slot": "feet"
+    },
+    {
+      "catalog_id": 46,
+      "name": "FollowerDove",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 47,
+      "name": "FollowerRat",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 48,
+      "name": "FollowerShield",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 49,
+      "name": "FollowerShopkeeper",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 50,
+      "name": "FollowerSnowbro",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 51,
+      "name": "Food1",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 52,
+      "name": "Food2",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 53,
+      "name": "Food3",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 54,
+      "name": "Food4",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 55,
+      "name": "FriendlyFireTeamChanger",
+      "slot": null
+    },
+    {
+      "catalog_id": 56,
+      "name": "Goldman_ItemVirtualHelmet",
+      "slot": null
+    },
+    {
+      "catalog_id": 57,
+      "name": "Goldman_ItemVirtualNoHelmet",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 58,
+      "name": "Goldman_ShovelPogo",
+      "slot": "innate"
+    },
+    {
+      "catalog_id": 59,
+      "name": "HeadBlastHelm",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 60,
+      "name": "HeadCircletTelepathy",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 61,
+      "name": "HeadCrownOfGreed",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 62,
+      "name": "HeadCrownOfTeleportation",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 63,
+      "name": "HeadCrownOfThorns",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 64,
+      "name": "HeadGlassJaw",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 65,
+      "name": "HeadHelm",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 66,
+      "name": "HeadMinersCap",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 67,
+      "name": "HeadMonocle",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 68,
+      "name": "HeadNinjaMask",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 69,
+      "name": "HeadSunglasses",
+      "slot": "head"
+    },
+    {
+      "catalog_id": 70,
+      "name": "HeartTransplant",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 71,
+      "name": "Holster",
+      "slot": "hud"
+    },
+    {
+      "catalog_id": 72,
+      "name": "HolyWater",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 73,
+      "name": "HudBackpack",
+      "slot": "hud"
+    },
+    {
+      "catalog_id": 74,
+      "name": "ItemPlaceholder",
+      "slot": null
+    },
+    {
+      "catalog_id": 75,
+      "name": "ItemStash",
+      "slot": "stash"
+    },
+    {
+      "catalog_id": 76,
+      "name": "LordCrown",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 77,
+      "name": "Marv",
+      "slot": "follower"
+    },
+    {
+      "catalog_id": 78,
+      "name": "MiscCompass",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 79,
+      "name": "MiscCoupon",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 80,
+      "name": "MiscGlassKey",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 81,
+      "name": "MiscGoldenKey",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 82,
+      "name": "MiscGoldenKey2",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 83,
+      "name": "MiscGoldenKey3",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 84,
+      "name": "MiscHeartContainer",
+      "slot": null
+    },
+    {
+      "catalog_id": 85,
+      "name": "MiscHeartContainer2",
+      "slot": null
+    },
+    {
+      "catalog_id": 86,
+      "name": "MiscHeartContainerEmpty",
+      "slot": null
+    },
+    {
+      "catalog_id": 87,
+      "name": "MiscHeartContainerEmpty2",
+      "slot": null
+    },
+    {
+      "catalog_id": 88,
+      "name": "MiscKey",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 89,
+      "name": "MiscMagnet",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 90,
+      "name": "MiscMap",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 91,
+      "name": "MiscPotion",
+      "slot": "misc"
+    },
+    {
+      "catalog_id": 92,
+      "name": "NoReturnModeSquare",
+      "slot": "shrine"
+    },
+    {
+      "catalog_id": 93,
+      "name": "NoReturnShrineSquare",
+      "slot": "shrine"
+    },
+    {
+      "catalog_id": 94,
+      "name": "PermHeart2",
+      "slot": null
+    },
+    {
+      "catalog_id": 95,
+      "name": "PermHeart3",
+      "slot": null
+    },
+    {
+      "catalog_id": 96,
+      "name": "PermHeart4",
+      "slot": null
+    },
+    {
+      "catalog_id": 97,
+      "name": "PermHeart5",
+      "slot": null
+    },
+    {
+      "catalog_id": 98,
+      "name": "PermHeart6",
+      "slot": null
+    },
+    {
+      "catalog_id": 99,
+      "name": "Pickaxe",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 100,
+      "name": "Piston",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 101,
+      "name": "ResourceCoin0",
+      "slot": null
+    },
+    {
+      "catalog_id": 102,
+      "name": "ResourceCoin1",
+      "slot": null
+    },
+    {
+      "catalog_id": 103,
+      "name": "ResourceCoin10",
+      "slot": null
+    },
+    {
+      "catalog_id": 104,
+      "name": "ResourceCoin100",
+      "slot": null
+    },
+    {
+      "catalog_id": 105,
+      "name": "ResourceCoin150",
+      "slot": null
+    },
+    {
+      "catalog_id": 106,
+      "name": "ResourceCoin2",
+      "slot": null
+    },
+    {
+      "catalog_id": 107,
+      "name": "ResourceCoin3",
+      "slot": null
+    },
+    {
+      "catalog_id": 108,
+      "name": "ResourceCoin30",
+      "slot": null
+    },
+    {
+      "catalog_id": 109,
+      "name": "ResourceCoin4",
+      "slot": null
+    },
+    {
+      "catalog_id": 110,
+      "name": "ResourceCoin5",
+      "slot": null
+    },
+    {
+      "catalog_id": 111,
+      "name": "ResourceCoin50",
+      "slot": null
+    },
+    {
+      "catalog_id": 112,
+      "name": "ResourceCoin6",
+      "slot": null
+    },
+    {
+      "catalog_id": 113,
+      "name": "ResourceCoin7",
+      "slot": null
+    },
+    {
+      "catalog_id": 114,
+      "name": "ResourceCoin8",
+      "slot": null
+    },
+    {
+      "catalog_id": 115,
+      "name": "ResourceCoin9",
+      "slot": null
+    },
+    {
+      "catalog_id": 116,
+      "name": "ResourceDiamond",
+      "slot": null
+    },
+    {
+      "catalog_id": 117,
+      "name": "ResourceDiamond2",
+      "slot": null
+    },
+    {
+      "catalog_id": 118,
+      "name": "ResourceDiamond3",
+      "slot": null
+    },
+    {
+      "catalog_id": 119,
+      "name": "ResourceDiamond4",
+      "slot": null
+    },
+    {
+      "catalog_id": 120,
+      "name": "ResourceHoard1",
+      "slot": null
+    },
+    {
+      "catalog_id": 121,
+      "name": "ResourceHoard2",
+      "slot": null
+    },
+    {
+      "catalog_id": 122,
+      "name": "ResourceHoard3",
+      "slot": null
+    },
+    {
+      "catalog_id": 123,
+      "name": "ResourceHoard4",
+      "slot": null
+    },
+    {
+      "catalog_id": 124,
+      "name": "ResourceHoard5",
+      "slot": null
+    },
+    {
+      "catalog_id": 125,
+      "name": "ResourceHoardGold",
+      "slot": null
+    },
+    {
+      "catalog_id": 126,
+      "name": "ResourceHoardGoldSmall",
+      "slot": null
+    },
+    {
+      "catalog_id": 127,
+      "name": "RingBecoming",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 128,
+      "name": "RingCharisma",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 129,
+      "name": "RingCourage",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 130,
+      "name": "RingGold",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 131,
+      "name": "RingLuck",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 132,
+      "name": "RingMana",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 133,
+      "name": "RingMight",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 134,
+      "name": "RingPeace",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 135,
+      "name": "RingPhasing",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 136,
+      "name": "RingProtection",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 137,
+      "name": "RingRegeneration",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 138,
+      "name": "RingShadows",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 139,
+      "name": "RingShielding",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 140,
+      "name": "RingWar",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 141,
+      "name": "RingWonder",
+      "slot": "ring"
+    },
+    {
+      "catalog_id": 142,
+      "name": "ScrollDescend",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 143,
+      "name": "ScrollEarthquake",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 144,
+      "name": "ScrollEnchantWeapon",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 145,
+      "name": "ScrollFear",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 146,
+      "name": "ScrollFireball",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 147,
+      "name": "ScrollFreezeEnemies",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 148,
+      "name": "ScrollGigantism",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 149,
+      "name": "ScrollNeed",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 150,
+      "name": "ScrollRiches",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 151,
+      "name": "ScrollShield",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 152,
+      "name": "ScrollTransmute",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 153,
+      "name": "ShovelBasic",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 154,
+      "name": "ShovelBlood",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 155,
+      "name": "ShovelCrystal",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 156,
+      "name": "ShovelGlass",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 157,
+      "name": "ShovelObsidian",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 158,
+      "name": "ShovelShard",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 159,
+      "name": "ShovelTitanium",
+      "slot": "shovel"
+    },
+    {
+      "catalog_id": 160,
+      "name": "ShrineMarkerRhythm",
+      "slot": "shrine"
+    },
+    {
+      "catalog_id": 161,
+      "name": "SoulLinkCoop",
+      "slot": null
+    },
+    {
+      "catalog_id": 162,
+      "name": "SoulLinkDad",
+      "slot": null
+    },
+    {
+      "catalog_id": 163,
+      "name": "SpellBomb",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 164,
+      "name": "SpellCharm",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 165,
+      "name": "SpellFireball",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 166,
+      "name": "SpellFreezeEnemies",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 167,
+      "name": "SpellHeal",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 168,
+      "name": "SpellShield",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 169,
+      "name": "SpellTransmute",
+      "slot": "spell"
+    },
+    {
+      "catalog_id": 170,
+      "name": "Torch1",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 171,
+      "name": "Torch2",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 172,
+      "name": "Torch3",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 173,
+      "name": "TorchForesight",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 174,
+      "name": "TorchGlass",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 175,
+      "name": "TorchInfernal",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 176,
+      "name": "TorchObsidian",
+      "slot": "torch"
+    },
+    {
+      "catalog_id": 177,
+      "name": "WandConfusion",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 178,
+      "name": "WandWind",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 179,
+      "name": "WarDrum",
+      "slot": "action"
+    },
+    {
+      "catalog_id": 180,
+      "name": "WeaponBloodBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 181,
+      "name": "WeaponBloodBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 182,
+      "name": "WeaponBloodCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 183,
+      "name": "WeaponBloodCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 184,
+      "name": "WeaponBloodDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 185,
+      "name": "WeaponBloodFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 186,
+      "name": "WeaponBloodLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 187,
+      "name": "WeaponBloodRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 188,
+      "name": "WeaponBloodSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 189,
+      "name": "WeaponBloodWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 190,
+      "name": "WeaponBlunderbuss",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 191,
+      "name": "WeaponBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 192,
+      "name": "WeaponBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 193,
+      "name": "WeaponCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 194,
+      "name": "WeaponCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 195,
+      "name": "WeaponDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 196,
+      "name": "WeaponDaggerDad",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 197,
+      "name": "WeaponDaggerFrost",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 198,
+      "name": "WeaponDaggerJeweled",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 199,
+      "name": "WeaponDaggerPhasing",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 200,
+      "name": "WeaponDaggerShard",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 201,
+      "name": "WeaponDaggerTutorial",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 202,
+      "name": "WeaponFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 203,
+      "name": "WeaponFlower",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 204,
+      "name": "WeaponGlassBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 205,
+      "name": "WeaponGlassBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 206,
+      "name": "WeaponGlassCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 207,
+      "name": "WeaponGlassCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 208,
+      "name": "WeaponGlassDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 209,
+      "name": "WeaponGlassFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 210,
+      "name": "WeaponGlassLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 211,
+      "name": "WeaponGlassRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 212,
+      "name": "WeaponGlassSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 213,
+      "name": "WeaponGlassWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 214,
+      "name": "WeaponGoldenBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 215,
+      "name": "WeaponGoldenBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 216,
+      "name": "WeaponGoldenCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 217,
+      "name": "WeaponGoldenCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 218,
+      "name": "WeaponGoldenDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 219,
+      "name": "WeaponGoldenFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 220,
+      "name": "WeaponGoldenLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 221,
+      "name": "WeaponGoldenLute",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 222,
+      "name": "WeaponGoldenRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 223,
+      "name": "WeaponGoldenSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 224,
+      "name": "WeaponGoldenWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 225,
+      "name": "WeaponLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 226,
+      "name": "WeaponObsidianBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 227,
+      "name": "WeaponObsidianBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 228,
+      "name": "WeaponObsidianCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 229,
+      "name": "WeaponObsidianCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 230,
+      "name": "WeaponObsidianDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 231,
+      "name": "WeaponObsidianFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 232,
+      "name": "WeaponObsidianLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 233,
+      "name": "WeaponObsidianRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 234,
+      "name": "WeaponObsidianSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 235,
+      "name": "WeaponObsidianWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 236,
+      "name": "WeaponRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 237,
+      "name": "WeaponRifle",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 238,
+      "name": "WeaponSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 239,
+      "name": "WeaponTitaniumBow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 240,
+      "name": "WeaponTitaniumBroadsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 241,
+      "name": "WeaponTitaniumCat",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 242,
+      "name": "WeaponTitaniumCrossbow",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 243,
+      "name": "WeaponTitaniumDagger",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 244,
+      "name": "WeaponTitaniumFlail",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 245,
+      "name": "WeaponTitaniumLongsword",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 246,
+      "name": "WeaponTitaniumRapier",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 247,
+      "name": "WeaponTitaniumSpear",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 248,
+      "name": "WeaponTitaniumWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 249,
+      "name": "WeaponWhip",
+      "slot": "weapon"
+    },
+    {
+      "catalog_id": 250,
+      "name": "quirks_DummyItem",
+      "slot": null
+    }
+  ]
+}
