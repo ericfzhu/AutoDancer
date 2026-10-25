@@ -1,8 +1,10 @@
 # Bard harness design
 
-Status: implementation design with offline contract scaffolding, grounded in the current code on
-2026-09-20. This document does not claim new equipment support. No live game,
-training, performance or learning experiment was run to prepare it.
+Status: equipment integration for the pinned solo Bard configuration, updated
+2026-10-25. The new path uses snapshot v3, the 250-type registry, all eleven
+engine inputs and A9 equipment observations. Both HUD-based `player-v1` and
+explicitly privileged `internal-v1` profiles are implemented. Qualification is
+summarized below. Training remains paused; no learning result is claimed.
 
 The harness should expose the decisions available to Bard and the information
 needed to understand their consequences. Game rules stay in the game. The
@@ -24,9 +26,9 @@ is insufficient. Include items obtained from shops, transformations, shrines,
 containers and drops, not just ordinary floor generation. A passive item's
 effects still matter even when it introduces no new button.
 
-The immediate deliverable is the contract and implementation plan below.
-Implementation and offline checks can follow without launching experiments.
-Live qualification remains pending while the user wants experiments paused.
+The contracts below define the implementation target. The user authorized
+focused live harness checks; training experiments remain paused. Qualification
+of additional mechanics must retain explicit scope and evidence.
 
 ## Existing implementation and gaps
 
@@ -41,6 +43,12 @@ Live qualification remains pending while the user wants experiments paused.
 | Observation | Local grid, remembered terrain, player/inventory/context | Add equipment state and task context; audit co-located entities and world interactions |
 | Outcomes | Mostly inferred from grid differences and events | Keep authoritative events and multi-effect action attribution; preserve uncertainty |
 | Tasks | Fixed start/target/profile; `PlayerFeature.TASK` actually means boss identity | Explicit objective context, reset provenance and terminal semantics |
+
+This table records the original baseline. The October implementation sections
+below supersede its inventory, identity, control and telemetry descriptions;
+the expanded data now has an opt-in actor/critic projection. The default legacy
+policy still uses the original inventory tensors. The new equipment profiles and qualification are described below. This work
+does not claim that all non-equipment gameplay or task-design work is complete.
 
 Sources: `mods/AutoDancer/scripts/AutoDancer.lua`, `src/autodancer/constants.py`,
 `src/autodancer/observation.py`, `src/autodancer/memory.py`,
@@ -287,40 +295,156 @@ For every mechanic, track discovery, source inspection, implementation, offline
 verification and live qualification independently. Completion means the selected
 content profile is covered, not that a few seeds avoided unsupported equipment.
 
-Remaining source-inspection questions: exact Bard loot restrictions and unlocks;
-shared activation handler precedence; observable versus hidden ammo/cost state;
-maximum supported inventory/container occupancy; co-located entity limits; and
-whether any ordinary Bard decision requires an additional input. These are
-engineering questions to resolve from code before scheduling experiments.
+The implementation supports the complete registered superset instead of imposing
+an inferred Bard loot allowlist. Source-specific bans and unlock keys are audited
+separately. A finite pickup sweep is not a proof of natural reachability. Storage
+capacity is an explicit allocation budget, not a guessed game maximum; overflow
+stops collection. No additional ordinary Bard input was needed in qualification.
 
+## Implemented equipment contract
 
-## Offline reference contract and remaining integration
+`Equipment.lua` reads engine state; the game continues to implement combat,
+movement, spells, acquisition and passive effects. `equipment_state.py` validates
+the payload. `equipment_observation.py` projects it into A9 inputs, and the same
+checkpoint-bound contract is reconstructed for collection and evaluation.
+`harness_contract.py` remains a reference for information provenance and timing;
+its conservative executable-mask helper is not the production permissive input
+contract.
 
-`src/autodancer/harness_contract.py` makes the following decisions executable:
+- **Identity and inventory:** 250 stable catalog IDs, all owned item instances,
+  slot positions, holsters and ordered stash contents. Engine entity IDs are
+  diagnostic join keys, never numeric policy features. Registry inclusion means
+  registered, not obtainable. Integer inventory quantities accommodate infinite
+  bombs without int16 overflow.
+- **Mutable state:** arming, toggles, ammunition, cooldowns, combo state, temporary
+  damage/dig/armor modifiers, invincibility, pickup bookkeeping, container state,
+  shrine markers and the registered character-specific scalar state. Holder
+  effects include regeneration progress, cursed health and temporary statuses,
+  which can survive consumption of the source item.
+- **Visible world:** every ground item in the existing visible 21×21 grid gets
+  an exact catalog ID and relative position, including overlapping items.
+  Charmed actors and active no-return floor markers are separate world records.
+  Missing world evidence differs from an observed empty world.
+- **Controls:** `ActionItem.getActionItem` supplies actual handler ownership.
+  Ownership does not prove that an effect will succeed. `engine-input-v1` permits
+  all eleven input attempts and preserves empty inputs, health-cost casts and
+  failed attempts. It performs no automatic aiming, repeated reloads or strategic
+  action pruning. Existing legacy contracts remain available for old checkpoints.
+- **Timing:** observations are captured at the next input boundary, after the
+  preceding action settles. Terminal equipment is marked stale and projects to
+  empty, non-current tensors. Decision discounting remains unchanged; command
+  sequence numbers are not relabeled as engine turns.
 
-- `StateFact`: known zero, unknown and inapplicable are different states; numeric
-  data must be finite and carries an information-source classification.
-- `project_facts`: validates that requested fields belong to the selected
-  information policy. It rejects leakage rather than silently dropping fields
-  and changing the schema. Classification itself still needs source inspection.
-- `ControlState` / `executable_mask`: one descriptor per existing input, no
-  strategic or redundancy pruning, unknown availability stops collection, and
-  an all-masked nonterminal state is an error. A known-executable input can have
-  an unknown owner; ownership alone is not an action legality test.
-- `TransitionTiming`: decision and game-turn discounts are distinct; unknown
-  engine duration cannot be replaced by the command sequence number.
-- `ObservedEffect`: post-action effects carry command association and evidence;
-  multiple authoritative or inferred effects may describe the same transition.
-  Association identifies the transition window, not proof that Bard directly
-  caused every world event within it.
+The A9 encoder combines item identity, state and container relations, holder
+status, and visible equipment-world records. Actor and critic receive identical
+information. Item/world ordering carries no meaning. Profile, capacity, field
+order, registry digest and observation-contract version are checkpoint-bound;
+incompatible checkpoints are rejected. The default item and visible-world
+capacities are each 64, configurable up to 4096. Exceeding either budget raises
+an error rather than dropping objects. This is a resource setting, not a promise
+that arbitrary custom modes fit the default.
 
-These are reference validators, not a new Lua payload, model input schema or
-production action contract. They are deliberately not connected to current
-training: doing so without engine-backed descriptors would fabricate guarantees.
-The legacy bounded contract and its redundant-arming rule remain unchanged.
+### Information profiles
 
-Next implementation dependencies are engine-backed field classifications and
-control descriptors, exact registry IDs and inventory relations, wire decoding,
-policy tensor projection, then shared collector/evaluation integration. Support
-and eligibility must remain unresolved wherever source evidence is incomplete.
-Offline tests validate the new invariants without claiming live qualification.
+`player-v1` queries the same equipment selectors as the HUD and the engine's
+visual action-slot resolver. It exposes displayed identities and counters only
+where the rendering rules establish them: activation prompts, toggles, stack
+labels, cooldown labels, equipped ammo counters and injective ammunition sprite
+frames. Stored identities can be displayed without exposing their hidden
+counters. Other facts remain explicitly unknown, including their applicability.
+Exact hidden status durations are withheld; visible active/inactive status cues
+are separate from durations. Legacy inventory/control features are cleared in
+this profile so they cannot bypass the equipment visibility filter. This is a
+conservative symbolic equipment view, not a claim of complete pixel/audio parity
+for the entire game. Recurrent state can remember earlier observations.
+
+`internal-v1` exposes the declared current equipment and holder fields to both
+heads, including hidden counters. It still does not reveal unseen ground items,
+future RNG, arbitrary engine IDs or transport state. Internal diagnostics remain
+available in `info` under either profile. The profiles are distinct learning
+environments and are not interchangeable in checkpoints.
+
+No training was started. When training is explicitly resumed, select architecture
+9, an explicit equipment profile, and action contract `current`; the bounded
+navigation masks are not the general equipment contract.
+
+### Events and incentives
+
+Pickup events come from successful `objectTryCollectItem` completion, preserving
+the original identity before merge, consumption or conversion. Inventory deltas
+remain a compatibility fallback for older telemetry. Swaps and artificial grants
+are not reported as world pickups by the new event contract.
+
+Damage events measure health reduction inside each hit, before later healing or
+revival. This covers incoming attacks, environmental/equipment self-damage and
+earthquakes. Overkill cannot manufacture extra damage credit. Healing later in
+the same input does not erase a real damage event. New-item reward accounting
+uses all carried items and stored contents, independently of HUD visibility, so
+holster swaps do not create new-item credit. Existing reward coefficients and
+objectives have not been tuned as part of this work.
+
+Special actions with observed state changes are no longer described as having
+"no effect" merely because Bard stayed in place. The classifier distinguishes
+observed changes from strategic benefit or proof of a successful cast.
+
+## Content and qualification evidence
+
+The pinned build is v4.2.1-b5713 / Steam 22938426. Production blacklists Amplified,
+DynChar and Synchrony gameplay packages; other registered base/extension handlers
+are resolved through the engine. `resolve_bard_runtime.py --catalog-detail`
+captures every item component used in the audit, all phase bans, handler identity
+and priority, progression state and actual unlock keys. Material weapon variants
+can share an unlock key with their base weapon; names are not used as substitutes
+for those keys. Progression was disabled in this isolated training configuration.
+
+The engine reports these Bard restrictions in the captured context:
+
+| Operation | Blocked registered types |
+| --- | --- |
+| Pickup/equip/activate | Coldsteel_ScrollEnchantLeek |
+| Item-pool/shrine-pool/transaction generation | Bomb, ShovelBasic, WeaponDagger, HeartTransplant, DoubleHeartTransplant, Coldsteel_ScrollEnchantLeek |
+| Shrine drops | HeartTransplant, DoubleHeartTransplant, Coldsteel_ScrollEnchantLeek |
+| Crate/fixed-shrine/level generation | Coldsteel_ScrollEnchantLeek |
+
+Generation restrictions are not use restrictions. Starting equipment, fixed
+sources, transformations and breakage products cannot be counted using a single
+pool-membership flag. The runtime audit retains each pool's per-depth weights
+and each phase's ban separately. Supporting all registered identities avoids
+silently excluding rare equipment while an exact natural-loot census is absent.
+No count of 250 or 249 naturally obtainable Bard equipment is claimed.
+
+The qualification tool applies fixtures only in private mod/profile copies.
+Every accepted report requires no training, zero worker restarts and unchanged
+installed config and repository mod hashes over the run. Reports, host copies
+and failed/discovery runs remain ignored under `runs/`. Reusable checks are in
+`tools/qualify_equipment.py`; `tools/audit_equipment_evidence.py` combines accepted
+reports and rejects incomplete pickup evidence or unknown applicable fields.
+
+| Check | Coverage and evidence |
+| --- | --- |
+| Ordinary equipment and player view | 197 ordinary-slot types; selected special control where present, RIGHT and WAIT. `runs/equipment-completion-catalog-20261025-final/` |
+| Shared controls and lifecycle | 16 cases: arming/repeated arming, reload/toggle priority, holster retention, both bags, blood casting, drums, empty inputs, death/reset/floor boundaries. `runs/equipment-completion-player-view-20261025-b/` |
+| Weapon mechanics | All 17 throwable definitions in four directions and all 10 reloadables, including three rifle reloads: 78 player-view cases. `runs/equipment-completion-weapons-20261025-release/` |
+| Effect assertions | 38 player-view cases covering melee reach/sweep, ranged hits, overkill, armor, glass breakage, digging, all seven spells, transmutation, recharge, two spell slots, boots, regeneration, revival, live/prototype stash contents and no-return behavior. `runs/equipment-completion-effects-20261025-release-b/` |
+| Ground acquisition | All 250 registered types attempted independently: 238 successful fixture pickups and 12 expected non-walk objects. Merge and immediate consumption retain pickup events. `runs/equipment-completion-pickups-20261025-final/` |
+
+The completion audit at `runs/equipment-completion-audit-20261025.json` combines
+these 579 cases with the fresh runtime catalog in
+`runs/equipment-completion-runtime-20261025-release/`. All five qualification
+reports passed with zero worker restarts and unchanged source/installed files
+during each run. The catalog records 159 positive item-pool candidates under the
+captured progression and ban rules; this excludes other acquisition paths and
+is not the count of obtainable equipment. The full automated suite passed 525
+tests; the subsequent equipment/performance recheck passed 57 tests. Ruff passed.
+
+The 12 non-walk objects observed are the Bard-banned Coldsteel scroll,
+EnemyPlaceholder, FriendlyFireTeamChanger, ItemPlaceholder, ItemStash, Marv,
+NoReturnModeSquare, NoReturnShrineSquare, ShrineMarkerRhythm, SoulLinkCoop,
+SoulLinkDad and quirks_DummyItem. Marker/stash/follower state remains representable
+when created through its actual engine path; a failed walk pickup is not a claim
+that its mechanics are unsupported.
+
+These checks qualify the equipment interface and the listed mechanic families.
+They do not exhaust every combination, validate other character/mode profiles,
+or establish learning performance. Broader world observation, task conditioning
+and future game-turn objectives remain separate from this equipment integration.
