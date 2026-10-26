@@ -1,12 +1,13 @@
 # Bard harness design
 
 Status: equipment and world-observation integration for the pinned solo Bard
-configuration, updated 2026-10-26. Equipment uses snapshot v3 and the 250-type
+configuration, updated 2026-10-27. Equipment uses snapshot v3 and the 250-type
 registry. World snapshot v1 adds separate entities and exact visible terrain
 through architecture 10; architecture 9 retains its equipment-only contract.
 Collection now stops on protocol, transport, representation failures and game
 aborts. The information-policy and task/reward audit is recorded below.
-Qualification is summarized below. Training remains paused.
+Qualification is summarized below. The bounded learning preflight passed;
+the actual training experiment remains unstarted.
 
 The harness should expose the decisions available to Bard and the information
 needed to understand their consequences. Game rules stay in the game. The
@@ -642,3 +643,56 @@ recipe or hyperparameter was tuned during this audit.
 
 Training remains paused. These results qualify the interface and accounting;
 they do not demonstrate that a policy can learn to beat the game.
+
+## Training preflight — 2026-10-27
+
+The production A10 training, checkpoint load/resume and evaluation paths passed
+a bounded live preflight. `tools/prepare_a10_training.py` reproduces this check
+in a private game copy with an unchanged production mod. Generated recipes,
+reports and checkpoints remain under ignored `runs/` directories. The preparer
+creates a launcher after qualification; it never executes that launcher.
+
+Evidence: `runs/a10-preflight-20261027/preflight.json`, with supporting metrics
+and checkpoints in `smoke/` and `resume/`, and held-out results in
+`evaluation.json` within that directory.
+
+- Two workers collected 768 transitions across three PPO updates: two updates
+  from fresh initialization, then one after loading the saved checkpoint in a
+  new training invocation. Each update performed four optimizer steps.
+- All scalar update metrics and final model parameters were finite. World and
+  task encoders received nonzero gradients, and learned weights changed.
+- Checkpoint loading reproduced the saved optimizer state and the model's
+  logits, value and recurrent state exactly on the recorded observation.
+- Held-out stochastic evaluation and a random-action reference completed on
+  two separate seeds. Both had zero task completions; this is a wiring and
+  numerical check, not evidence of learning success after three updates.
+- No worker restarted or recorded a failure. Source/game files remained
+  unchanged, and all private worker processes closed.
+- End-to-end update throughput was 10.7–11.5 transitions/s; collection alone
+  was 16.6–17.8 transitions/s. PPO updates took 7.5–8.5 seconds. These are short
+  preflight measurements, not a long-run performance benchmark.
+- Peak CUDA reservation was 4.23 GiB (4.15 GiB allocated), peak Python RSS
+  2.33 GiB, and peak aggregate child-process RSS 2.55 GiB. Available system RAM
+  stayed above 10.37 GiB. Two workers are the qualified initial setting;
+  higher concurrency has not been measured with this complete A10 path.
+
+The prepared experiment is a fresh first-floor-completion run, with a target of
+entering sequential level 2. It uses A10, `internal-v1`, `current` input attempts,
+natural starting equipment, capacities 64/256, two CUDA workers, four CPU tensor
+threads, rollout length 128, sequence length 32, gamma 0.99 and learning rate
+0.0003. The initial budget is 65,536 transitions with a 1,024-decision collection
+limit. Training seeds are 310000–310999; evaluation seeds are 320000–320015.
+Preflight seeds (330000–330015 and 340000/340001) are separate from both sets.
+
+The generated reward config uses the existing exploration recipe with boss
+potential disabled for the first-floor task: progress rewards, bounded position/
+tile novelty and stair potential; no combat, item, currency, player-damage or
+death terms. The smoke run used a shorter 128-decision collection limit. No
+guide, demonstrations, navigation prior or smoke-checkpoint warm start is used
+by the prepared experiment.
+
+`runs/a10-preflight-20261027/experiment.json` pins the commands, seeds and reward
+hash. `launch-training.ps1` launches fresh training followed by the fixed-seed
+evaluation/reference comparison. Periodic training-loop evaluation is disabled
+so evaluation seeds do not enter the training reset stream. The actual run and
+its `experiment/` output directory have **not** been started or created.
