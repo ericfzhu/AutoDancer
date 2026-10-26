@@ -1,10 +1,12 @@
 # Bard harness design
 
-Status: equipment integration for the pinned solo Bard configuration, updated
-2026-10-25. The new path uses snapshot v3, the 250-type registry, all eleven
-engine inputs and A9 equipment observations. Both HUD-based `player-v1` and
-explicitly privileged `internal-v1` profiles are implemented. Qualification is
-summarized below. Training remains paused; no learning result is claimed.
+Status: equipment and world-observation integration for the pinned solo Bard
+configuration, updated 2026-10-26. Equipment uses snapshot v3 and the 250-type
+registry. World snapshot v1 adds separate entities and exact visible terrain
+through architecture 10; architecture 9 retains its equipment-only contract.
+Collection now stops on protocol, transport, representation failures and game
+aborts. The information-policy and task/reward audit is recorded below.
+Qualification is summarized below. Training remains paused.
 
 The harness should expose the decisions available to Bard and the information
 needed to understand their consequences. Game rules stay in the game. The
@@ -198,7 +200,8 @@ All-masked nonterminal states are contract failures, never automatic WAITs.
 
 Every new field needs a source, units/range, update timing, missing-value rule,
 and an information classification. Human-equivalent information is an objective
-choice, not a requirement of reinforcement learning. Define two explicit profiles:
+choice, not a requirement of reinforcement learning. The original design
+distinguishes these two information policies:
 
 - `player`: static game knowledge, current visible cues and remembered player
   history. This preserves the existing intended information boundary.
@@ -209,8 +212,11 @@ choice, not a requirement of reinforcement learning. Define two explicit profile
 Neither profile includes future RNG, arbitrary engine IDs or transport/debug
 internals as policy features. Both actor and critic use the same profile in the
 initial implementation; a privileged critic would be a separate explicit design.
-No switch to privileged observations is made here. The exporter may supply
-internal diagnostics separately, but they must not leak into masks or inputs. Separate static game knowledge,
+The implemented `internal-v1` and `player-v1` profiles do not map directly to
+these two policies: both retain declared engine information. `player-v1` names
+the HUD-filtering projection, not a whole-game human-equivalence certificate.
+See the completed audit below. The exporter may supply internal diagnostics
+separately, but excluded fields must not leak into masks or inputs. Separate static game knowledge,
 currently visible state, remembered observations and diagnostic-only internals.
 In the `player` profile, unseen enemies and unrevealed terrain remain excluded.
 Exact cooldowns or internal charge state are not automatically permissible just
@@ -254,8 +260,9 @@ Reward definitions remain independent of the equipment adapter. Do not reward
 using each new capability merely to make it appear learnable. Preserve extrinsic
 completion metrics separately from potential shaping and exploration bonuses.
 Potential discounts must match the learner; task termination and truncation must
-be handled consistently. Fields used by shaping must follow the declared
-information policy, including any explicitly remembered history.
+be handled consistently. Shaping sources and reward feedback must be declared
+separately from actor inputs. The implemented symbolic task permits privileged
+reward events; A10 excludes previous rewards from both actor and critic inputs.
 
 ## Compatibility, cost and failure handling
 
@@ -287,9 +294,10 @@ name it as a different environment and evaluate transfer separately.
 | 6. Task integration | Shared observation/mask path across collectors and evaluation | Exact rollout inputs, terminal observations and objective conditioning preserved |
 | 7. Qualification | Later bounded deterministic live mechanics checks | Evidence ties to exact source/content versions; scope and untested interactions explicit |
 
-Stages 1–6 are design/implementation work. Offline tests can check contracts and
-known recorded fixtures; they cannot prove live engine behavior. Stage 7 and all
-learning experiments remain pending under the current instruction.
+Offline tests check contracts and recorded fixtures; controlled live checks
+qualify engine behavior separately. Equipment and world qualification are
+recorded below, followed by the completed information-policy and task/reward
+audit. Learning experiments remain paused.
 
 For every mechanic, track discovery, source inspection, implementation, offline
 verification and live qualification independently. Completion means the selected
@@ -307,7 +315,8 @@ stops collection. No additional ordinary Bard input was needed in qualification.
 movement, spells, acquisition and passive effects. `equipment_state.py` validates
 the payload. `equipment_observation.py` projects it into A9 inputs, and the same
 checkpoint-bound contract is reconstructed for collection and evaluation.
-`harness_contract.py` remains a reference for information provenance and timing;
+`harness_contract.py` defines runtime information and task manifests as well as
+reference types for information provenance and timing;
 its conservative executable-mask helper is not the production permissive input
 contract.
 
@@ -446,5 +455,190 @@ that its mechanics are unsupported.
 
 These checks qualify the equipment interface and the listed mechanic families.
 They do not exhaust every combination, validate other character/mode profiles,
-or establish learning performance. Broader world observation, task conditioning
-and future game-turn objectives remain separate from this equipment integration.
+or establish learning performance. World integration is described below; task
+conditioning and future game-turn objectives remain separate work.
+
+## World observations and failure handling
+
+`World.lua` captures one record per positioned game object on currently visible
+tiles in the 21-by-21 local window, including intangible objects and inactive
+objects that remain in the world. Held equipment stays in the equipment stream.
+Multiple enemies, traps, items, chests and price tags on one tile remain separate.
+The registry contains 621 registered positioned entity types and 75 tile types,
+from `runs/world-runtime-20261025-final/`. These are content-registration counts,
+not claims about ordinary Bard spawn pools. Unknown identities stop collection.
+
+The declared state bindings cover 100 scalar fields, plus component markers and
+derived status flags. They include health, facing, movement/AI phase counters,
+charge and shield state, parry/counterattack, Ogre club attacks, dormancy,
+summoning and boss counters, traps, prices, shrine activation and grab relations.
+Each field distinguishes known, unknown and inapplicable. Arbitrary entity IDs
+serve only as validated joins; the policy receives relative entity references.
+Unseen relation targets do not disclose their identity or coordinates.
+
+`internal-v1` receives the declared state of objects on visible tiles.
+`player-v1` filters objects using sprite/display evidence and withholds internal
+phase counters, exact status durations and uncertified health values. It retains
+declared cues, prices and derived status flags. This conservative symbolic view
+does not certify complete pixel/audio equivalence, disguise handling or every
+visibility mechanic. The whole-game information audit below classifies these
+inputs as privileged and explicitly rejects a human-equivalent claim. Boss-health
+potential shaping is rejected with the world player profile because that profile
+does not certify exact boss health; ordinary progress rewards remain available.
+
+Only currently visible exact terrain enters `world_tiles`; absent cells are
+unknown. Existing coarse revealed-map memory remains separate. The world path
+clears the legacy hashed terrain/entity grid channels, preserves coarse geometry
+and visibility, and counts visible enemy records rather than occupied tiles.
+Action outcomes and boss-health accounting use the separate records where
+applicable. No action recommendations or additional input pruning were added.
+
+Architecture 10 combines equipment features with all world records, relation
+features and exact terrain. Actor and critic receive the same representation.
+Entity ordering and engine IDs are not numerical features. Capacity, field order,
+registry digest and information profile bind to the checkpoint; collection,
+evaluation and diagnostics reconstruct the same environment. Default world
+capacity is 256, configurable from 1 to 4096. This is an allocation budget, not a
+game maximum; exceeding it raises a protocol error without truncating entities.
+Existing architecture 9 checkpoints retain their original shapes and semantics.
+When explicitly resuming learning, the new path requires `--architecture 10`,
+`--action-contract current` and an explicit `--equipment-profile`. No learning
+run or optimizer update was performed for this work.
+
+The failure policy is `stop-run-v1`. Vector reset/step, asynchronous collection,
+evaluation (including prefix acquisition) and throughput measurement do not
+restart workers, retry fragments or substitute seeds after protocol,
+transport, timeout or map-capacity failures. A failed vector/collector becomes
+invalid and rejects reuse. In-flight requests finish or fail before the inference
+service closes; the incomplete batch is never returned to PPO. Diagnostics retain
+the failed worker, seed/run/sequence, last observation and unfinished fragment.
+The supervisor writes a diagnostic bundle without replacing the process. The
+training entry point records invalid completion status in `run-status.json`,
+retaining earlier checkpoints and their actual completed update counts.
+Evaluation faults do not become completed episodes; throughput faults do not
+produce a successful benchmark with failed steps discarded.
+
+Qualification uses private hosts and fixed actions:
+
+| Check | Evidence |
+| --- | --- |
+| Equipment interactions with world capture | 38 cases passed, zero restarts. `runs/world-equipment-effects-20261025/` |
+| World player profile | 23 cases: overlapping objects, three price types, charge/shield/status changes, visibility/window exclusion, four boss forms, shrines, ten terrain types, parries, club attacks, bells, dormancy and supercharge. `runs/world-mechanics-20261025-release/` |
+| World internal profile | The same 23 cases and failure checks. `runs/world-mechanics-internal-20261025-release/` |
+| Collection failure boundary | A frozen two-transition collection followed by unknown-identity, capacity-overflow and timeout injections. Each failure retains one completed transition, aborts collection, rejects reuse and writes a diagnostic bundle. The world-profile reports record unchanged weights and zero optimizer updates/restarts. |
+
+Private hosts, raw reports and failure bundles remain ignored under `runs/`.
+Reusable fixtures are in `tools/qualify_world.py` and
+`tools/qualify_world_failures.py`. Tests cover malformed data, capacity, hidden
+fields, co-location, handle/order invariance, model sensitivity and checkpoint
+reconstruction, terminal/truncation snapshots, and failure behavior. These checks
+qualify the declared interface and mechanic families; they are not an exhaustive
+test of every enemy interaction or proof of learning performance.
+
+## Information-policy and task/reward audit — 2026-10-26
+
+The audit is complete for the current solo Bard symbolic harness. It does not
+certify a screen/audio-only agent. Both existing information profiles expose
+privileged current engine state; the misleading implication that `player-v1`
+means human-equivalent has been removed. This is a valid declared RL problem,
+but success on it must not be reported as screen-only play.
+
+`harness_contract.information_contract()` records the actual boundary. A10 binds
+it and `task_contract()` into its architecture specification; incompatible or
+missing contracts are rejected when reconstructing the model or environment.
+Training records both contracts and the reward-accounting revision in run and
+checkpoint metadata. Actor and critic receive the same projected observation.
+
+| Input or signal | Actual source and audit conclusion |
+| --- | --- |
+| Local terrain and map memory | Lua `Vision.isVisible/isRevealed`, `Tile.getInfo/isSolid`, and Python visit history. Coarse geometry can refresh on revealed but off-screen cells; map items reveal more geometry. This is engine map knowledge, not a guarantee of remembered pixels. |
+| Exact world identity and terrain | Registry IDs from engine names on visible cells. Names can distinguish disguises and walls containing loot. Both profiles retain this privilege. |
+| World facts and relations | Internal profile includes the 100 scalar fields, component markers and grab relations. Player profile hides excluded scalar values and applicability, but display filtering and the remaining markers, relations and selected facts are not a renderer-equivalence proof. |
+| Equipment | Internal profile includes current ownership, storage and counters. Player profile uses the qualified HUD selectors and unknown sentinels; engine-derived holder effects and world records remain part of the declared symbolic interface. Legacy inventory bypasses are cleared in this profile. |
+| Player vector | Engine health, gold, groove, position, level, boss type, music clock/song state and calculated shop volume. These are not all certified screen/audio observations. A10 replaces bridge sequence with the count of acknowledged episode actions; GOTO setup commands do not increment it. Prefix handoff preserves this history. |
+| Inputs and masks | Eleven engine input attempts. Missing equipment or a failed effect may produce a no-op. A9/A10 training and evaluation CLIs require `current`; navigation priors, wall pruning and dagger-only masks are different historical action contracts. |
+| Task | Explicit objective and target level, independently of boss identity. No remaining collection budget is exposed as a survival deadline. |
+| Recurrent feedback | Previous action is available. A10 ignores previous reward at the shared model encoder, covering rollout, evaluation, prefix replay and direct model calls. Hidden engine events cannot enter recurrent state through this numeric feedback channel. Learning targets can still use declared privileged rewards. Historical models retain reward feedback. |
+| Diagnostics | Seed, run/session/launch IDs, raw events and raw entity handles stay outside policy tensors. Handles become relational row references, with identity-renaming and permutation tests. No future RNG is exported. |
+
+A strict human-equivalent profile would require a separate rendering/disguise,
+terrain-reveal and audio contract. It is not silently approximated here, and is
+not required to study learning in this explicitly privileged symbolic task.
+
+### Task and boundary decisions
+
+A10 now receives `task_context = [objective, target_level]`: `[1, 0]` means win
+the run; `[2, N]` means reach sequential level N. Start-level/health assistance
+remains reset-distribution metadata, not a hidden change to the objective.
+Different target tasks require A10 conditioning in the training entry point;
+historical unconditioned architectures remain usable for a fixed objective.
+Levels must be integers representable in the observation; fractional, boolean
+and string values are rejected instead of silently coerced by reset JSON.
+
+Winning or reaching the declared target terminates successfully; death
+terminates unsuccessfully. `completed` continues to mean a full-run win;
+`curriculum_completed`, `task_success` and episode status distinguish a subtask
+success. A target success is credited by level progression, without an extra
+full-run victory bonus. Collection limits truncate and retain the final state
+for bootstrapping. Discounting is per acknowledged decision, not per inferred
+beat or wall-clock second. True finite-horizon tasks are not implemented.
+
+An engine `aborted` outcome now raises a protocol failure before adaptation or
+reward scoring. The collector invalidates the fragment and stops the run; it
+cannot bootstrap from a stale terminal snapshot or treat interruption as a
+negative-reward episode. The historical `aborted` coefficient remains readable
+for old configuration metadata but is not scored by the current harness.
+
+### Reward accounting and incentive conclusions
+
+Coefficients and existing reward configuration files are unchanged. Accounting
+is separately versioned by `reward_semantics()` revision 2. New checkpoints bind
+this revision, so an old run is not an exact resume merely because its weight
+file matches. Evaluation rejects a declared incompatible accounting revision
+unless explicitly used as a source reference; older missing metadata is marked
+as an accounting mismatch in evaluation reports. A9 tensor shapes remain unchanged.
+
+| Reward family | Definition, limits and interpretation |
+| --- | --- |
+| Progress, victory and death | Credit new maximum level/zone progress, full-run victory and death. Returning to a previous floor cannot re-earn progression. Health assistance and later-level starts remain distinct task distributions. |
+| Exploration and carried item novelty | Episode novelty history plus persistent per-floor budgets. Returning to a floor cannot replenish its budget. Item novelty includes carried storage contents from engine state, not every consumed pickup; it is explicitly privileged shaping. |
+| Combat | Local-player-attributed health loss and kills, per-target damage limits, kill deduplication and a per-floor budget. The exporter classifies non-player characters with health; this is not a hostility/team filter, so neutral characters can also qualify. Optional boss scopes narrow the targets. Handles are scoped to floors. These bonuses can prefer fighting over avoidance and do not preserve a pure completion objective. |
+| Player damage | Actual health lost, including intentional blood equipment costs, before healing or revival. This can discourage a useful self-damaging action; it remains a deliberate incentive to evaluate, not a harness defect or a new equipment penalty. |
+| Stair and boss potentials | `gamma * next_potential - previous_potential`, with zero potential at death, victory or target completion; collection truncation retains it. Tests check discounted cancellation at all true task terminals. Boss potential is the historical visible minimum-health heuristic, not a general damage counter across all boss phases; world `player-v1` still rejects it because exact boss health is excluded there. |
+| Currency and containers | Currency now shares its cap across all events in one decision. Container IDs are deduplicated per floor. Neither stream has an episode-wide budget; renewable positive-credit loops remain possible if enabled. Both weights are zero by default. |
+| Turn/revisit and historical V2 | Positive turn/revisit bonuses can reward stalling; V2 retains unbounded historical shaping. The current default has zero turn/revisit reward. These settings are explicit alternative objectives, not generally safe defaults. |
+
+Lua events now carry their zone/floor at capture time. A final kill on the
+departing floor cannot spend the arrival floor's budget; events actually on the
+arrival floor use that floor's account. Historical events without attribution
+use the departing floor. Malformed partial/noninteger attribution is rejected.
+Unsupported negative bounded-credit weights and noninteger count limits are
+also rejected instead of being silently clipped or coerced.
+
+The default exploration, combat and item budgets total 1.75 per floor, compared
+with 5 for a normal floor completion. This local bound is useful, but does not
+prove that the shaped discounted objective always prefers eventual victory.
+Only the potential terms have the tested telescoping property; novelty, combat,
+item and damage terms change preferences. Keep completion, depth, death and
+subtask success separate from shaped return when training resumes. No reward
+recipe or hyperparameter was tuned during this audit.
+
+### Verification
+
+- `runs/information-task-audit-20261026-player/`: 23 live world fixtures and seven
+  task/feedback/failure checks passed. Both task contexts round-trip; changing
+  reward feedback leaves frozen logits, values and recurrent state identical.
+  Unknown identities, capacity overflow, timeout and abort each stop collection
+  after one retained diagnostic transition, with no retry or optimizer update.
+- `runs/information-task-audit-20261026-events/`: 38 existing equipment interaction
+  fixtures passed with world capture and event-time level attribution checks.
+- Both private-game runs report zero worker restarts and unchanged original
+  game/mod files. Reports, private hosts and diagnostic bundles remain ignored
+  under `runs/`; the reusable tests and qualifier changes belong in source control.
+- The full regression suite passed: **574 tests**, with Ruff and `git diff --check`
+  also passing. Tests cover hidden-diagnostic and reward-feedback invariance, task
+  sensitivity and gradients, checkpoint mismatches, floor reentry, reused event
+  handles, currency aggregation, potential cancellation and abort handling.
+
+Training remains paused. These results qualify the interface and accounting;
+they do not demonstrate that a policy can learn to beat the game.
