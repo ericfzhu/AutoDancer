@@ -390,6 +390,12 @@ def _validate_events(events: Any) -> None:
         data = event.get("data")
         if data is not None and not isinstance(data, Mapping):
             raise ProtocolError(f"Event {index} data must be an object")
+        if isinstance(data, Mapping):
+            if ("zone" in data) != ("floor" in data):
+                raise ProtocolError(f"Event {index} has incomplete level attribution")
+            for key in ("zone", "floor"):
+                if key in data:
+                    _integer(data[key], f"Event {index} {key}", minimum=0)
 
 
 def validate_record(record: Mapping[str, Any]) -> None:

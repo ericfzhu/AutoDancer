@@ -12,10 +12,27 @@ from typing import Any
 import numpy as np
 
 from autodancer.constants import ActorKind, GridChannel, MapChannel, PlayerFeature, Terrain
+from autodancer.progress import level_progress
 
 REWARD_PROFILE_VERSION = 4
 
 EXTRINSIC_COMPONENTS = frozenset({"floor_complete", "zone_complete", "victory", "death", "aborted"})
+
+
+def reward_semantics() -> dict[str, Any]:
+    """Accounting is versioned independently of historical coefficient files."""
+    return {
+        "version": 2,
+        "progress": "episode_high_water_observed_level_boundaries",
+        "floor_budgets": "persist_on_reentry",
+        "events_at_transition": "captured_event_floor_else_departing_floor_legacy_fallback",
+        "entity_deduplication": "per_floor_engine_handle",
+        "currency_cap": "per_acknowledged_decision_all_events",
+        "new_item_type": "first_carried_type_including_hidden_storage_not_consumed_pickups",
+        "player_damage": "actual_health_lost_including_self_costs_before_heal_or_revive",
+        "potential": "gamma_next_minus_previous_zero_at_task_terminal",
+        "abort": "invalid_not_rewarded",
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,8 +84,8 @@ class RewardConfig:
             "stair_potential_distance",
             "max_boss_progress_damage",
         ):
-            if getattr(self, name) < 0:
-                raise ValueError(f"{name} cannot be negative")
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
         for name in (
             "max_exploration_reward_per_floor",
             "max_combat_reward_per_floor",
@@ -90,6 +107,12 @@ class RewardConfig:
             raise ValueError("boss_progress_source must be visible_boss_health_delta_v1")
         if self.combat_reward_scope not in ("all", "boss_and_adds", "boss_only"):
             raise ValueError("combat_reward_scope must be one of: all, boss_and_adds, boss_only")
+        if self.profile_version != 2:
+            for name in ("new_position", "new_tile", "new_item_type", "enemy_damage", "enemy_kill"):
+                if getattr(self, name) < 0:
+                    raise ValueError(
+                        f"{name} cannot be negative with bounded positive-credit accounting"
+                    )
 
     def specification(self) -> dict[str, Any]:
         weights = asdict(self)
@@ -129,6 +152,11 @@ class RewardTracker:
         self.seen_item_types: set[int] = set()
         self.rewarded_kills: set[int] = set()
         self.rewarded_damage: dict[int, int] = {}
+        self.rewarded_containers: set[int] = set()
+        self._floor_accounts: dict[tuple[int, int], tuple] = {}
+        self._account_floor = (0, 0)
+        self._furthest = (0, 0)
+        self._currency_this_step = 0
         self.known_stairs: set[tuple[int, int, int, int]] = set()
         self.stair_distance: int | None = None
         self.stair_potential = 0.0
@@ -186,6 +214,19 @@ class RewardTracker:
 
     @staticmethod
     def _visible_boss_health(observation: Mapping[str, np.ndarray]) -> int | None:
+        if "world_entities" in observation:
+            from autodancer.world_observation import FACTS
+
+            facts = observation["world_facts"]
+            health = facts[:, FACTS.index("health.health")]
+            boss = facts[:, FACTS.index("boss.type")]
+            mask = (
+                (observation["world_entities"][:, 0] != 0)
+                & (boss[:, 1] != 0)
+                & (health[:, 1] != 0)
+                & (health[:, 0] > 0)
+            )
+            return int(health[mask, 0].min()) if mask.any() else None
         grid = observation["grid"]
         mask = (
             (grid[..., GridChannel.ACTOR_CLASS] == int(ActorKind.BOSS))
@@ -258,6 +299,9 @@ class RewardTracker:
     def reset(self, observation: Mapping[str, np.ndarray], info: Mapping[str, Any]) -> None:
         self.zone = int(info.get("zone") or 0)
         self.floor = int(info.get("floor") or 0)
+        self._furthest = (self.zone, self.floor)
+        self._account_floor = (self.zone, self.floor)
+        self._floor_accounts.clear()
         self.seen_tiles = self._revealed_tiles(observation, self.zone, self.floor)
         x, y = self._position(observation)
         self.visited_positions = {(self.zone, self.floor, x, y)}
@@ -276,6 +320,7 @@ class RewardTracker:
         self.boss_minimum_health = self.boss_initial_health
         self.rewarded_kills.clear()
         self.rewarded_damage.clear()
+        self.rewarded_containers.clear()
 
     def score(
         self,
@@ -287,8 +332,11 @@ class RewardTracker:
         truncated: bool,
     ) -> tuple[float, dict[str, float]]:
         config = self.config
+        if info.get("episode_status") == "aborted":
+            raise ValueError("Aborted runs are invalid, not reward-bearing truncations")
         event_list = [dict(event) for event in events]
         components: dict[str, float] = {}
+        self._currency_this_step = 0
         if config.turn:
             components["turn"] = config.turn
 
@@ -297,10 +345,15 @@ class RewardTracker:
         x, y = self._position(observation)
         position = (zone, floor, x, y)
         same_floor = zone == self.zone and floor == self.floor
-        if not same_floor:
-            self.exploration_reward = 0.0
-            self.combat_reward = 0.0
-            self.item_reward = 0.0
+        # Use event-time location, not the post-transition observation's level.
+        # Historical records without it are attributed to the departing floor.
+        for event in event_list:
+            data = event.get("data") or {}
+            self._activate_floor(
+                int(data.get("zone") or self.zone), int(data.get("floor") or self.floor)
+            )
+            self._score_event(event, components)
+        self._activate_floor(zone, floor)
         if position not in self.visited_positions:
             credit = config.new_position
             if config.profile_version != 2:
@@ -384,16 +437,16 @@ class RewardTracker:
                 components["stair_potential"] = potential_reward
             self.stair_potential = next_potential
 
-        if zone > self.zone:
+        furthest_zone, furthest_floor = self._furthest
+        if zone > furthest_zone:
             if config.profile_version != 2:
-                components["floor_complete"] = config.floor_complete * (zone - self.zone)
-            components["zone_complete"] = config.zone_complete * (zone - self.zone)
-        elif zone == self.zone and floor > self.floor:
-            components["floor_complete"] = config.floor_complete * (floor - self.floor)
+                components["floor_complete"] = config.floor_complete * (zone - furthest_zone)
+            components["zone_complete"] = config.zone_complete * (zone - furthest_zone)
+        elif zone == furthest_zone and floor > furthest_floor:
+            components["floor_complete"] = config.floor_complete * (floor - furthest_floor)
+        if level_progress(zone, floor) > level_progress(*self._furthest):
+            self._furthest = (zone, floor)
         self.zone, self.floor = zone, floor
-
-        for event in event_list:
-            self._score_event(event, components)
 
         if config.boss_progress_potential_per_damage:
             visible_health = self._visible_boss_health(observation)
@@ -433,10 +486,29 @@ class RewardTracker:
             components["victory"] = config.victory
         elif terminated and status == "dead":
             components["death"] = config.death
-        elif truncated and status == "aborted":
-            components["aborted"] = config.aborted
 
         return float(sum(components.values())), components
+
+    def _activate_floor(self, zone: int, floor: int) -> None:
+        if self._account_floor == (zone, floor):
+            return
+        self._floor_accounts[self._account_floor] = (
+            self.exploration_reward,
+            self.combat_reward,
+            self.item_reward,
+            self.rewarded_kills,
+            self.rewarded_damage,
+            self.rewarded_containers,
+        )
+        (
+            self.exploration_reward,
+            self.combat_reward,
+            self.item_reward,
+            self.rewarded_kills,
+            self.rewarded_damage,
+            self.rewarded_containers,
+        ) = self._floor_accounts.get((zone, floor), (0.0, 0.0, 0.0, set(), {}, set()))
+        self._account_floor = (zone, floor)
 
     def _score_event(self, event: Mapping[str, Any], components: dict[str, float]) -> None:
         config = self.config
@@ -498,10 +570,14 @@ class RewardTracker:
                 config.player_damage * amount
             )
         elif kind == "currency_collected" and config.currency:
-            components["currency"] = components.get("currency", 0.0) + (
-                config.currency * min(amount, config.max_currency_per_turn)
-            )
+            credited = min(amount, max(config.max_currency_per_turn - self._currency_this_step, 0))
+            self._currency_this_step += credited
+            components["currency"] = components.get("currency", 0.0) + (config.currency * credited)
         elif kind == "container_opened" and config.container_opened:
+            if entity_id and entity_id in self.rewarded_containers:
+                return
+            if entity_id:
+                self.rewarded_containers.add(entity_id)
             components["container_opened"] = components.get("container_opened", 0.0) + (
                 config.container_opened
             )

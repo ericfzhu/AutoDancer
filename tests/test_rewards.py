@@ -152,6 +152,133 @@ def test_currency_reward_consumes_currency_event_not_item_event() -> None:
     assert parts == {"currency": pytest.approx(0.3)}
 
 
+def test_currency_cap_is_shared_by_all_events_in_one_decision():
+    tracker = RewardTracker(RewardConfig(currency=0.1, max_currency_per_turn=5))
+    value = observation()
+    info = dict(zone=1, floor=1, episode_status="running")
+    tracker.reset(value, info)
+    events = [dict(kind="currency_collected", amount=4) for _ in range(3)]
+    for _ in range(2):
+        _, parts = tracker.score(value, info, events, terminated=False, truncated=False)
+        assert parts["currency"] == pytest.approx(0.5)
+
+
+def test_reentry_preserves_budgets_progress_and_floor_scoped_event_ids():
+    tracker = RewardTracker(
+        RewardConfig(
+            new_position=0.1,
+            new_tile=0,
+            max_exploration_reward_per_floor=0.1,
+            enemy_kill=0.1,
+            max_combat_reward_per_floor=0.1,
+            stair_potential_max=0,
+            container_opened=0.2,
+        )
+    )
+    tracker.reset(observation(), dict(zone=1, floor=1))
+
+    def step(floor, x, events=()):
+        return tracker.score(
+            observation(x=x),
+            dict(zone=1, floor=floor, episode_status="running"),
+            events,
+            terminated=False,
+            truncated=False,
+        )[1]
+
+    events = [dict(kind="enemy_kill", entity_id=7), dict(kind="container_opened", entity_id=8)]
+    first = step(1, 1, events)
+    assert first["enemy_kill"] == 0.1 and first["container_opened"] == 0.2
+    assert step(2, 1)["floor_complete"] == 5
+    # Engine handles can be reused on a different floor.
+    second = step(2, 2, events)
+    assert second["enemy_kill"] == 0.1 and second["container_opened"] == 0.2
+    returned = step(1, 3, events)
+    assert "new_position" not in returned and "floor_complete" not in returned
+    assert "enemy_kill" not in returned and "container_opened" not in returned
+    assert "floor_complete" not in step(2, 4)
+    assert step(3, 1)["floor_complete"] == 5
+    tracker.reset(observation(), dict(zone=1, floor=1))
+    assert step(1, 1, events)["enemy_kill"] == 0.1
+
+
+def test_final_kill_uses_event_time_floor_not_arrival_floor():
+    tracker = RewardTracker(RewardConfig(enemy_kill=0.75, stair_potential_max=0))
+    tracker.reset(observation(), dict(zone=1, floor=1))
+    _, parts = tracker.score(
+        observation(),
+        dict(zone=1, floor=2),
+        [dict(kind="enemy_kill", entity_id=9, data=dict(zone=1, floor=1))],
+        terminated=False,
+        truncated=False,
+    )
+    assert parts["enemy_kill"] == 0.75
+    assert tracker.combat_reward == 0  # Arriving floor still has its entire budget.
+    _, parts = tracker.score(
+        observation(),
+        dict(zone=1, floor=2),
+        [dict(kind="enemy_kill", entity_id=9, data=dict(zone=1, floor=2))],
+        terminated=False,
+        truncated=False,
+    )
+    assert parts["enemy_kill"] == 0.75
+
+
+def test_aborted_runs_cannot_be_scored_as_truncations():
+    tracker = RewardTracker()
+    tracker.reset(observation(), dict(zone=1, floor=1))
+    with pytest.raises(ValueError, match="invalid"):
+        tracker.score(
+            observation(), dict(episode_status="aborted"), [], terminated=False, truncated=True
+        )
+
+
+@pytest.mark.parametrize("terminal", ["dead", "won", "curriculum_complete"])
+def test_discounted_potential_telescopes_at_every_true_task_terminal(terminal):
+    config = RewardConfig()
+    tracker = RewardTracker(config)
+    initial = observation()
+    initial["grid"][10, 15, GridChannel.TERRAIN_CLASS] = Terrain.STAIRS
+    initial["grid"][10, 15, GridChannel.VISIBILITY] = 2
+    tracker.reset(initial, dict(zone=1, floor=1))
+    initial_potential = tracker.stair_potential
+    total = 0.0
+    # Approach, reverse, wait, terminate: no discounted shaping profit survives.
+    for t, x in enumerate((1, 0, 0, 2)):
+        _, parts = tracker.score(
+            observation(x=x),
+            dict(zone=1, floor=1, episode_status=terminal if t == 3 else "running"),
+            [],
+            terminated=t == 3,
+            truncated=False,
+        )
+        total += config.discount**t * parts.get("stair_potential", 0)
+    assert total == pytest.approx(-initial_potential)
+
+
+@pytest.mark.parametrize(
+    "field,value", [("enemy_damage", -1), ("new_position", -1), ("max_currency_per_turn", 1.5)]
+)
+def test_reward_configuration_rejects_values_accounting_would_silently_ignore(field, value):
+    with pytest.raises(ValueError):
+        RewardConfig(**{field: value})
+
+
+def test_evaluation_rejects_changed_reward_accounting_without_reference_override():
+    from autodancer.rewards import reward_semantics
+    from autodancer.training.baseline import validate_checkpoint_reward_schema
+
+    config = RewardConfig()
+    checkpoint = dict(
+        checkpoint_metadata=dict(reward=config.specification(), reward_semantics=reward_semantics())
+    )
+    validate_checkpoint_reward_schema(checkpoint, config)
+    checkpoint["checkpoint_metadata"]["reward_semantics"]["version"] = 999
+    with pytest.raises(ValueError, match="accounting"):
+        validate_checkpoint_reward_schema(checkpoint, config)
+    validate_checkpoint_reward_schema(checkpoint, config, source_reference=True)
+
+
 def test_reward_configuration_rejects_unknown_fields(tmp_path) -> None:
     path = tmp_path / "reward.json"
     path.write_text('{"turn": -0.01, "survival": 9}', encoding="utf-8")
@@ -367,7 +494,8 @@ def test_shaping_budgets_reset_on_floor_transition() -> None:
     assert "new_position" not in capped
     assert "enemy_kill" not in capped
     assert "new_item_type" not in capped
-    assert reset["new_position"] == reset["enemy_kill"] == 0.1
+    assert reset["new_position"] == 0.1
+    assert "enemy_kill" not in reset  # The final kill belongs to the capped departing floor.
 
 
 def test_reward_components_split_task_and_shaping_returns() -> None:

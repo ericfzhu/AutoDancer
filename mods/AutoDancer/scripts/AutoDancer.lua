@@ -56,14 +56,17 @@ local function isLocalPlayer(entity)
 end
 
 local function queueEvent(kind, amount, entity, data)
+    data = data or {}
+    -- Capture location when the effect happens, before a stair transition can
+    -- replace CurrentLevel. Reward budgets must not spill into the next floor.
+    data.zone = CurrentLevel.getZone()
+    data.floor = CurrentLevel.getFloor()
     local value = {
         kind = kind,
         amount = amount or 0,
         entity_id = entity and entity.id or 0,
     }
-    if data then
-        value.data = data
-    end
+    value.data = data
     pendingEvents[#pendingEvents + 1] = value
 end
 

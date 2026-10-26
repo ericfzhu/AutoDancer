@@ -37,6 +37,7 @@ from autodancer.rewards import (
     RewardTracker,
     load_reward_config,
     reward_config_from_specification,
+    reward_semantics,
 )
 from autodancer.training.action_contract import (
     ACTION_CONTRACTS,
@@ -115,6 +116,13 @@ def validate_checkpoint_reward_schema(
     checkpoint_version = checkpoint.get("checkpoint_metadata", {}).get("reward", {}).get("version")
     if checkpoint_version != evaluation_reward.profile_version and not source_reference:
         raise ValueError("Evaluation reward schema disagrees with the checkpoint")
+    saved_semantics = checkpoint.get("checkpoint_metadata", {}).get("reward_semantics")
+    if (
+        saved_semantics is not None
+        and saved_semantics != reward_semantics()
+        and not source_reference
+    ):
+        raise ValueError("Evaluation reward accounting disagrees with the checkpoint")
 
 
 def resolve_policy_feedback_config(
@@ -1740,7 +1748,7 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
     model = expected.to(device)
     model.load_state_dict(payload["model"])
     model.eval()
-    if architecture.get("version") == 9 and arguments.action_contract != "current":
+    if architecture.get("version") in {9, 10} and arguments.action_contract != "current":
         raise ValueError("Architecture 9 currently requires action contract current")
     natural_prefix = (
         None
@@ -1920,6 +1928,13 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, Any]:
         "checkpoint_freeze_base_scope": checkpoint_metadata.get("freeze_base_scope"),
         "checkpoint_initialization": checkpoint_metadata.get("initialization"),
         "evaluation_reward": reward_config.specification(),
+        "reward_semantics": reward_semantics(),
+        "reward_semantics_matches_checkpoint": (
+            checkpoint_metadata.get("reward_semantics") == reward_semantics()
+        ),
+        "information_policy": model.architecture_spec().get("information"),
+        "task_contract": model.architecture_spec().get("task"),
+        "policy_consumes_reward_feedback": model.architecture_spec().get("version") != 10,
         "policy_feedback_reward": (policy_feedback_config.specification()),
         "checkpoint_policy_feedback_reward": checkpoint_feedback_spec,
         "policy_feedback_source": policy_feedback_source,
