@@ -8,7 +8,7 @@ local function applyEquipmentEffectFixture(player, result, sequence)
     local Tile = require "necro.game.tile.Tile"
     local px, py = player.position.x, player.position.y
     if not effectState or effectState.level ~= CurrentLevel.getUniqueID() then
-        effectState = {level=CurrentLevel.getUniqueID(), x=px, y=py, enemies={}}
+        effectState = {level=CurrentLevel.getUniqueID(), x=px, y=py, enemies={},world={}}
         local remove = {}
         for entity in Entities.entitiesWithComponents({"position"}) do
             if entity.id ~= player.id and entity.gameObject and entity.gameObject.tangible
@@ -77,6 +77,20 @@ local function applyEquipmentEffectFixture(player, result, sequence)
             enemy.health.health = enemy.health.maxHealth
             effectState.enemies[#effectState.enemies+1] = enemy.id
         end
+        for _,tile in ipairs(spec.worldTiles or {}) do
+            Tile.setType(px+tile.x,py+tile.y,tile.name)
+        end
+        for _,entry in ipairs(spec.worldEntities or {}) do
+            local entity = Object.spawn(entry.name,px+entry.x,py+entry.y)
+            for component,fields in pairs(entry.fields or {}) do
+                assert(entity[component],"Missing world fixture component: "..component)
+                for field,value in pairs(fields) do
+                    assert(entity[component][field] ~= nil,"Unknown world fixture field: "..field)
+                    entity[component][field] = value
+                end
+            end
+            effectState.world[#effectState.world+1] = {id=entity.id,name=entry.name}
+        end
     end
     if sequence == 1 and not effectState.injected then
         effectState.injected = true
@@ -86,8 +100,22 @@ local function applyEquipmentEffectFixture(player, result, sequence)
         end
         if spec.replace then Inventory.replace(spec.replace,player) end
         if spec.healAfterDamage then player.health.health = player.health.health + spec.healAfterDamage end
+        for index,components in pairs(spec.worldChange or {}) do
+            local entity = assert(Entities.getEntityByID(effectState.world[index].id))
+            for component,fields in pairs(components) do
+                for field,value in pairs(fields) do entity[component][field] = value end
+            end
+        end
     end
-    local evidence = {enemies={}, wall=Tile.getInfo(effectState.x+1,effectState.y).name}
+    local evidence = {enemies={},world={},wall=Tile.getInfo(effectState.x+1,effectState.y).name}
+    for _,entry in ipairs(effectState.world) do
+        local entity = Entities.getEntityByID(entry.id)
+        if entity then
+            evidence.world[#evidence.world+1] = {id=entry.id,name=entity.name,
+                x=entity.position.x-player.position.x,y=entity.position.y-player.position.y,
+                visible=not not Vision.isVisible(entity.position.x,entity.position.y)}
+        end
+    end
     for _,id in ipairs(effectState.enemies) do
         local enemy = Entities.getEntityByID(id)
         evidence.enemies[#evidence.enemies+1] = {

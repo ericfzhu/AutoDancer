@@ -19,6 +19,9 @@ from autodancer.experiments.schema import atomic_json
 from autodancer.live.supervisor import SupervisorConfig
 from autodancer.observation import observation_space
 
+POST_QUALIFICATION = None
+EXTRA_EVIDENCE_FILES = []
+
 CASES = (
     (1015001, "dagger_throw", [Action.THROW, Action.RIGHT]),
     (1015002, "dagger_repeat", [Action.THROW, Action.THROW, Action.WAIT]),
@@ -212,6 +215,9 @@ FIXTURE = r"""
 
 
 def snapshot(obs, info):
+    for event in info.get("raw_events", []):
+        assert type(event.get("data", {}).get("zone")) is int
+        assert type(event.get("data", {}).get("floor")) is int
     state = info["equipment_state"]
     assert state and state["current"], "Missing current live equipment extension"
     assert info.get("telemetry_timing") == "settled-input-v1"
@@ -221,8 +227,12 @@ def snapshot(obs, info):
         f["known"] for item in state["items"] for f in item["facts"].values() if f["applicable"]
     ), "An applicable equipment field was not captured"
     contract = info.get("equipment_observation_contract")
+    world = info.get("world_observation_contract")
     if contract is not None:
-        assert observation_space(equipment_capacity=contract["capacity"]).contains(obs)
+        assert observation_space(
+            equipment_capacity=contract["capacity"],
+            world_capacity=world["capacity"] if world else None,
+        ).contains(obs)
         count = (
             len(state["display"]["items"])
             if contract["profile"] == "player-v1"
@@ -230,6 +240,14 @@ def snapshot(obs, info):
         )
         assert int((obs["equipment_items"][:, 0] != 0).sum()) == count
     return {
+        "information_contract": info.get("information_contract"),
+        "task_contract": info.get("task_contract"),
+        "task_context": obs["task_context"].tolist() if "task_context" in obs else None,
+        "world": info.get("world_state"),
+        "world_observation_contract": world,
+        "world_tensors": {
+            key: value.tolist() for key, value in obs.items() if key.startswith("world_")
+        },
         "equipment_observation_contract": contract,
         "equipment_tensors": {
             key: obs[key].tolist()
@@ -525,6 +543,7 @@ def main():
     parser.add_argument("--effects", action="store_true")
     parser.add_argument("--pickup-sweep", action="store_true")
     parser.add_argument("--player-observations", action="store_true")
+    parser.add_argument("--world-observations", action="store_true")
     parser.add_argument(
         "--exercise-catalog", action="store_true", help="Also attempt item controls, RIGHT and WAIT"
     )
@@ -643,6 +662,7 @@ def main():
         "effects": args.effects,
         "pickup_sweep": args.pickup_sweep,
         "player_observations": args.player_observations,
+        "world_observations": args.world_observations,
         "equipment_observations": args.equipment_observations,
         "cases": [],
         "failures": [],
@@ -659,6 +679,8 @@ def main():
                 game / "lua51.dll",
                 *Path("src/autodancer").rglob("*.py"),
                 Path("src/autodancer/data/equipment_registry.json"),
+                Path("src/autodancer/data/world_registry.json"),
+                *EXTRA_EVIDENCE_FILES,
                 *sorted((host / "dlc").glob("*.necromod")),
             ]
         },
@@ -689,8 +711,9 @@ def main():
                 equipment_profile="player-v1"
                 if args.player_observations
                 else "internal-v1"
-                if args.equipment_observations
+                if args.equipment_observations or args.world_observations
                 else "legacy",
+                world_capacity=256 if args.world_observations else None,
                 profile_root=root / "profiles",
                 diagnostic_root=root / "diagnostics",
             )
@@ -799,6 +822,8 @@ def main():
                 obs, info = env.reset(seed=1015001)
                 assert info["floor"] == 1 and info["sequence"] == 0
                 assert fact(snapshot(obs, info), "WeaponDagger", "activation_active") is False
+                if POST_QUALIFICATION is not None:
+                    POST_QUALIFICATION(env, supervisor, result)
             finally:
                 env.close()
             handle = supervisor.workers[supervisor.worker_ids[0]]
