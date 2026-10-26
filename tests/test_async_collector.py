@@ -27,6 +27,7 @@ from autodancer.constants import (
     Terrain,
 )
 from autodancer.curriculum import EpisodeCurriculumSchedule, EpisodeResetSpec, WeightedResetSpec
+from autodancer.live.protocol import ProtocolError
 from autodancer.rewards import RewardConfig
 from autodancer.training.async_collector import ActorState, VersionedAsyncRolloutCollector
 from autodancer.training.baseline import _evaluate_model_async
@@ -976,29 +977,30 @@ def test_episode_metrics_distinguish_curriculum_success_and_time_limits() -> Non
     assert metrics["furthest_level"] == 5
 
 
-def test_async_collector_discards_only_failed_slot_fragment() -> None:
-    environment = AsyncEnvironment()
-    original = environment.environments["worker-0001"]
-    original_step = original.step
-    failed = False
-    recoveries: list[tuple[int, int, object]] = []
+@pytest.mark.parametrize(
+    "failure", [TimeoutError("worker disconnected"), ProtocolError("unknown world type")]
+)
+def test_async_collector_stops_and_retains_failed_fragment(failure):
+    from autodancer.envs.vector import VectorInfrastructureError
 
-    def fail_once(action: int):
-        nonlocal failed
-        if not failed:
-            failed = True
-            raise TimeoutError("worker disconnected")
+    environment = AsyncEnvironment()
+    worker = environment.environments["worker-0001"]
+    original_step = worker.step
+    calls = 0
+
+    def fail_second(action):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise failure
         return original_step(action)
 
-    original.step = fail_once  # type: ignore[method-assign]
-    original_recover = environment.recover
+    worker.step = fail_second
 
-    def recover(index: int, seed: int, *, options=None, failure=None):
-        del failure
-        recoveries.append((index, seed, options))
-        return original_recover(index, seed, options=options)
+    def no_recovery(*args, **kwargs):
+        pytest.fail("Invalid collection must not restart a worker")
 
-    environment.recover = recover  # type: ignore[method-assign]
+    environment.recover = no_recovery
     model = RecurrentActorCritic(
         ModelConfig(
             cell_size=16,
@@ -1010,20 +1012,21 @@ def test_async_collector_discards_only_failed_slot_fragment() -> None:
         )
     )
     collector = VersionedAsyncRolloutCollector(
-        environment, model, device=torch.device("cpu"), seed=4, batch_delay=0.001
+        environment, model, device=torch.device("cpu"), seed=4
     )
-    failed_seed = int(collector.states[1].info["seed"])
-    failed_spec = collector.states[1].reset_spec.as_dict()
     try:
-        rollout = collector.collect(2)
+        with pytest.raises(VectorInfrastructureError):
+            collector.collect(3)
+        with pytest.raises(RuntimeError, match="invalid"):
+            collector.collect(1)
+        assert calls == 2
+        diagnostic = environment.infrastructure_events[0]["context"]
+        assert diagnostic["fragment_valid"] is False
+        assert len(diagnostic["partial_fragment"]["rewards"]) == 1
+        assert diagnostic["last_observation"]
+        assert collector.completed_episodes == []
     finally:
         collector.close()
-    assert rollout.actions.shape == (2, 2)
-    assert recoveries == [(1, failed_seed, {"curriculum": failed_spec})]
-    assert collector.states[1].previous_action != -1
-    assert collector.last_runtime_metrics["collector_recoveries"] == 1
-    assert collector.last_runtime_metrics["collector_recovery_timeouterror"] == 1
-    assert "worker disconnected" in collector.last_runtime_metrics["last_recovery_error"]
 
 
 def test_stochastic_actions_are_independent_of_worker_timing() -> None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -32,6 +31,7 @@ class AutoDancerVectorEnv:
         }
         self._executor = ThreadPoolExecutor(max_workers=len(self.worker_ids))
         self.infrastructure_events: list[dict[str, Any]] = []
+        self._invalid = False
 
     @property
     def num_envs(self) -> int:
@@ -49,6 +49,8 @@ class AutoDancerVectorEnv:
         seeds: list[int] | np.ndarray,
         options: list[dict[str, Any] | None] | None = None,
     ) -> tuple[dict[str, np.ndarray], list[dict[str, Any]]]:
+        if self._invalid:
+            raise RuntimeError("Vector environment is invalid after a failed operation")
         if len(seeds) != self.num_envs:
             raise ValueError(f"Expected {self.num_envs} seeds, received {len(seeds)}")
         reset_options = [None] * self.num_envs if options is None else options
@@ -70,17 +72,9 @@ class AutoDancerVectorEnv:
         for index, future in enumerate(futures):
             try:
                 results.append(future.result())
-            except MapCapacityError:
-                raise
-            except (TimeoutError, NativePipeError, ProtocolError) as error:
-                results.append(
-                    self.recover(
-                        index,
-                        int(seeds[index]),
-                        options=reset_options[index],
-                        failure=self._failure(index, error, operation="reset"),
-                    )
-                )
+            except (TimeoutError, NativePipeError, ProtocolError, MapCapacityError) as error:
+                self._failure(index, error, operation="reset")
+                raise VectorInfrastructureError(index, self.worker_ids[index], error) from error
         return self._stack([result[0] for result in results]), [result[1] for result in results]
 
     def step(
@@ -92,6 +86,8 @@ class AutoDancerVectorEnv:
         np.ndarray,
         list[dict[str, Any]],
     ]:
+        if self._invalid:
+            raise RuntimeError("Vector environment is invalid after a failed operation")
         if len(actions) != self.num_envs:
             raise ValueError(f"Expected {self.num_envs} actions, received {len(actions)}")
         started = time.monotonic()
@@ -103,18 +99,12 @@ class AutoDancerVectorEnv:
         for index, future in enumerate(futures):
             try:
                 results.append(future.result())
-            except MapCapacityError:
-                raise
-            except (TimeoutError, NativePipeError, ProtocolError) as error:
-                self.recover(
+            except (TimeoutError, NativePipeError, ProtocolError, MapCapacityError) as error:
+                self._failure(
                     index,
-                    secrets.randbelow(2**31),
-                    failure=self._failure(
-                        index,
-                        error,
-                        operation="step",
-                        action=int(actions[index]),
-                    ),
+                    error,
+                    operation="step",
+                    action=int(actions[index]),
                 )
                 raise VectorInfrastructureError(index, self.worker_ids[index], error) from error
         latency = time.monotonic() - started
@@ -138,6 +128,8 @@ class AutoDancerVectorEnv:
         seeds: list[int],
         options: list[dict[str, Any] | None] | None = None,
     ) -> list[tuple[dict[str, np.ndarray], dict[str, Any]]]:
+        if self._invalid:
+            raise RuntimeError("Vector environment is invalid after a failed operation")
         if len(indices) != len(seeds):
             raise ValueError("indices and seeds must have the same length")
         reset_options = [None] * len(indices) if options is None else options
@@ -149,27 +141,15 @@ class AutoDancerVectorEnv:
                 seed=int(seed),
                 options=worker_options,
             )
-            for index, seed, worker_options in zip(
-                indices, seeds, reset_options, strict=True
-            )
+            for index, seed, worker_options in zip(indices, seeds, reset_options, strict=True)
         ]
         results = []
-        for index, seed, worker_options, future in zip(
-            indices, seeds, reset_options, futures, strict=True
-        ):
+        for index, future in zip(indices, futures, strict=True):
             try:
                 results.append(future.result())
-            except MapCapacityError:
-                raise
-            except (TimeoutError, NativePipeError, ProtocolError) as error:
-                results.append(
-                    self.recover(
-                        index,
-                        int(seed),
-                        options=worker_options,
-                        failure=self._failure(index, error, operation="reset_at"),
-                    )
-                )
+            except (TimeoutError, NativePipeError, ProtocolError, MapCapacityError) as error:
+                self._failure(index, error, operation="reset_at")
+                raise VectorInfrastructureError(index, self.worker_ids[index], error) from error
         return results
 
     def _failure(
@@ -191,6 +171,12 @@ class AutoDancerVectorEnv:
             **(context or {}),
         }
         self.infrastructure_events.append(value)
+        self._invalid = True
+        # Capture evidence without restarting or resampling the failed episode.
+        try:
+            self.supervisor.record_failure(self.worker_ids[worker_index], value)
+        except Exception as diagnostic_error:
+            error.add_note(f"Could not persist failure diagnostic: {diagnostic_error}")
         return value
 
     def recover(

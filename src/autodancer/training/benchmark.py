@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.envs.vector import AutoDancerVectorEnv, VectorInfrastructureError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.training.train import default_mod_dir
 
@@ -20,23 +20,29 @@ def _run_slot(environment: AutoDancerVectorEnv, index: int, steps: int) -> dict[
     worker_id = environment.worker_ids[index]
     worker = environment.environments[worker_id]
     rng = np.random.default_rng(10_000 + index)
-    observation, _ = worker.reset(seed=int(rng.integers(0, 2**31)))
+    observation, _ = environment.reset_at([index], [int(rng.integers(0, 2**31))])[0]
     latencies: list[float] = []
     completed = 0
     restarts = 0
     slot_started = time.monotonic()
     while completed < steps:
+        if environment._invalid:
+            raise RuntimeError("Benchmark stopped after a worker failure")
         valid = np.flatnonzero(observation["action_mask"])
         action = int(valid[completed % len(valid)])
         started = time.monotonic()
         try:
             observation, reward, terminated, truncated, info = worker.step(action)
             del reward
-        except Exception:
-            observation, _ = environment.recover(index, int(rng.integers(0, 2**31)))
-            worker = environment.environments[worker_id]
-            restarts += 1
-            continue
+        except Exception as error:
+            environment._failure(
+                index,
+                error,
+                operation="throughput_benchmark",
+                action=action,
+                context={"completed_steps": completed, "benchmark_valid": False},
+            )
+            raise VectorInfrastructureError(index, worker_id, error) from error
         latencies.append(time.monotonic() - started)
         handle = environment.supervisor.workers[worker_id]
         handle.last_latency = latencies[-1]
@@ -47,7 +53,7 @@ def _run_slot(environment: AutoDancerVectorEnv, index: int, steps: int) -> dict[
         )
         completed += 1
         if terminated or truncated:
-            observation, _ = worker.reset(seed=int(rng.integers(0, 2**31)))
+            observation, _ = environment.reset_at([index], [int(rng.integers(0, 2**31))])[0]
     elapsed = time.monotonic() - slot_started
     return {
         "worker_id": worker_id,

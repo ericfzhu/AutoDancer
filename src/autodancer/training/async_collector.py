@@ -25,8 +25,10 @@ from autodancer.curriculum import (
     WeightedResetSpec,
     fixed_reset_spec,
 )
+from autodancer.envs.vector import VectorInfrastructureError
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import ProtocolError
+from autodancer.memory import MapCapacityError
 from autodancer.progress import deeper_level
 from autodancer.rewards import RewardConfig, RewardTracker
 from autodancer.training.action_contract import ActionContractMemory
@@ -520,6 +522,8 @@ class VersionedAsyncRolloutCollector:
         self.last_reward_components: dict[str, float] = {}
         self.last_runtime_metrics: dict[str, Any] = {}
         self._stage_timings: list[dict[str, float]] = [{} for _ in self.states]
+        self._invalid = False
+        self._partial_fragments: dict[int, dict[str, Any]] = {}
         self.policy_version = int(initial_policy_version)
         self._recovery_lock = threading.Lock()
         self._recovery_counts: dict[str, int] = {}
@@ -652,6 +656,8 @@ class VersionedAsyncRolloutCollector:
         return self.curriculum_schedule.state_dict()
 
     def collect(self, length: int) -> RolloutBatch:
+        if self._invalid:
+            raise RuntimeError("Collector is invalid after a failed fragment")
         with self._recovery_lock:
             recoveries_before = self._recovery_total
             counts_before = self._recovery_counts.copy()
@@ -669,8 +675,26 @@ class VersionedAsyncRolloutCollector:
         ]
         try:
             fragments = [future.result() for future in futures]
+        except BaseException as error:
+            primary_error = error
+            self._invalid = True
+            # Let in-flight requests finish before closing their inference service.
+            # No partial batch is returned or submitted to PPO.
+            for future in futures:
+                future.cancel()
+            for future in futures:
+                try:
+                    future.result()
+                except VectorInfrastructureError as worker_error:
+                    primary_error = worker_error
+                except BaseException:
+                    pass
+            if primary_error is error:
+                raise
+            raise primary_error from error
         finally:
             scheduler.close()
+        self._partial_fragments.clear()
         elapsed = time.monotonic() - started
         self.completed_episodes.extend(
             episode for fragment in fragments for episode in fragment.completed_episodes
@@ -770,54 +794,37 @@ class VersionedAsyncRolloutCollector:
     def _collect_slot(
         self, index: int, length: int, scheduler: InferenceScheduler
     ) -> ActorFragment:
-        while True:
-            try:
-                return self._collect_slot_once(index, length, scheduler)
-            except (TimeoutError, NativePipeError, ProtocolError) as error:
-                reason = type(error).__name__.lower()
-                with self._recovery_lock:
-                    self._recovery_total += 1
-                    self._recovery_counts[reason] = self._recovery_counts.get(reason, 0) + 1
-                    self._last_recovery_error = f"{type(error).__name__}: {error}"
-                state = self.states[index]
-                failure = self.environment._failure(
-                    index,
-                    error,
-                    operation="async_collect",
-                    context={
-                        "policy_version": self.policy_version,
-                        "run_id": state.info.get("run_id"),
-                        "seed": state.info.get("seed"),
-                        "sequence": state.info.get("sequence"),
-                        "previous_action": state.previous_action,
-                        "observation_summary": {
-                            "player": state.observation["player"].tolist(),
-                            "legal_actions": np.flatnonzero(
-                                state.observation["action_mask"]
-                            ).tolist(),
-                        },
+        if self._invalid:
+            raise RuntimeError("Collector is invalid after a failed fragment")
+        try:
+            return self._collect_slot_once(index, length, scheduler)
+        except (TimeoutError, NativePipeError, ProtocolError, MapCapacityError) as error:
+            self._invalid = True
+            state = self.states[index]
+            partial = self._partial_fragments.get(index, {})
+            self.environment._failure(
+                index,
+                error,
+                operation="async_collect",
+                context={
+                    "policy_version": self.policy_version,
+                    "run_id": state.info.get("run_id"),
+                    "seed": state.info.get("seed"),
+                    "sequence": state.info.get("sequence"),
+                    "previous_action": state.previous_action,
+                    "fragment_valid": False,
+                    "partial_fragment": {
+                        key: {k: [v.tolist() for v in values] for k, values in value.items()}
+                        if isinstance(value, dict)
+                        else [v.tolist() for v in value]
+                        for key, value in partial.items()
                     },
-                )
-                observation, info = self.environment.recover(
-                    index,
-                    int(state.info.get("seed", 0)),
-                    options=state.reset_spec.reset_options(),
-                    failure=failure,
-                )
-                prefix_pending = self._prefix_pending(
-                    state.reset_spec, int(info.get("seed", state.info.get("seed", 0)))
-                )
-                if not prefix_pending:
-                    observation = self.contract_memory.reset_slot(index, observation)
-                self.states[index] = ActorState(
-                    observation,
-                    info,
-                    self.model.initial_state(1, device=self.device),
-                    state.reset_spec,
-                    prefix_pending=prefix_pending,
-                )
-                self._reset_policy_feedback(index, observation, info)
-                self._publish_telemetry(index, observation, info, None, None)
+                    "last_observation": {k: v.tolist() for k, v in state.observation.items()},
+                },
+            )
+            raise VectorInfrastructureError(
+                index, self.environment.worker_ids[index], error
+            ) from error
 
     def _collect_slot_once(
         self, index: int, length: int, scheduler: InferenceScheduler
@@ -839,6 +846,13 @@ class VersionedAsyncRolloutCollector:
         starts: list[Tensor] = []
         values: list[Tensor] = []
         hiddens: list[Tensor] = []
+        self._partial_fragments[index] = {
+            "observations": observations,
+            "actions": actions,
+            "rewards": rewards,
+            "dones": dones,
+            "terminations": terminations,
+        }
         episodes: list[dict[str, Any]] = []
         components: dict[str, float] = {}
         inference_wait = 0.0
@@ -853,6 +867,8 @@ class VersionedAsyncRolloutCollector:
         started = time.monotonic()
         self._stage_timings[index] = {}
         for fragment_step in range(length):
+            if self._invalid:
+                raise RuntimeError("Collection stopped after another worker failed")
             while state.prefix_pending:
                 try:
                     state = (

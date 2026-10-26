@@ -38,9 +38,7 @@ def _directory_manifest(root: Path) -> dict[str, bytes]:
     }
 
 
-def synchronize_authoritative_mod(
-    source: Path, destination: Path, *, backup_root: Path
-) -> bool:
+def synchronize_authoritative_mod(source: Path, destination: Path, *, backup_root: Path) -> bool:
     """Atomically install the repository mod when the game's shared mod is stale."""
     source = source.resolve()
     destination = destination.resolve()
@@ -128,9 +126,7 @@ class SupervisorConfig:
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
         if self.curriculum_profile not in CURRICULUM_PROFILES:
-            raise ValueError(
-                "curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES)
-            )
+            raise ValueError("curriculum_profile must be one of " + ", ".join(CURRICULUM_PROFILES))
         if self.curriculum_profile != "normal" and self.curriculum_start_level <= 1:
             raise ValueError("assisted curriculum profiles require a later start level")
         if (
@@ -165,9 +161,7 @@ class InstanceHandle:
     last_latency: float = 0.0
     episode_status: str = "uninitialized"
     last_acknowledged_command: int = 0
-    command_lifecycle: deque[dict[str, Any]] = field(
-        default_factory=lambda: deque(maxlen=128)
-    )
+    command_lifecycle: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=128))
     last_heartbeat: dict[str, Any] | None = None
     outstanding_command_since: float | None = None
     last_frame_bytes: int = 0
@@ -227,9 +221,7 @@ class AutoDancerSupervisor:
         synchronize_authoritative_mod(
             self.config.mod_dir,
             local_app_data / "NecroDancer" / "mods" / "AutoDancer",
-            backup_root=self.config.diagnostic_root
-            / self.session_id
-            / "installed-mod-backups",
+            backup_root=self.config.diagnostic_root / self.session_id / "installed-mod-backups",
         )
 
     def _refuse_existing_processes(self) -> None:
@@ -405,8 +397,7 @@ class AutoDancerSupervisor:
         )
         self.workers[worker_id] = handle
         if (
-            self.config.qualification_startup_fault_slot
-            == self.worker_ids.index(worker_id)
+            self.config.qualification_startup_fault_slot == self.worker_ids.index(worker_id)
             and restart_count == 0
         ):
             self._terminate_process(process)
@@ -550,9 +541,14 @@ class AutoDancerSupervisor:
         shutil.copy2(handle.log_path, archived)
         return archived
 
-    def _capture_failure(
-        self, handle: InstanceHandle, failure: dict[str, Any]
-    ) -> dict[str, Any]:
+    def record_failure(self, worker_id: str, failure: dict[str, Any]) -> dict[str, Any]:
+        """Persist an invalid-run diagnostic without replacing the worker."""
+        handle = self.workers[worker_id]
+        bundle = self._capture_failure(handle, failure)
+        handle.failure_history.append(bundle)
+        return bundle
+
+    def _capture_failure(self, handle: InstanceHandle, failure: dict[str, Any]) -> dict[str, Any]:
         process = self._worker_processes.get(handle.instance_id)
         process_state: dict[str, Any] = {
             "pid": handle.pid,
@@ -576,9 +572,9 @@ class AutoDancerSupervisor:
                 pass
         log_tail: list[str] = []
         if handle.log_path.is_file():
-            log_tail = handle.log_path.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines()[-200:]
+            log_tail = handle.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[
+                -200:
+            ]
         payload = {
             "schema_version": 1,
             "captured_at": time.time(),

@@ -744,6 +744,7 @@ def train(arguments: argparse.Namespace) -> None:
                     arguments.policy_feedback_reward_config
                 ),
                 "action_contract": arguments.action_contract,
+                "failure_policy": "stop-run-v1",
                 "training_seed_schedule": (
                     "reset-conditioned-uniform-pools-v1"
                     if training_seed_pools is not None
@@ -813,6 +814,7 @@ def train(arguments: argparse.Namespace) -> None:
     if dashboard_server is not None:
         dashboard_server.start()
         print(json.dumps({"dashboard_url": dashboard_server.url}, sort_keys=True))
+    collector = None
     try:
         with AutoDancerSupervisor(supervisor_config) as supervisor:
             environment = AutoDancerVectorEnv(supervisor)
@@ -869,6 +871,7 @@ def train(arguments: argparse.Namespace) -> None:
                             else policy_feedback_config.specification()
                         ),
                         "action_contract": arguments.action_contract,
+                        "failure_policy": "stop-run-v1",
                         "max_turns": arguments.max_turns,
                         "training_level_distribution_version": (training_distribution_version),
                         **seed_checkpoint_metadata,
@@ -1121,6 +1124,8 @@ def train(arguments: argparse.Namespace) -> None:
                             latest,
                             arguments.run_dir / f"checkpoint-{algorithm.global_step:08d}.pt",
                         )
+                from autodancer.experiments.schema import atomic_json
+
                 algorithm.save(arguments.run_dir / "final.pt", metrics=metrics)
                 collector.close()
                 if dashboard_state is not None:
@@ -1144,6 +1149,7 @@ def train(arguments: argparse.Namespace) -> None:
                             ),
                             "initialized_from": algorithm.checkpoint_metadata.get("initialization"),
                             "action_contract": arguments.action_contract,
+                            "failure_policy": "stop-run-v1",
                             "max_turns": arguments.max_turns,
                             "training_seed_schedule": (
                                 "uniform-pool-v1" if training_seed_pool else "unbounded-random-v1"
@@ -1206,6 +1212,10 @@ def train(arguments: argparse.Namespace) -> None:
                     ),
                     encoding="utf-8",
                 )
+                atomic_json(
+                    arguments.run_dir / "run-status.json",
+                    {"status": "complete", "completed": True, "global_step": algorithm.global_step},
+                )
                 if tracker is not None:
                     tracker.complete(
                         [
@@ -1217,8 +1227,27 @@ def train(arguments: argparse.Namespace) -> None:
                         summary=metrics,
                     )
             finally:
+                if collector is not None:
+                    collector.close()
                 environment.close()
     except BaseException as error:
+        from autodancer.experiments.schema import atomic_json
+
+        try:
+            atomic_json(
+                arguments.run_dir / "run-status.json",
+                {
+                    "status": "invalid",
+                    "completed": False,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                    "global_step": algorithm.global_step if "algorithm" in locals() else 0,
+                },
+            )
+            if dashboard_state is not None:
+                dashboard_state.set_status("invalid")
+        except Exception as diagnostic_error:
+            error.add_note(f"Could not persist invalid-run status: {diagnostic_error}")
         if tracker is not None:
             try:
                 tracker.fail(error)

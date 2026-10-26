@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from autodancer.envs.vector import AutoDancerVectorEnv, VectorInfrastructureError
-from autodancer.live.supervisor import SupervisorError
+from autodancer.live.protocol import ProtocolError
 
 
 def observation(value: int) -> dict[str, np.ndarray]:
@@ -66,6 +66,9 @@ class FakeSupervisor:
     def environment(self, worker_id: str) -> FakeEnvironment:
         return self.environments[worker_id]
 
+    def record_failure(self, worker_id, failure):
+        self.failure = (worker_id, failure)
+
     def replace_worker(self, worker_id: str, *, failure=None) -> None:
         del failure
         self.replacements.append(worker_id)
@@ -75,7 +78,7 @@ class FakeSupervisor:
         self.closed = True
 
 
-def test_vector_env_preserves_slot_order_and_replaces_failed_worker() -> None:
+def test_vector_env_preserves_slot_order_and_stops_on_failed_worker() -> None:
     supervisor = FakeSupervisor()
     environment = AutoDancerVectorEnv(supervisor)  # type: ignore[arg-type]
     reset_options = [
@@ -89,21 +92,29 @@ def test_vector_env_preserves_slot_order_and_replaces_failed_worker() -> None:
 
     with pytest.raises(VectorInfrastructureError, match="worker-0001"):
         environment.step([3, 4])
-    assert supervisor.replacements == ["worker-0001"]
+    assert supervisor.replacements == []
+    assert supervisor.failure[0] == "worker-0001"
     assert environment.infrastructure_events[0]["operation"] == "step"
     environment.close()
     assert supervisor.closed
 
 
-def test_vector_env_propagates_fixed_capacity_replacement_failure() -> None:
+@pytest.mark.parametrize("operation", ["reset", "reset_at"])
+def test_vector_reset_failure_is_not_retried(operation):
     supervisor = FakeSupervisor()
 
-    def fail_replacement(worker_id: str, *, failure=None) -> None:
-        del failure
-        raise SupervisorError(f"could not restore {worker_id}")
+    def invalid_reset(**kwargs):
+        raise ProtocolError("Unknown world identity")
 
-    supervisor.replace_worker = fail_replacement  # type: ignore[method-assign]
-    environment = AutoDancerVectorEnv(supervisor)  # type: ignore[arg-type]
-    with pytest.raises(SupervisorError, match="could not restore worker-0001"):
-        environment.step([0, 0])
-    environment.close()
+    supervisor.environments["worker-0001"].reset = invalid_reset
+    environment = AutoDancerVectorEnv(supervisor)
+    try:
+        with pytest.raises(VectorInfrastructureError, match="Unknown world identity"):
+            if operation == "reset":
+                environment.reset([11, 22])
+            else:
+                environment.reset_at([1], [22])
+        assert not supervisor.replacements
+        assert supervisor.failure[1]["operation"] == operation
+    finally:
+        environment.close()

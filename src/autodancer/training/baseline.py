@@ -25,11 +25,12 @@ from autodancer.constants import (
     PlayerFeature,
     Terrain,
 )
-from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.envs.vector import AutoDancerVectorEnv, VectorInfrastructureError
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.native_pipe import NativePipeError
 from autodancer.live.protocol import SUPPORTED_GAME_VERSION, SUPPORTED_STEAM_BUILD, ProtocolError
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
+from autodancer.memory import MapCapacityError
 from autodancer.progress import deeper_level, level_progress
 from autodancer.rewards import (
     RewardConfig,
@@ -859,8 +860,7 @@ def evaluation_worker_turn_limit(
         limits.append(int(natural_prefix.max_guide_turns) + 1)
     if trace_prefix is not None:
         limits.append(
-            max(len(trace.actions) - trace_prefix.tail_actions for trace in trace_prefix.traces)
-            + 1
+            max(len(trace.actions) - trace_prefix.tail_actions for trace in trace_prefix.traces) + 1
         )
     return max(limits)
 
@@ -1376,6 +1376,7 @@ def _evaluate_model_async(
         raise ValueError("guide_model, natural_prefix, and guide_reward must be supplied together")
     if trace_prefix is not None and natural_prefix is not None:
         raise ValueError("natural-prefix and trace-prefix evaluation are mutually exclusive")
+    failures: list[VectorInfrastructureError] = []
     results: list[dict[str, Any]] = []
     parking_seed = 2_100_000_000
     model.eval()
@@ -1427,8 +1428,9 @@ def _evaluate_model_async(
             )
             if feedback_tracker is not None:
                 feedback_tracker.reset(observation, info)
-            attempts = 0
             while True:
+                if failures:
+                    raise failures[0]
                 if trace_prefix is not None:
                     try:
                         (
@@ -1453,28 +1455,25 @@ def _evaluate_model_async(
                             dashboard_state=dashboard_state,
                             policy_feedback_config=policy_feedback_config,
                         )
-                    except (TimeoutError, NativePipeError, ProtocolError) as error:
-                        attempts += 1
-                        failure = environment._failure(
+                    except (
+                        TimeoutError,
+                        NativePipeError,
+                        ProtocolError,
+                        MapCapacityError,
+                    ) as error:
+                        environment._failure(
                             index,
                             error,
                             operation="trace_prefix_evaluation",
-                            context={"seed": seed, "attempt": attempts},
+                            context={
+                                "seed": seed,
+                                "episode_valid": False,
+                                "last_observation": {k: v.tolist() for k, v in observation.items()},
+                            },
                         )
-                        if attempts >= 3:
-                            raise
-                        observation, info = environment.recover(index, seed, failure=failure)
-                        hidden = model.initial_state(1, device=device)
-                        previous_action = START_ACTION
-                        previous_reward = 0.0
-                        feedback_tracker = (
-                            None
-                            if policy_feedback_config is None
-                            else RewardTracker(policy_feedback_config)
-                        )
-                        if feedback_tracker is not None:
-                            feedback_tracker.reset(observation, info)
-                        continue
+                        failure = VectorInfrastructureError(index, worker_id, error)
+                        failures.append(failure)
+                        raise failure from error
                 if (
                     natural_prefix is not None
                     and guide_model is not None
@@ -1506,24 +1505,25 @@ def _evaluate_model_async(
                             guide_reward=guide_reward,
                             policy_feedback_config=policy_feedback_config,
                         )
-                    except (TimeoutError, NativePipeError, ProtocolError) as error:
-                        attempts += 1
-                        failure = environment._failure(
+                    except (
+                        TimeoutError,
+                        NativePipeError,
+                        ProtocolError,
+                        MapCapacityError,
+                    ) as error:
+                        environment._failure(
                             index,
                             error,
                             operation="natural_prefix_evaluation",
-                            context={"seed": seed, "attempt": attempts},
+                            context={
+                                "seed": seed,
+                                "episode_valid": False,
+                                "last_observation": {k: v.tolist() for k, v in observation.items()},
+                            },
                         )
-                        if attempts >= 3:
-                            raise
-                        observation, info = environment.recover(index, seed, failure=failure)
-                        hidden = model.initial_state(1, device=device)
-                        previous_action = START_ACTION
-                        previous_reward = 0.0
-                        if feedback_tracker is not None:
-                            feedback_tracker = RewardTracker(policy_feedback_config)
-                            feedback_tracker.reset(observation, info)
-                        continue
+                        failure = VectorInfrastructureError(index, worker_id, error)
+                        failures.append(failure)
+                        raise failure from error
                     except NaturalPrefixError as error:
                         accumulator = EpisodeAccumulator(
                             seed=seed,
@@ -1543,8 +1543,7 @@ def _evaluate_model_async(
                             "boundary": error.failures[-1].get("boundary", {}),
                         }
                         return accumulator.finish("prefix_failed")
-                # An infrastructure retry replays the same game seed and exact
-                # policy sample stream from turn zero.
+                # Each evaluation seed is attempted once; failures invalidate the result.
                 accumulator = EpisodeAccumulator(
                     seed=int(info.get("seed") if info.get("seed") is not None else seed),
                     worker_id=worker_id,
@@ -1556,6 +1555,8 @@ def _evaluate_model_async(
                 accumulator.initialize(observation, info)
                 try:
                     while accumulator.turns < max_steps:
+                        if failures:
+                            raise failures[0]
                         inference_hidden = recurrent_state_for_action(
                             model,
                             hidden,
@@ -1632,26 +1633,23 @@ def _evaluate_model_async(
                                 str(step_info.get("episode_status", "aborted"))
                             )
                     return accumulator.finish("step_limit")
-                except (TimeoutError, NativePipeError, ProtocolError) as error:
-                    attempts += 1
-                    failure = environment._failure(
+                except (TimeoutError, NativePipeError, ProtocolError, MapCapacityError) as error:
+                    environment._failure(
                         index,
                         error,
-                        operation=(
-                            "deterministic_evaluation" if deterministic else "stochastic_evaluation"
-                        ),
-                        context={"seed": seed, "attempt": attempts},
+                        operation="deterministic_evaluation"
+                        if deterministic
+                        else "stochastic_evaluation",
+                        context={
+                            "seed": seed,
+                            "episode_valid": False,
+                            "partial_turns": accumulator.turns,
+                            "last_observation": {k: v.tolist() for k, v in observation.items()},
+                        },
                     )
-                    if attempts >= 3:
-                        raise
-                    observation, info = environment.recover(index, seed, failure=failure)
-                    observation = contract_memory.reset_slot(index, observation)
-                    hidden = model.initial_state(1, device=device)
-                    previous_action = START_ACTION
-                    previous_reward = 0.0
-                    if policy_feedback_config is not None:
-                        feedback_tracker = RewardTracker(policy_feedback_config)
-                        feedback_tracker.reset(observation, info)
+                    failure = VectorInfrastructureError(index, worker_id, error)
+                    failures.append(failure)
+                    raise failure from error
 
         try:
             with ThreadPoolExecutor(max_workers=max(len(wave_seeds), 1)) as executor:
