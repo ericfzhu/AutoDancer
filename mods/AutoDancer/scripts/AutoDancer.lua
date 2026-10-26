@@ -5,6 +5,7 @@
 
 local Bridge = require "AutoDancer.scripts.Bridge"
 local Equipment = require "AutoDancer.scripts.Equipment"
+local World = require "AutoDancer.scripts.World"
 
 local Music = require "necro.audio.Music"
 local AnimationTimer = require "necro.render.AnimationTimer"
@@ -615,6 +616,7 @@ local function buildObservation()
     local player = Player.getPlayerEntity(1)
     local result = emptyObservation()
     result.equipment_snapshot = Equipment.capture(player)
+    result.world_snapshot = World.capture(player)
     -- Additive, versioned extension: version, qualified starting dagger, armed.
     -- Keep legacy inventory and engine action availability unchanged.
     result.equipment_controls = {1, 0, 0}
@@ -820,6 +822,9 @@ local function observationForStatus(observation, status)
     -- those equipment owners as a fresh query of the terminal state.
     if status ~= "running" and result.equipment_snapshot then
         result.equipment_snapshot.current = false
+    end
+    if status ~= "running" and result.world_snapshot then
+        result.world_snapshot.current = false
     end
     return result
 end

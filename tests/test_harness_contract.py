@@ -10,9 +10,22 @@ from autodancer.harness_contract import (
     StateFact,
     TransitionTiming,
     executable_mask,
+    information_contract,
     project_facts,
+    task_contract,
     validate_effects,
 )
+
+
+@pytest.mark.parametrize("profile", ["internal-v1", "player-v1"])
+def test_symbolic_information_contract_declares_remaining_privilege(profile):
+    contract = information_contract(profile, world=True)
+    assert contract["human_equivalent"] is False
+    assert "exact_entity_identity_including_disguises" in contract["remaining_privilege"]
+    assert contract["previous_reward"] == "excluded_by_model"
+    assert contract["actor_critic"] == "same_inputs"
+    assert task_contract()["collection_limit"] == "truncate_and_bootstrap_final_state"
+    assert task_contract()["finite_horizon"] is False
 
 
 def test_zero_unknown_and_inapplicable_are_distinct():

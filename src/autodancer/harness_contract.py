@@ -1,4 +1,4 @@
-"""Offline contracts for the next harness; not yet a live protocol revision.
+"""Information, task and timing contracts for the symbolic harness.
 
 Facts describe current state, effects describe an acknowledged transition, and
 timing never infers game turns from bridge sequence numbers.
@@ -12,6 +12,67 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from autodancer.constants import Action
+
+
+def task_contract() -> dict:
+    """The task is distinct from the boss identity and the collection budget."""
+    return {
+        "version": 1,
+        "context_fields": ["objective", "target_level"],
+        "objectives": {"win_run": 1, "reach_level": 2},
+        "target_level_zero": "not_applicable",
+        "success": "won_or_reached_declared_target",
+        "death": "terminal_failure",
+        "collection_limit": "truncate_and_bootstrap_final_state",
+        "abort": "invalid_run_no_learning_transition",
+        "discount_clock": "acknowledged_decision",
+        "finite_horizon": False,
+    }
+
+
+def information_contract(profile: str, *, world: bool) -> dict:
+    """Declare actual inputs, including privilege remaining after HUD filtering.
+
+    `player-v1` is a historical equipment profile name, not a certification of
+    pixel/audio equivalence. Both live profiles are explicitly symbolic.
+    """
+    if profile not in {"legacy", "internal-v1", "player-v1"}:
+        raise ValueError("Unknown information profile")
+    if world and profile == "legacy":
+        raise ValueError("World information requires an explicit equipment profile")
+    return {
+        "version": 1,
+        "profile": profile,
+        "scope": "world-and-equipment" if world else "equipment-and-legacy-grid",
+        "human_equivalent": False,
+        "actor_critic": "same_inputs",
+        "grid": "revealed_coarse_geometry" if world else "visible_engine_entity_aggregates",
+        "map_memory": "revealed_terrain_plus_visit_history_including_map_item_reveal",
+        "player": "engine_health_gold_groove_position_level_boss_and_music_state",
+        "equipment": "HUD_filtered" if profile == "player-v1" else "engine_state",
+        "world": (
+            "display_filtered_exact_identities_terrain_and_selected_engine_facts"
+            if profile == "player-v1"
+            else "visible_cell_exact_identities_terrain_and_engine_facts"
+        )
+        if world
+        else "legacy_grid",
+        "remaining_privilege": [
+            "exact_entity_identity_including_disguises",
+            "exact_terrain_identity_including_embedded_loot" if world else "legacy_entity_counters",
+            "engine_component_markers_and_relations",
+            "engine_music_and_player_state",
+            "current_engine_terrain_on_revealed_but_not_visible_cells",
+        ],
+        "previous_action": "own_input_history",
+        "previous_reward": "excluded_by_model" if world else "configured_reward_feedback",
+        "decision_count": "acknowledged_episode_inputs" if world else "bridge_sequence",
+        "action_mask": "all_11_input_attempts" if profile != "legacy" else "legacy_rules",
+        "task_context": "explicit_objective_and_target" if world else "unconditioned",
+        "diagnostics": "seed_run_ids_raw_entity_handles_transport_and_raw_events_not_model_inputs",
+        "future_rng": "excluded",
+        "reward_sources": "declared_engine_events_and_tracker_history_may_be_privileged",
+    }
 
 
 class InformationSource(StrEnum):

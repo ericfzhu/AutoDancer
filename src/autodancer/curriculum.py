@@ -25,19 +25,22 @@ class EpisodeResetSpec:
     profile: str = "normal"
 
     def __post_init__(self) -> None:
-        valid_id = self.id and all(
+        valid_id = isinstance(self.id, str) and self.id and all(
             character.isalnum() or character in "-_" for character in self.id
         )
         if not valid_id:
             raise ValueError("curriculum reset id may contain only letters, digits, '-' and '_'")
-        if self.start_level <= 0:
-            raise ValueError("curriculum start_level must be positive")
+        if type(self.start_level) is not int or not 1 <= self.start_level < 2**31:
+            raise ValueError("curriculum start_level must be a positive int32 integer")
         if self.profile not in CURRICULUM_PROFILES:
             raise ValueError("curriculum profile must be one of " + ", ".join(CURRICULUM_PROFILES))
         if self.profile != "normal" and self.start_level <= 1:
             raise ValueError("assisted curriculum profiles require a later start level")
-        if self.target_level is not None and self.target_level <= self.start_level:
-            raise ValueError("curriculum target_level must be after start_level")
+        if self.target_level is not None and (
+            type(self.target_level) is not int
+            or not self.start_level < self.target_level < 2**31
+        ):
+            raise ValueError("curriculum target_level must be an integer after start_level")
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -58,8 +61,8 @@ class EpisodeResetSpec:
         target = value.get("target_level")
         return cls(
             id=str(value.get("id", "default")),
-            start_level=int(value.get("start_level", 1)),
-            target_level=None if target is None else int(target),
+            start_level=value.get("start_level", 1),
+            target_level=target,
             profile=str(value.get("profile", "normal")),
         )
 

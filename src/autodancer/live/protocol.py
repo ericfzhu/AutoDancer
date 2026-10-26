@@ -29,6 +29,7 @@ from autodancer.constants import (
     TrapKind,
 )
 from autodancer.equipment_state import decode_equipment_snapshot
+from autodancer.world_observation import decode_world_snapshot
 
 LOG_MARKER = "AUTODANCER_JSON:"
 SCHEMA_VERSION = 10
@@ -103,9 +104,7 @@ def validate_envelope_identity(
     received_session = _identifier(message.get("session_id"), "session_id")
     received_launch = _identifier(message.get("launch_id"), "launch_id")
     if instance_id is not None and received_instance != instance_id:
-        raise ProtocolError(
-            f"Expected worker {instance_id!r}, received {received_instance!r}"
-        )
+        raise ProtocolError(f"Expected worker {instance_id!r}, received {received_instance!r}")
     if session_id is not None and received_session != session_id:
         raise ProtocolError(
             f"Expected supervisor session {session_id!r}, received {received_session!r}"
@@ -146,13 +145,10 @@ def validate_command_status(
     if message.get("command_kind") not in {"ACTION", "RESET", "GOTO"}:
         raise ProtocolError("command_status has an unsupported command kind")
     _integer(message.get("command_id"), "command_id", minimum=1)
-    command_session = _identifier(
-        message.get("command_session_id"), "command_session_id"
-    )
+    command_session = _identifier(message.get("command_session_id"), "command_session_id")
     if session_id is not None and command_session != session_id:
         raise ProtocolError(
-            f"Command session {command_session!r} does not match supervisor session "
-            f"{session_id!r}"
+            f"Command session {command_session!r} does not match supervisor session {session_id!r}"
         )
     if message.get("phase") not in COMMAND_PHASES:
         raise ProtocolError(f"Unknown command lifecycle phase {message.get('phase')!r}")
@@ -361,10 +357,7 @@ def decode_revealed_map_origin(payload: Any) -> dict[str, int] | None:
         return None
     if not isinstance(payload, Mapping):
         raise ProtocolError("revealed_map_origin must be an object")
-    return {
-        name: _integer(payload.get(name), f"revealed_map_origin.{name}")
-        for name in ("x", "y")
-    }
+    return {name: _integer(payload.get(name), f"revealed_map_origin.{name}") for name in ("x", "y")}
 
 
 def decode_map_bounds(payload: Any) -> dict[str, int] | None:
@@ -474,6 +467,9 @@ def validate_record(record: Mapping[str, Any]) -> None:
         equipment = decode_equipment_snapshot(record["observation"].get("equipment_snapshot"))
         if equipment is not None and equipment["current"] != (status == "running"):
             raise ValueError("Equipment snapshot freshness disagrees with episode status")
+        world = decode_world_snapshot(record["observation"].get("world_snapshot"))
+        if world is not None and world["current"] != (status == "running"):
+            raise ValueError("World snapshot freshness disagrees with episode status")
     except ValueError as error:
         raise ProtocolError(f"Invalid equipment snapshot: {error}") from error
     if status == "running" and (
@@ -482,9 +478,7 @@ def validate_record(record: Mapping[str, Any]) -> None:
     ):
         raise ProtocolError("Observation zone/floor does not match transition metadata")
     decode_revealed_map(record.get("observation", {}).get("revealed_map"))
-    decode_revealed_map_origin(
-        record.get("observation", {}).get("revealed_map_origin")
-    )
+    decode_revealed_map_origin(record.get("observation", {}).get("revealed_map_origin"))
     decode_map_bounds(record.get("observation", {}).get("map_bounds"))
     if status == "running":
         mask = observation["action_mask"]
@@ -526,9 +520,7 @@ def validate_record(record: Mapping[str, Any]) -> None:
             )
             if requested >= ACTION_COUNT:
                 raise ProtocolError(f"bridge requested_action must be below {ACTION_COUNT}")
-            engine_action = _integer(
-                bridge.get("engine_action"), "bridge engine_action", minimum=0
-            )
+            engine_action = _integer(bridge.get("engine_action"), "bridge engine_action", minimum=0)
             observed_action = _integer(
                 bridge.get("observed_action"), "bridge observed_action", minimum=0
             )
@@ -539,9 +531,7 @@ def validate_record(record: Mapping[str, Any]) -> None:
         elif bridge_kind == "GOTO":
             _integer(bridge.get("target_level"), "bridge target_level", minimum=1)
         else:
-            raise ProtocolError(
-                "Bridge acknowledgement kind must be ACTION, RESET, or GOTO"
-            )
+            raise ProtocolError("Bridge acknowledgement kind must be ACTION, RESET, or GOTO")
 
 
 class TurnSource(Protocol):
@@ -708,9 +698,7 @@ class NativePipeTurnSource(_SequenceTracker):
             self._lifecycle_phase = phase
             return
         if key != self._lifecycle_key:
-            raise ProtocolError(
-                f"Lifecycle phase {phase!r} belongs to unexpected command {key}"
-            )
+            raise ProtocolError(f"Lifecycle phase {phase!r} belongs to unexpected command {key}")
         if phase == "heartbeat":
             return
         allowed_previous = {
@@ -722,9 +710,7 @@ class NativePipeTurnSource(_SequenceTracker):
             "telemetry_sent": {"turn_completed", "reset_started"},
         }
         if phase != "command_error" and previous not in allowed_previous.get(phase, set()):
-            raise ProtocolError(
-                f"Invalid lifecycle order for {key}: {previous!r} -> {phase!r}"
-            )
+            raise ProtocolError(f"Invalid lifecycle order for {key}: {previous!r} -> {phase!r}")
         if phase == "input_observed" and key[0] != "ACTION":
             raise ProtocolError("Only ACTION can emit input_observed")
         if phase == "reset_started" and key[0] not in {"RESET", "GOTO"}:
@@ -736,9 +722,7 @@ class NativePipeTurnSource(_SequenceTracker):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TimeoutError(
-                    f"No AutoDancer transition arrived within {timeout:.1f} seconds"
-                )
+                raise TimeoutError(f"No AutoDancer transition arrived within {timeout:.1f} seconds")
             payload = self.receiver.receive(remaining, max_bytes=262144)
             self.last_frame_bytes = len(payload)
             self.max_frame_bytes = max(self.max_frame_bytes, len(payload))

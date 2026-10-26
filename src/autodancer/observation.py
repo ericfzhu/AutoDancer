@@ -17,7 +17,9 @@ from autodancer.constants import (
 )
 
 
-def observation_space(*, equipment_capacity: int | None = None) -> spaces.Dict:
+def observation_space(
+    *, equipment_capacity: int | None = None, world_capacity: int | None = None
+) -> spaces.Dict:
     result = spaces.Dict(
         {
             "grid": spaces.Box(
@@ -54,4 +56,10 @@ def observation_space(*, equipment_capacity: int | None = None) -> spaces.Dict:
 
         for name, space in equipment_spaces(equipment_capacity).items():
             result[name] = space
+    if world_capacity is not None:
+        from autodancer.world_observation import world_spaces
+
+        for name, space in world_spaces(world_capacity).items():
+            result[name] = space
+        result["task_context"] = spaces.Box(0, 2**31 - 1, (2,), np.int32)
     return result
