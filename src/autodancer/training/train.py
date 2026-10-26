@@ -21,10 +21,11 @@ from autodancer.adaptive_curriculum import load_adaptive_curriculum_config
 from autodancer.constants import ACTION_COUNT
 from autodancer.curriculum import EpisodeResetSpec, fixed_reset_spec, load_curriculum_mixture
 from autodancer.envs.vector import AutoDancerVectorEnv
+from autodancer.harness_contract import information_contract, task_contract
 from autodancer.live.bridge import CURRICULUM_PROFILES
 from autodancer.live.supervisor import AutoDancerSupervisor, SupervisorConfig
 from autodancer.progress import deeper_level, level_progress
-from autodancer.rewards import RewardConfig, load_reward_config
+from autodancer.rewards import RewardConfig, load_reward_config, reward_semantics
 from autodancer.training.action_contract import ACTION_CONTRACTS
 from autodancer.training.async_collector import VersionedAsyncRolloutCollector
 from autodancer.training.dashboard import DashboardServer, DashboardState
@@ -42,6 +43,7 @@ from autodancer.training.model import (
     PolicyModel,
     ProjectedAdapterActorCritic,
     RecurrentActorCritic,
+    WorldActorCritic,
     model_from_spec,
     set_actor_trainable,
 )
@@ -481,6 +483,13 @@ def train(arguments: argparse.Namespace) -> None:
         target_kl=arguments.target_kl,
     )
     reward_config = load_reward_config(arguments.reward_config)
+    harness_contracts = {
+        "information_policy": information_contract(
+            arguments.equipment_profile, world=arguments.architecture == 10
+        ),
+        "task_contract": task_contract(),
+        "reward_semantics": reward_semantics(),
+    }
     policy_feedback_config = (
         None
         if arguments.policy_feedback_reward_config is None
@@ -593,6 +602,10 @@ def train(arguments: argparse.Namespace) -> None:
             arguments.curriculum_profile,
         )
     )
+    if arguments.architecture != 10 and len({e.spec.target_level for e in curriculum_entries}) > 1:
+        raise ValueError("Mixed task targets require architecture 10 task context")
+    if arguments.architecture == 10 and policy_feedback_config is not None:
+        raise ValueError("Architecture 10 excludes reward feedback; omit policy feedback overrides")
     if training_seed_pools is not None:
         reset_ids = {entry.spec.id for entry in curriculum_entries}
         if set(training_seed_pools) != reset_ids:
@@ -676,6 +689,7 @@ def train(arguments: argparse.Namespace) -> None:
         input_mode="engine-input-v1" if arguments.equipment_profile != "legacy" else "legacy",
         equipment_profile=arguments.equipment_profile,
         equipment_capacity=arguments.equipment_capacity,
+        world_capacity=arguments.world_capacity if arguments.architecture == 10 else None,
         telemetry_transport=arguments.telemetry_transport,
         worker_profile=arguments.worker_profile,
         affinity_policy=arguments.affinity,
@@ -725,6 +739,7 @@ def train(arguments: argparse.Namespace) -> None:
                 "trace_prefix_warmup_batch_size": arguments.trace_prefix_warmup_batch_size,
                 "trace_prefix_warmup_verify": arguments.trace_prefix_warmup_verify,
                 "reward": reward_config.specification(),
+                **harness_contracts,
                 "reward_lineage_version": arguments.reward_lineage_version,
                 "reward_config": (
                     None if arguments.reward_config is None else str(arguments.reward_config)
@@ -851,10 +866,18 @@ def train(arguments: argparse.Namespace) -> None:
                     model = AdapterActorCritic(initialize=initialize)
                 elif arguments.architecture == 8:
                     model = ProjectedAdapterActorCritic(initialize=initialize)
-                elif arguments.architecture == 9:
-                    model = EquipmentActorCritic(
+                elif arguments.architecture in {9, 10}:
+                    world_options = (
+                        {"world_capacity": arguments.world_capacity}
+                        if arguments.architecture == 10
+                        else {}
+                    )
+                    model = (
+                        WorldActorCritic if arguments.architecture == 10 else EquipmentActorCritic
+                    )(
                         equipment_capacity=arguments.equipment_capacity,
                         equipment_profile=arguments.equipment_profile,
+                        **world_options,
                         initialize=initialize,
                     )
                 else:
@@ -865,6 +888,7 @@ def train(arguments: argparse.Namespace) -> None:
                     device=device,
                     checkpoint_metadata={
                         "reward": reward_config.specification(),
+                        **harness_contracts,
                         "policy_feedback_reward": (
                             None
                             if policy_feedback_config is None
@@ -952,6 +976,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "device": str(device),
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
+                            **harness_contracts,
                             "initialization": algorithm.checkpoint_metadata.get("initialization"),
                             "starting_global_step": algorithm.global_step,
                             "starting_updates": algorithm.updates,
@@ -1142,6 +1167,7 @@ def train(arguments: argparse.Namespace) -> None:
                             "trace_prefix_warmup_verify": arguments.trace_prefix_warmup_verify,
                             "architecture": model.architecture_spec(),
                             "reward": reward_config.specification(),
+                            **harness_contracts,
                             "policy_feedback_reward": (
                                 None
                                 if policy_feedback_config is None
@@ -1281,7 +1307,7 @@ def main() -> int:
     parser.add_argument(
         "--architecture",
         type=int,
-        choices=(2, 6, 7, 8, 9),
+        choices=(2, 6, 7, 8, 9, 10),
         default=6,
         help="policy architecture (A8 is the zero-projection staged adapter)",
     )
@@ -1293,6 +1319,7 @@ def main() -> int:
         help="player-v1 uses HUD evidence; internal-v1 exposes privileged equipment state",
     )
     parser.add_argument("--equipment-capacity", type=int, default=64)
+    parser.add_argument("--world-capacity", type=int, default=256)
     parser.add_argument("--rollout-length", type=int, default=128)
     parser.add_argument("--sequence-length", type=int, default=32)
     parser.add_argument(
@@ -1509,12 +1536,14 @@ def main() -> int:
         default=Path("runs/controller-qualification/qualification.json"),
     )
     arguments = parser.parse_args()
-    if (arguments.architecture == 9) != (arguments.equipment_profile != "legacy"):
-        parser.error("Architecture 9 requires an explicit equipment profile, and vice versa")
+    if (arguments.architecture in {9, 10}) != (arguments.equipment_profile != "legacy"):
+        parser.error("Architectures 9 and 10 require an explicit equipment profile, and vice versa")
     if not 1 <= arguments.equipment_capacity <= 4096:
         parser.error("--equipment-capacity must be in [1, 4096]")
-    if arguments.architecture == 9 and arguments.action_contract != "current":
-        parser.error("Architecture 9 currently requires --action-contract current")
+    if arguments.architecture in {9, 10} and arguments.action_contract != "current":
+        parser.error("Architectures 9 and 10 require --action-contract current")
+    if not 1 <= arguments.world_capacity <= 4096:
+        parser.error("--world-capacity must be in [1, 4096]")
     if arguments.sequence_encoding_batch_size < 0:
         parser.error("--sequence-encoding-batch-size cannot be negative")
     if arguments.mod_dir is None:

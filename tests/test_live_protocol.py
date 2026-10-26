@@ -167,9 +167,7 @@ def goto_record(
     if profile is not None:
         payload["bridge"]["curriculum_profile"] = profile
         expected_health = int(profile.rsplit("player", 1)[1])
-        objectives = [
-            {"role": "boss", "type": 101, "health": 9, "max_health": 9}
-        ]
+        objectives = [{"role": "boss", "type": 101, "health": 9, "max_health": 9}]
         payload["bridge"]["curriculum_application"] = {
             "player_health": expected_health,
             "player_max_health": expected_health,
@@ -260,6 +258,34 @@ def test_live_environment_applies_client_turn_limit() -> None:
     assert reward == pytest.approx(0.0)
     assert "aborted" not in info["reward_components"]
     assert not any(event.get("kind") == "failure" for event in info["raw_events"])
+
+
+def test_aborted_run_has_no_reward_or_bootstrap_transition():
+    environment = AutoDancerLiveEnv(
+        turn_source=QueueTurnSource(
+            [
+                record(0, "reset"),
+                record(1, "terminal", status="aborted", requested_action=Action.WAIT),
+            ]
+        ),
+        bridge=FakeBridge(),
+    )
+    environment.reset(seed=7)
+    before = environment._last_observation
+    with pytest.raises(ProtocolError, match="aborted.*invalid"):
+        environment.step(Action.WAIT)
+    assert environment._last_observation is before
+    with pytest.raises(RuntimeError, match="episode ended"):
+        environment.step(Action.WAIT)
+
+
+@pytest.mark.parametrize(
+    "data", [{"zone": 1}, {"zone": True, "floor": 1}, {"zone": 1, "floor": -1}]
+)
+def test_event_level_attribution_must_be_complete_and_integer(data):
+    payload = record(1, "turn", events=[dict(kind="enemy_kill", amount=1, data=data)])
+    with pytest.raises(ProtocolError):
+        validate_record(payload)
 
 
 def test_natural_prefix_handoff_rebases_only_client_accounting() -> None:
@@ -832,10 +858,8 @@ def test_lua_uses_the_trusted_bridge_to_pin_variant_content() -> None:
     for mod_name in ("Amplified", "DynChar", "Synchrony"):
         assert f'Native.blacklistMod("{mod_name}")' in source
 
-    patcher = (Path(__file__).parents[1] / "tools" / "patch_wsp.py").read_text(
-        encoding="utf-8"
-    )
-    assert 'native.blacklistMod = mods.blacklist' in patcher
+    patcher = (Path(__file__).parents[1] / "tools" / "patch_wsp.py").read_text(encoding="utf-8")
+    assert "native.blacklistMod = mods.blacklist" in patcher
 
 
 def test_lua_telemetry_reuses_the_built_observation_and_bounds_collection() -> None:
@@ -872,9 +896,7 @@ def test_lua_bridge_and_python_use_the_same_curriculum_profile_whitelist() -> No
     source = (
         Path(__file__).parents[1] / "mods" / "AutoDancer" / "scripts" / "Bridge.lua"
     ).read_text(encoding="utf-8")
-    declared = set(
-        re.findall(r'^\s*\["([^"]+)"\]\s*=\s*true,?$', source, re.MULTILINE)
-    )
+    declared = set(re.findall(r'^\s*\["([^"]+)"\]\s*=\s*true,?$', source, re.MULTILINE))
 
     assert declared == set(CURRICULUM_PROFILES)
     assert not any(profile.startswith("boss1hp-") for profile in declared)
@@ -899,9 +921,7 @@ def test_lua_action_acknowledgement_waits_for_pending_level_transition() -> None
 
     assert 'require "necro.client.LevelTransition"' in bridge
     assert 'require "necro.game.tile.LevelExit"' in bridge
-    assert (
-        'actionCompletionBlockReason(completed)' in bridge
-    )
+    assert "actionCompletionBlockReason(completed)" in bridge
     assert "local outstanding = pending or completed or queuedCommand" in bridge
     assert 'return "level_transition_pending"' in bridge
     assert 'return "unlocked_exit_pending"' in bridge
@@ -973,7 +993,7 @@ def test_lua_waits_for_a_materialized_visible_world_before_reset_or_action() -> 
     assert "Tile.exists(player.position.x, player.position.y)" in telemetry
     assert "Vision.isVisible(player.position.x, player.position.y)" in telemetry
     assert 'return "world_not_ready"' in bridge
-    assert r'\"world_ready\"' in bridge
+    assert r"\"world_ready\"" in bridge
 
 
 @pytest.mark.parametrize(
@@ -998,7 +1018,6 @@ def test_observation_rejects_overflow_before_narrowing(field, index, value):
     target[index[-1]] = value
     with pytest.raises(ProtocolError, match="storage range"):
         decode_observation(payload)
-
 
 
 def test_equipment_telemetry_waits_until_after_the_action_handler_returns() -> None:

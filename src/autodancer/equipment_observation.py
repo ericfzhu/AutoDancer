@@ -93,16 +93,29 @@ def equipment_spaces(capacity: int) -> dict[str, spaces.Box]:
 
 def equipment_environment_options(architecture: dict[str, Any]) -> dict[str, Any]:
     """Reconstruct the equipment environment required by an A9 checkpoint."""
-    if architecture.get("version") != 9:
+    if architecture.get("version") not in {9, 10}:
         return {}
     contract = architecture.get("equipment", {})
     if contract != equipment_contract(contract.get("capacity"), contract.get("profile")):
         raise ValueError("Equipment checkpoint contract or registry does not match")
-    return {
+    options = {
         "input_mode": "engine-input-v1",
         "equipment_profile": contract["profile"],
         "equipment_capacity": contract["capacity"],
     }
+    if architecture["version"] == 10:
+        from autodancer.harness_contract import information_contract, task_contract
+        from autodancer.world_observation import world_contract
+
+        world = architecture.get("world", {})
+        if world != world_contract(world.get("capacity"), contract["profile"]):
+            raise ValueError("World checkpoint contract or registry does not match")
+        if architecture.get("information") != information_contract(contract["profile"], world=True):
+            raise ValueError("Information checkpoint contract does not match")
+        if architecture.get("task") != task_contract():
+            raise ValueError("Task checkpoint contract does not match")
+        options["world_capacity"] = world["capacity"]
+    return options
 
 
 def carried_item_counts(observation: dict[str, np.ndarray]) -> dict[int, int]:

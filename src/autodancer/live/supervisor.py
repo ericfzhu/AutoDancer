@@ -84,6 +84,7 @@ class SupervisorConfig:
     input_mode: str = "legacy"
     equipment_profile: str = "legacy"
     equipment_capacity: int = 64
+    world_capacity: int | None = None
     telemetry_transport: str = "native-pipe"
     worker_profile: str = "symbolic"
     affinity_policy: str = "auto"
@@ -113,6 +114,10 @@ class SupervisorConfig:
         if self.equipment_profile not in EQUIPMENT_PROFILES:
             raise ValueError("Unknown equipment observation profile")
         equipment_contract(self.equipment_capacity)
+        if self.world_capacity is not None:
+            from autodancer.world_observation import world_contract
+
+            world_contract(self.world_capacity, self.equipment_profile)
         if self.equipment_profile != "legacy" and self.input_mode != "engine-input-v1":
             raise ValueError("Equipment observations require engine-input-v1")
         if self.worker_profile != "symbolic":
@@ -478,6 +483,7 @@ class AutoDancerSupervisor:
             input_mode=self.config.input_mode,
             equipment_profile=self.config.equipment_profile,
             equipment_capacity=self.config.equipment_capacity,
+            world_capacity=self.config.world_capacity,
             session_id=self.session_id,
             launch_id=handle.launch_id,
             curriculum_start_level=self.config.curriculum_start_level,

@@ -82,6 +82,20 @@ def classify_action_outcome(
         terrain_before = int(before["grid"][row, column, GridChannel.TERRAIN_CLASS])
         actor_before = int(before["grid"][row, column, GridChannel.ACTOR_CLASS])
         trap_before = int(before["grid"][row, column, GridChannel.TRAP])
+        if "world_entities" in before:
+            from autodancer.world_observation import FACTS, world_registry
+
+            names = world_registry()[0]["entities"]
+            records = before["world_entities"]
+            matches = np.flatnonzero(
+                (records[:, 0] != 0) & (records[:, 1] == column - 10) & (records[:, 2] == row - 10)
+            )
+            actor_before = trap_before = 0
+            for i in matches:
+                if before["world_facts"][i, FACTS.index("marker.enemy"), 0]:
+                    actor_before = int(ActorKind.OTHER)
+                if names[int(records[i, 0]) - 1].startswith("Trapdoor"):
+                    trap_before = int(TrapKind.TRAPDOOR)
         # This comparison is valid only when Bard remained centred on the same
         # world coordinate. If Bard moved, the after-grid target is a new cell.
         if not position_changed and not floor_changed:
@@ -151,6 +165,11 @@ def classify_action_outcome(
                 "equipment_world",
             )
         ) or not np.array_equal(before["player"][:4], after["player"][:4])
+        if "world_entities" in before:
+            changed = changed or any(
+                not np.array_equal(before[k], after[k])
+                for k in ("world_entities", "world_facts", "world_tiles")
+            )
         category = "special_state_changed" if changed else "special_no_observed_change"
     else:
         category = "special_no_effect"

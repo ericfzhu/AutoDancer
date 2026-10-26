@@ -856,7 +856,7 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
         if isinstance(model, ProjectedAdapterActorCritic):
             groups.pop("adapter_gate")
             groups["adapter_projection"] = ("adapter_projection.",)
-    elif model.architecture_spec()["version"] in {ARCHITECTURE_VERSION, 9}:
+    elif model.architecture_spec()["version"] in {ARCHITECTURE_VERSION, 9, 10}:
         groups.update(
             {
                 "tactical_grid": (
@@ -885,6 +885,16 @@ def representation_parameter_groups(model: PolicyModel) -> dict[str, tuple[str, 
             "equipment_relation.",
             "equipment_world_token.",
             "equipment_output.",
+        )
+    if isinstance(model, WorldActorCritic):
+        groups["task"] = ("task_encoder.",)
+        groups["world"] = (
+            "world_identity.",
+            "world_token.",
+            "world_relation.",
+            "world_terrain.",
+            "world_terrain_output.",
+            "world_output.",
         )
     return groups
 
@@ -1014,21 +1024,127 @@ class EquipmentActorCritic(RecurrentActorCritic):
         return super().encode(observation) + self.encode_equipment(observation)
 
 
+class WorldActorCritic(EquipmentActorCritic):
+    """A10: full world records, exact terrain and permutation-invariant entity relations."""
+
+    def __init__(
+        self,
+        config=None,
+        *,
+        equipment_capacity=64,
+        equipment_profile="internal-v1",
+        world_capacity=256,
+        initialize=True,
+    ):
+        from autodancer.world_observation import FACTS, world_contract, world_registry
+
+        super().__init__(
+            config,
+            equipment_capacity=equipment_capacity,
+            equipment_profile=equipment_profile,
+            initialize=initialize,
+        )
+        self.world_contract = world_contract(world_capacity, equipment_profile)
+        registry, _ = world_registry()
+        self.world_identity = nn.Embedding(len(registry["entities"]) + 1, 32)
+        self.world_token = nn.Sequential(
+            nn.Linear(35 + len(FACTS) * 3, 128), nn.LayerNorm(128), nn.SiLU()
+        )
+        self.world_relation = nn.Sequential(nn.Linear(384, 128), nn.SiLU())
+        self.world_terrain = nn.Embedding(len(registry["tiles"]) + 1, 8)
+        self.world_terrain_output = nn.Sequential(
+            nn.Flatten(), nn.Linear(21 * 21 * 8, 64), nn.SiLU()
+        )
+        self.world_output = nn.Sequential(
+            nn.Linear(194, self.hidden_size), nn.LayerNorm(self.hidden_size), nn.SiLU()
+        )
+        self.task_encoder = nn.Sequential(nn.Linear(2, self.hidden_size), nn.SiLU())
+
+    def architecture_spec(self):
+        from autodancer.harness_contract import information_contract, task_contract
+
+        return {
+            **super().architecture_spec(),
+            "version": 10,
+            "world": self.world_contract,
+            "information": information_contract(self.world_contract["profile"], world=True),
+            "task": task_contract(),
+        }
+
+    def encode_world(self, observation):
+        entities, facts = observation["world_entities"], observation["world_facts"]
+        if entities.shape[1] != self.world_contract["capacity"]:
+            raise ValueError("World observation capacity differs from checkpoint")
+        valid = entities[..., 0] != 0
+        fact_features = torch.cat(
+            (self._scale(facts[..., :1].float()), facts[..., 1:].float()), -1
+        ).flatten(2)
+        tokens = self.world_token(
+            torch.cat(
+                (
+                    self.world_identity(entities[..., 0].long()),
+                    self._scale(entities[..., 1:4].float()),
+                    fact_features,
+                ),
+                -1,
+            )
+        )
+        padded = torch.cat((torch.zeros_like(tokens[:, :1]), tokens), 1)
+        relatives = [
+            padded.gather(1, entities[..., c].long().unsqueeze(-1).expand(-1, -1, 128))
+            for c in (4, 5)
+        ]
+        tokens = self.world_relation(torch.cat((tokens, *relatives), -1))
+        count = valid.sum(1, keepdim=True).float()
+        pooled = (tokens * valid.unsqueeze(-1)).sum(1) / count.clamp_min(1)
+        terrain = self.world_terrain_output(self.world_terrain(observation["world_tiles"].long()))
+        return self.world_output(
+            torch.cat(
+                (pooled, terrain, self._scale(count), observation["world_current"].float()), -1
+            )
+        )
+
+    def encode(self, observation):
+        # Rewards may include off-screen engine events and hidden inventory.
+        # Enforce exclusion here for collection, evaluation, prefixes and direct
+        # model callers alike. A9 and historical checkpoints keep their interface.
+        policy_view = {**observation, "previous_reward": None}
+        return (
+            super().encode(policy_view)
+            + self.encode_world(observation)
+            + self.task_encoder(self._scale(observation["task_context"]))
+        )
+
+
 def model_from_spec(spec: dict[str, Any], *, initialize: bool = True) -> PolicyModel:
     """Construct the exact model described by a checkpoint architecture spec."""
     version = int(spec.get("version", 0))
     config = dict(spec.get("config", {}))
-    if version == 9:
+    if version in {9, 10}:
         from autodancer.equipment_observation import equipment_contract
 
         contract = spec.get("equipment", {})
         if contract != equipment_contract(contract.get("capacity"), contract.get("profile")):
             raise ValueError("Equipment checkpoint contract or registry does not match")
-        return EquipmentActorCritic(
+        world_options = {}
+        if version == 10:
+            from autodancer.harness_contract import information_contract, task_contract
+            from autodancer.world_observation import world_contract
+
+            world = spec.get("world", {})
+            if world != world_contract(world.get("capacity"), contract["profile"]):
+                raise ValueError("World checkpoint contract or registry does not match")
+            if spec.get("information") != information_contract(contract["profile"], world=True):
+                raise ValueError("Information checkpoint contract does not match")
+            if spec.get("task") != task_contract():
+                raise ValueError("Task checkpoint contract does not match")
+            world_options["world_capacity"] = world["capacity"]
+        return (WorldActorCritic if version == 10 else EquipmentActorCritic)(
             ModelConfig(**config),
             equipment_capacity=contract["capacity"],
             equipment_profile=contract["profile"],
             initialize=initialize,
+            **world_options,
         )
     if version == 2:
         config["map_size"] = 0

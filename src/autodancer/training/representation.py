@@ -189,6 +189,28 @@ def _equipment(observation: Observation, _: torch.Generator) -> None:
 PERTURBATIONS["equipment"] = _equipment
 
 
+def _world(observation: Observation, _: torch.Generator) -> None:
+    if "world_entities" not in observation:
+        return
+    from autodancer.world_observation import world_registry
+
+    observation["world_entities"][:, 0, 0] = world_registry()[0]["entity_ids"]["Minotaur"]
+    observation["world_facts"][:, 0, :, :] = 1
+    observation["world_tiles"][:, 0, 0] = world_registry()[0]["tile_ids"]["Lava"]
+
+
+PERTURBATIONS["world"] = _world
+
+
+def _task(observation: Observation, _: torch.Generator) -> None:
+    if "task_context" not in observation:
+        return
+    observation["task_context"][:] = torch.tensor([2, 5], device=observation["task_context"].device)
+
+
+PERTURBATIONS["task"] = _task
+
+
 def _gradient_norms(
     model: PolicyModel, observation: Observation, state: Tensor
 ) -> dict[str, float]:
@@ -219,11 +241,22 @@ def analyze_model(
         from autodancer.training.performance import benchmark_observations
 
         synthetic = benchmark_observations(
-            batch_size, 1, torch.device("cpu"), equipment_capacity=equipment["capacity"]
+            batch_size,
+            1,
+            torch.device("cpu"),
+            equipment_capacity=equipment["capacity"],
+            world_capacity=model.architecture_spec().get("world", {}).get("capacity"),
         )
         observation.update(
-            {key: value[:, 0] for key, value in synthetic.items() if key.startswith("equipment_")}
+            {
+                key: value[:, 0]
+                for key, value in synthetic.items()
+                if key.startswith(("equipment_", "world_")) or key == "task_context"
+            }
         )
+    if "world_entities" in observation:
+        observation["grid"][..., 1:9] = 0
+        observation["grid"][..., 10:] = 0
     state = torch.randn(batch_size, 2, model.hidden_size, generator=generator) * 0.1
     model.eval()
     gradient_norms = _gradient_norms(model, observation, state)
@@ -232,6 +265,8 @@ def analyze_model(
     supported = set(representation_parameter_groups(model))
     groups = {}
     names = (*ALL_GROUPS, "equipment") if equipment is not None else ALL_GROUPS
+    if "world_entities" in observation:
+        names = (*names, "world", "task")
     for index, name in enumerate(names):
         changed = {key: value.clone() for key, value in observation.items()}
         PERTURBATIONS[name](changed, torch.Generator().manual_seed(seed + index + 1))

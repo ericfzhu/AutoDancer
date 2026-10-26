@@ -28,6 +28,7 @@ from autodancer.equipment_observation import (
     project_equipment,
 )
 from autodancer.equipment_state import decode_equipment_snapshot
+from autodancer.harness_contract import information_contract, task_contract
 from autodancer.live.bridge import (
     CURRICULUM_PROFILES,
     ActionBridge,
@@ -46,6 +47,7 @@ from autodancer.observation import observation_space
 from autodancer.outcomes import classify_action_outcome
 from autodancer.progress import level_progress
 from autodancer.rewards import RewardConfig, RewardTracker
+from autodancer.world_observation import decode_world_snapshot, project_world, world_contract
 
 
 class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
@@ -71,6 +73,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         input_mode: str = "legacy",
         equipment_profile: str = "legacy",
         equipment_capacity: int = 64,
+        world_capacity: int | None = None,
         curriculum_start_level: int = 1,
         curriculum_target_level: int | None = None,
         curriculum_profile: str = "normal",
@@ -101,12 +104,19 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         equipment_contract(equipment_capacity)
         self.equipment_profile = equipment_profile
         self.equipment_capacity = equipment_capacity
+        self.world_capacity = world_capacity
+        if world_capacity is not None:
+            world_contract(world_capacity, equipment_profile)
+            if (
+                equipment_profile == "player-v1"
+                and reward_config is not None
+                and reward_config.boss_progress_potential_per_damage
+            ):
+                raise ValueError("World player-v1 does not certify exact boss health for shaping")
         if self.max_turns <= 0:
             raise ValueError("max_turns must be positive")
-        self.curriculum_start_level = int(curriculum_start_level)
-        self.curriculum_target_level = (
-            None if curriculum_target_level is None else int(curriculum_target_level)
-        )
+        self.curriculum_start_level = curriculum_start_level
+        self.curriculum_target_level = curriculum_target_level
         self.curriculum_profile = str(curriculum_profile)
         if self.curriculum_start_level <= 0:
             raise ValueError("curriculum_start_level must be positive")
@@ -130,10 +140,12 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         self._active_reset_spec = self._default_reset_spec
         self.action_space = gym.spaces.Discrete(ACTION_COUNT)
         self.observation_space = observation_space(
-            equipment_capacity=equipment_capacity if equipment_profile != "legacy" else None
+            equipment_capacity=equipment_capacity if equipment_profile != "legacy" else None,
+            world_capacity=world_capacity,
         )
         self._last_observation: dict[str, np.ndarray] | None = None
         self._episode_steps = 0
+        self._decision_count = 0
         self._episode_done = False
         self._episode_seed: int | None = None
         self._run_id: str | None = None
@@ -188,6 +200,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if not self.attach_existing and record["kind"] != "reset":
             raise ProtocolError("The first record after RESTART must have kind 'reset'")
         self._episode_steps = 0
+        self._decision_count = 0
         self._episode_done = record["episode_status"] != "running"
         self._episode_seed = int(record.get("seed", 0))
         self._run_id = str(record["run_id"])
@@ -283,6 +296,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
         if self._learning_segment is not None:
             info["learning_segment"] = dict(self._learning_segment)
         self._episode_steps += 1
+        self._decision_count += 1
+        if self.world_capacity is not None:
+            observation["player"][PlayerFeature.TURN] = self._decision_count
         events = [dict(event) for event in record.get("events", [])]
         if previous_observation is not None:
             events = self._normalize_player_damage(events, previous_observation, observation)
@@ -290,7 +306,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 events.extend(self._inventory_pickup_events(previous_observation, observation))
         status = str(record["episode_status"])
         terminated = status in {"won", "dead"}
-        truncated = status == "aborted"
+        truncated = False  # Aborted runs are rejected in _accept_record.
         current_level = level_progress(int(info.get("zone") or 0), int(info.get("floor") or 0))
         curriculum_complete = bool(
             self._active_reset_spec.target_level is not None
@@ -315,6 +331,7 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                 previous_observation, observation, selected, info
             ).as_dict()
         info["completed"] = int(status == "won")
+        info["task_success"] = status in {"won", "curriculum_complete"}
         info["deaths"] = int(status == "dead")
         info["turns"] = self._episode_steps
         info["action_latency_seconds"] = action_latency
@@ -554,6 +571,30 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
                     observation["player"][PlayerFeature.BOMBS] = 0
             except ValueError as exc:
                 raise ProtocolError(str(exc)) from exc
+        if self.world_capacity is not None:
+            try:
+                world = decode_world_snapshot(record["observation"].get("world_snapshot"))
+                if world is None:
+                    raise ValueError("World observations require world snapshot v1")
+                observation.update(
+                    project_world(world, self.world_capacity, self.equipment_profile)
+                )
+                from autodancer.world_observation import FACTS
+
+                observation["player"][PlayerFeature.VISIBLE_ENEMIES] = int(
+                    observation["world_facts"][:, FACTS.index("marker.enemy"), 0].sum()
+                )
+                # Preserve coarse geometry and visibility, replace the old entity
+                # aggregate and hashed terrain identities with separate records.
+                observation["grid"][..., 1:9] = 0
+                observation["grid"][..., 10:] = 0
+                target = self._active_reset_spec.target_level
+                observation["task_context"] = np.asarray(
+                    [1 if target is None else 2, target or 0], dtype=np.int32
+                )
+                player[PlayerFeature.TURN] = self._decision_count
+            except ValueError as exc:
+                raise ProtocolError(str(exc)) from exc
         observation["map_memory"] = self.map_memory.update(
             observation,
             record["observation"].get("revealed_map"),
@@ -565,6 +606,9 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
     def _accept_record(
         self, record: dict[str, Any]
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        if record["episode_status"] == "aborted":
+            self._episode_done = True
+            raise ProtocolError("Game run aborted without a valid task outcome; transition invalid")
         if record.get("instance_id") != self.instance_id:
             raise ProtocolError(
                 f"Expected worker {self.instance_id!r}, received {record.get('instance_id')!r}"
@@ -608,4 +652,14 @@ class AutoDancerLiveEnv(gym.Env[dict[str, np.ndarray], int]):
             record["observation"].get("equipment_snapshot")
         )
         info["input_mode"] = self.input_mode
+        info["information_contract"] = information_contract(
+            self.equipment_profile, world=self.world_capacity is not None
+        )
+        info["task_contract"] = task_contract()
+        info["world_state"] = decode_world_snapshot(record["observation"].get("world_snapshot"))
+        info["world_observation_contract"] = (
+            world_contract(self.world_capacity, self.equipment_profile)
+            if self.world_capacity is not None
+            else None
+        )
         return observation, info

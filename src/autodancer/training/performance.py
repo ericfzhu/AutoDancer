@@ -77,7 +77,12 @@ def summarize_metrics(path: Path) -> dict[str, Any]:
 
 
 def benchmark_observations(
-    batch: int, length: int, device: torch.device, *, equipment_capacity: int | None = None
+    batch: int,
+    length: int,
+    device: torch.device,
+    *,
+    equipment_capacity: int | None = None,
+    world_capacity: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Synthetic nonempty inputs with production shapes; not gameplay evidence."""
     grid = torch.zeros(batch, length, GRID_SIZE, GRID_SIZE, GRID_CHANNELS, dtype=torch.int16)
@@ -123,6 +128,19 @@ def benchmark_observations(
         result["equipment_world_current"].fill_(1)
         result["equipment_items"][..., 0, 0] = equipment_registry()[0]["WeaponDagger"]
         result["equipment_items"][..., 0, 1] = 1
+    if world_capacity is not None:
+        from autodancer.world_observation import world_registry, world_spaces
+
+        for key, space in world_spaces(world_capacity).items():
+            dtype = torch.int8 if space.dtype.itemsize == 1 else torch.int32
+            result[key] = torch.zeros((batch, length, *space.shape), dtype=dtype, device=device)
+        result["world_current"].fill_(1)
+        result["task_context"] = torch.zeros((batch, length, 2), dtype=torch.int32, device=device)
+        result["task_context"][..., 0] = 1
+        result["world_entities"][..., 0, 0] = world_registry()[0]["entity_ids"]["Slime"]
+        result["world_tiles"].fill_(world_registry()[0]["tile_ids"]["Floor"])
+        result["grid"][..., 1:9] = 0
+        result["grid"][..., 10:] = 0
     return result
 
 
@@ -145,7 +163,11 @@ def sequence_benchmark(
     del payload
     equipment = model.architecture_spec().get("equipment", {})
     obs = benchmark_observations(
-        batch, length, device, equipment_capacity=equipment.get("capacity")
+        batch,
+        length,
+        device,
+        equipment_capacity=equipment.get("capacity"),
+        world_capacity=model.architecture_spec().get("world", {}).get("capacity"),
     )
     actions = torch.zeros(batch, length, device=device, dtype=torch.long)
     initial = model.initial_state(batch, device=device)
